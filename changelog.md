@@ -2,6 +2,15 @@
 
 **← [Back to README](readme.md)**
 
+## v4.19.0 (February 24, 2026)
+- **New Feature: Per-side-prompt lorebook write override**
+  - Each side prompt template can now optionally write its output to one or more lorebooks of your choice, instead of the chat-bound default.
+  - In the edit (or new) side prompt dialog, a new **"Override write lorebook(s)"** toggle appears in the Overrides section. When enabled, a scrollable checkbox list of all your lorebooks is shown — check any combination.
+  - Multiple selected lorebooks each receive identical output (same entry title and content written to all targets).
+  - If the override is enabled but all selected lorebook names are invalid/deleted, the side prompt silently falls back to the default lorebook — nothing breaks.
+  - Works across all three trigger modes: on-interval, after-memory, and manual `/sideprompt`.
+  - Applies to all four built-in templates (Plotpoints, Status, Cast of Characters, Assess) and any custom templates.
+
 ## v4.18.2 (February 23, 2026)
 - change minimum memories per arc default to 10
 - change "disable arced memories" to default to "true" (can still uncheck)
