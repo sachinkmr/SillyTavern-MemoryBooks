@@ -3,6 +3,7 @@ import { DOMPurify } from '../../../../lib.js';
 import { escapeHtml } from '../../../utils.js';
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced } from '../../../../script.js';
+import { world_names } from '../../../world-info.js';
 import {
     listTemplates,
     getTemplate,
@@ -125,6 +126,31 @@ async function openEditTemplate(parentPopup, key) {
         const options = profiles.map((p, i) =>
             `<option value="${i}" ${i === idx ? 'selected' : ''}>${escapeHtml(p?.name || ('Profile ' + (i + 1)))}</option>`
         ).join('');
+
+        // Lorebook write override — build checkbox list from available lorebooks
+        const lbOverrideEnabled = !!(s.lorebookOverride?.enabled);
+        const lbOverrideNames = Array.isArray(s.lorebookOverride?.lorebookNames) ? s.lorebookOverride.lorebookNames : [];
+        const availableLorebooks = Array.isArray(world_names) ? world_names : [];
+        const lorebookCheckboxes = availableLorebooks.map(n =>
+            `<label class="checkbox_label" style="display: block; padding: 2px 0; margin: 0;">
+                <input type="checkbox" name="stmb-sp-edit-lb-override-book" value="${escapeHtml(n)}" ${lbOverrideNames.includes(n) ? 'checked' : ''}>
+                <span>${escapeHtml(n)}</span>
+            </label>`
+        ).join('') || `<small class="opacity70p">${escapeHtml(translate('No lorebooks available.', 'STMemoryBooks_NoLorebooksAvailable'))}</small>`;
+        const lorebookOverrideHtml = `
+            <div class="world_entry_form_control">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-sp-edit-lb-override-enabled" ${lbOverrideEnabled ? 'checked' : ''}>
+                    <span>${escapeHtml(translate('Override write lorebook(s) for this side prompt', 'STMemoryBooks_OverrideWriteLorebooks'))}</span>
+                </label>
+            </div>
+            <div class="world_entry_form_control" id="stmb-sp-edit-lb-override-container" style="display: ${lbOverrideEnabled ? 'block' : 'none'};">
+                <small class="opacity70p">${escapeHtml(translate('Write output to these lorebook(s) instead of the chat-bound default. Multiple lorebooks receive identical content.', 'STMemoryBooks_OverrideWriteLorebooksHelp'))}</small>
+                <div id="stmb-sp-edit-lb-override-list" style="max-height: 150px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor, #555); border-radius: 4px; padding: 6px; margin-top: 6px;">
+                    ${lorebookCheckboxes}
+                </div>
+            </div>
+        `;
 
         const overrideHtml = `
             <div class="world_entry_form_control">
@@ -275,6 +301,7 @@ async function openEditTemplate(parentPopup, key) {
             <div class="world_entry_form_control">
                 <h4>${escapeHtml(translate('Overrides:', 'STMemoryBooks_Overrides'))}</h4>
                 ${overrideHtml}
+                ${lorebookOverrideHtml}
             </div>
         `;
 
@@ -302,6 +329,12 @@ async function openEditTemplate(parentPopup, key) {
             const overrideCont = dlg.querySelector('#stmb-sp-edit-override-container');
             cbOverride?.addEventListener('change', () => {
                 if (overrideCont) overrideCont.style.display = cbOverride.checked ? 'block' : 'none';
+            });
+
+            const cbLbOverride = dlg.querySelector('#stmb-sp-edit-lb-override-enabled');
+            const lbOverrideCont = dlg.querySelector('#stmb-sp-edit-lb-override-container');
+            cbLbOverride?.addEventListener('change', () => {
+                if (lbOverrideCont) lbOverrideCont.style.display = cbLbOverride.checked ? 'block' : 'none';
             });
 
             // Lorebook order mode visibility
@@ -391,6 +424,11 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
                 ...(lbPosRaw === 7 && outletNameVal ? { outletName: outletNameVal } : {}),
             };
 
+            // Lorebook write override
+            const lbOverrideEnabled2 = !!dlg.querySelector('#stmb-sp-edit-lb-override-enabled')?.checked;
+            const checkedBooks = [...(dlg.querySelectorAll('#stmb-sp-edit-lb-override-list input[name="stmb-sp-edit-lb-override-book"]:checked') || [])].map(el => el.value);
+            settings.lorebookOverride = { enabled: lbOverrideEnabled2, lorebookNames: lbOverrideEnabled2 ? checkedBooks : [] };
+
             await upsertTemplate({
                 key: tpl.key,
                 name: newName,
@@ -423,6 +461,29 @@ async function openNewTemplate(parentPopup) {
     const options = profiles.map((p, i) =>
         `<option value="${i}" ${i === idx ? 'selected' : ''}>${escapeHtml(p?.name || ('Profile ' + (i + 1)))}</option>`
     ).join('');
+
+    // Lorebook write override (new template: all unchecked by default)
+    const availableLorebooksNew = Array.isArray(world_names) ? world_names : [];
+    const lorebookCheckboxesNew = availableLorebooksNew.map(n =>
+        `<label class="checkbox_label" style="display: block; padding: 2px 0; margin: 0;">
+            <input type="checkbox" name="stmb-sp-new-lb-override-book" value="${escapeHtml(n)}">
+            <span>${escapeHtml(n)}</span>
+        </label>`
+    ).join('') || `<small class="opacity70p">${escapeHtml(translate('No lorebooks available.', 'STMemoryBooks_NoLorebooksAvailable'))}</small>`;
+    const lorebookOverrideHtmlNew = `
+        <div class="world_entry_form_control">
+            <label class="checkbox_label">
+                <input type="checkbox" id="stmb-sp-new-lb-override-enabled">
+                <span>${escapeHtml(translate('Override write lorebook(s) for this side prompt', 'STMemoryBooks_OverrideWriteLorebooks'))}</span>
+            </label>
+        </div>
+        <div class="world_entry_form_control" id="stmb-sp-new-lb-override-container" style="display: none;">
+            <small class="opacity70p">${escapeHtml(translate('Write output to these lorebook(s) instead of the chat-bound default. Multiple lorebooks receive identical content.', 'STMemoryBooks_OverrideWriteLorebooksHelp'))}</small>
+            <div id="stmb-sp-new-lb-override-list" style="max-height: 150px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor, #555); border-radius: 4px; padding: 6px; margin-top: 6px;">
+                ${lorebookCheckboxesNew}
+            </div>
+        </div>
+    `;
 
     const content = `
         <h3>${escapeHtml(translate('New Side Prompt', 'STMemoryBooks_NewSidePrompt'))}</h3>
@@ -556,6 +617,7 @@ async function openNewTemplate(parentPopup) {
                     </select>
                 </label>
             </div>
+            ${lorebookOverrideHtmlNew}
         </div>
     `;
 
@@ -581,6 +643,12 @@ async function openNewTemplate(parentPopup) {
         const overrideCont = dlg.querySelector('#stmb-sp-new-override-container');
         cbOverride?.addEventListener('change', () => {
             if (overrideCont) overrideCont.style.display = cbOverride.checked ? 'block' : 'none';
+        });
+
+        const cbLbOverrideNew = dlg.querySelector('#stmb-sp-new-lb-override-enabled');
+        const lbOverrideContNew = dlg.querySelector('#stmb-sp-new-lb-override-container');
+        cbLbOverrideNew?.addEventListener('change', () => {
+            if (lbOverrideContNew) lbOverrideContNew.style.display = cbLbOverrideNew.checked ? 'block' : 'none';
         });
 
         // Lorebook order mode visibility
@@ -667,6 +735,11 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
             delayUntilRecursion: lbDelay2,
             ...(lbPosRaw === 7 && outletNameVal ? { outletName: outletNameVal } : {}),
         };
+
+        // Lorebook write override
+        const lbOverrideEnabledNew = !!dlg.querySelector('#stmb-sp-new-lb-override-enabled')?.checked;
+        const checkedBooksNew = [...(dlg.querySelectorAll('#stmb-sp-new-lb-override-list input[name="stmb-sp-new-lb-override-book"]:checked') || [])].map(el => el.value);
+        settings.lorebookOverride = { enabled: lbOverrideEnabledNew, lorebookNames: lbOverrideEnabledNew ? checkedBooksNew : [] };
 
         try {
             await upsertTemplate({ name, enabled, prompt, responseFormat, settings, triggers });
