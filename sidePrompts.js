@@ -60,6 +60,58 @@ async function requireLorebookStrict() {
 }
 
 /**
+ * Resolve the list of target lorebooks for a side prompt template.
+ * Returns an array of { name, data } objects.
+ *
+ * If `tpl.settings.lorebookOverride` is enabled and contains valid lorebook names,
+ * each lorebook is loaded and returned. If the override name matches the default
+ * lorebook it is reused without a redundant fetch. On any failure (all names invalid,
+ * load errors) the function falls back to [defaultLore] and logs a warning.
+ *
+ * If the override is disabled, [defaultLore] is returned immediately (single-element
+ * array so all callers can uniformly iterate).
+ *
+ * @param {object} tpl - Side prompt template object
+ * @param {{ name: string, data: any }} defaultLore - Default lorebook from requireLorebookStrict
+ * @returns {Promise<Array<{ name: string, data: any }>>}
+ */
+async function resolveLorebooksForTemplate(tpl, defaultLore) {
+    const override = tpl?.settings?.lorebookOverride;
+    if (!override?.enabled || !Array.isArray(override.lorebookNames) || override.lorebookNames.length === 0) {
+        return [defaultLore];
+    }
+
+    const validNames = override.lorebookNames.filter(n => typeof n === 'string' && n.trim() && world_names?.includes(n));
+    if (validNames.length === 0) {
+        console.warn(`${MODULE_NAME}: lorebookOverride enabled for "${tpl.name}" but no valid lorebook names found; falling back to default.`);
+        return [defaultLore];
+    }
+
+    const results = [];
+    for (const name of validNames) {
+        // Reuse already-loaded default to avoid double fetch
+        if (name === defaultLore.name) {
+            results.push(defaultLore);
+            continue;
+        }
+        try {
+            const data = await loadWorldInfo(name);
+            if (!data) throw new Error('null data returned');
+            results.push({ name, data });
+        } catch (err) {
+            console.warn(`${MODULE_NAME}: Failed to load override lorebook "${name}" for "${tpl.name}"; skipping.`, err);
+        }
+    }
+
+    if (results.length === 0) {
+        console.warn(`${MODULE_NAME}: All override lorebooks failed to load for "${tpl.name}"; falling back to default.`);
+        return [defaultLore];
+    }
+
+    return results;
+}
+
+/**
  * Count non-system (visible) messages between exclusiveStart and inclusiveEnd indices
  */
 function countVisibleMessagesSince(exclusiveStart, inclusiveEnd) {
@@ -520,8 +572,11 @@ export async function evaluateTrackers() {
             const unifiedTitle = `${tpl.name} (STMB SidePrompt)`;
             const legacyTitle = `${tpl.name} (STMB Tracker)`;
 
+            // Per-template lorebook resolution (supports lorebookOverride; falls back to default)
+            const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+
             // Read existing entry to get last checkpoint (generic first, then legacy)
-            const existing = getEntryByTitle(lore.data, unifiedTitle) || getEntryByTitle(lore.data, legacyTitle);
+            const existing = getEntryByTitle(tplLores[0].data, unifiedTitle) || getEntryByTitle(tplLores[0].data, legacyTitle);
             const lastMsgId = Number(
                 (existing && existing[`STMB_sp_${tpl.key}_lastMsgId`]) ??
                 (existing && existing.STMB_tracker_lastMsgId) ??
@@ -634,23 +689,34 @@ export async function evaluateTrackers() {
                 console.warn(`${MODULE_NAME}: Preview step failed; proceeding without preview`, previewErr);
             }
 
-            // Upsert entry and update metadata checkpoint (generic + legacy for one-way compat)
+            // Upsert entry into all target lorebooks; write checkpoint metadata on each
             try {
                 throwIfStmbStopped(runEpoch);
                 const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
-            const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runtimeMacros);
-            const endId = compiled?.metadata?.sceneEnd ?? currentLast;
-            await upsertLorebookEntryByTitle(lore.name, lore.data, unifiedTitle, resultText, {
-                    defaults,
-                    entryOverrides,
-                    metadataUpdates: {
-                        [`STMB_sp_${tpl.key}_lastMsgId`]: currentLast,
-                        [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
-                        STMB_tracker_lastMsgId: currentLast,
-                        STMB_tracker_lastRunAt: new Date().toISOString(),
-                    },
-                    refreshEditor: extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false,
-                });
+                const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs);
+                const endId = compiled?.metadata?.sceneEnd ?? currentLast;
+                const metadataUpdates = {
+                    [`STMB_sp_${tpl.key}_lastMsgId`]: endId,
+                    [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
+                    STMB_tracker_lastMsgId: endId,
+                    STMB_tracker_lastRunAt: new Date().toISOString(),
+                };
+                const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
+                for (const tplLore of tplLores) {
+                    const targetData = tplLore.name === tplLores[0].name
+                        ? tplLore.data
+                        : (await loadWorldInfo(tplLore.name).catch(() => null));
+                    if (!targetData) {
+                        console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
+                        continue;
+                    }
+                    await upsertLorebookEntryByTitle(tplLore.name, targetData, unifiedTitle, resultText, {
+                        defaults,
+                        entryOverrides,
+                        metadataUpdates,
+                        refreshEditor,
+                    });
+                }
                 console.log(`${MODULE_NAME}: SidePrompt success`, {
                     trigger: 'onInterval',
                     name: tpl.name,
@@ -707,9 +773,10 @@ export async function runAfterMemory(compiledScene, profile = null) {
             // Run LLMs concurrently for this wave (scene-only prompts)
             const llmPromises = wave.map(async (tpl) => {
                 try {
+                    const tplLores = await resolveLorebooksForTemplate(tpl, lore);
                     const prepared = await prepareSidePromptRun({
                         tpl,
-                        loreData: lore.data,
+                        loreData: tplLores[0].data,
                         compiledScene,
                         defaultOverrides,
                         fallbackKinds: ['plotpoints', 'scoreboard'],
@@ -727,7 +794,15 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         conn: prepared.conn,
                         runEpoch,
                     });
-                    return { ok: true, tpl, text, unifiedTitle: prepared.unifiedTitle, finalPrompt: prepared.finalPrompt, conn: prepared.conn };
+                    return {
+                        ok: true,
+                        tpl,
+                        text,
+                        unifiedTitle: prepared.unifiedTitle,
+                        finalPrompt: prepared.finalPrompt,
+                        conn: prepared.conn,
+                        tplLores,
+                    };
                 } catch (e) {
                     if (!isStmbStopError(e)) {
                         console.error(`${MODULE_NAME}: Wave LLM failed for "${tpl.name}":`, e);
@@ -787,6 +862,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         metadataUpdates: {
                             [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
                         },
+                        _tplLores: r.tplLores,
                     });
                     succeededNames.push(tpl.name);
                 } else {
@@ -797,12 +873,22 @@ export async function runAfterMemory(compiledScene, profile = null) {
             if (items.length > 0) {
                 try {
                     throwIfStmbStopped(runEpoch);
-                    // Re-load latest lore to include any user edits during LLM phase
-                    const fresh = await loadWorldInfo(lore.name);
-                    // Batch save this wave; refresh editor per directive if enabled globally
-                    await upsertLorebookEntriesBatch(lore.name, fresh, items, { refreshEditor });
-                    // Update reference for subsequent lookups
-                    lore.data = fresh;
+                    // Group items by target lorebook; items with multi-lorebook override appear in multiple groups
+                    const lorebookGroups = new Map();
+                    for (const item of items) {
+                        const targets = item._tplLores || [{ name: lore.name }];
+                        for (const target of targets) {
+                            if (!lorebookGroups.has(target.name)) lorebookGroups.set(target.name, []);
+                            lorebookGroups.get(target.name).push(item);
+                        }
+                    }
+                    // Save each lorebook group, re-loading fresh data per lorebook
+                    for (const [lorebookName, groupItems] of lorebookGroups) {
+                        throwIfStmbStopped(runEpoch);
+                        const fresh = await loadWorldInfo(lorebookName);
+                        await upsertLorebookEntriesBatch(lorebookName, fresh, groupItems, { refreshEditor });
+                        if (lorebookName === lore.name) lore.data = fresh;
+                    }
 
                     // Only now count successes and toast per-template successes
                     for (const name of succeededNames) {
@@ -896,6 +982,7 @@ export async function runSidePrompt(args) {
             return '';
         }
 
+        const tplLores = await resolveLorebooksForTemplate(tpl, lore);
         const currentLast = chat.length - 1;
         if (currentLast < 0) {
             toastr.error(translate('No messages available.', 'STMemoryBooks_Toast_NoMessagesAvailable'), 'STMemoryBooks');
@@ -928,7 +1015,7 @@ export async function runSidePrompt(args) {
                 toastr.info(translate('Tip: You can run a specific range with /sideprompt "Name" {{macro}}="value" X-Y (e.g., /sideprompt "Scoreboard" 100-120). Running without a range uses messages since the last checkpoint.', 'STMemoryBooks_Toast_SidePromptRangeTip'), 'STMemoryBooks');
                 hasShownSidePromptRangeTip = true;
             }
-            const existingForLast = findFirstLoreEntryByTitle(lore.data, getSidePromptLookupTitles(tpl, ['scoreboard', 'plotpoints', 'tracker']));
+            const existingForLast = findFirstLoreEntryByTitle(tplLores[0].data, getSidePromptLookupTitles(tpl, runtimeMacros, ['scoreboard', 'plotpoints', 'tracker']));
             const lastMsgId = Number(
                 (existingForLast && existingForLast[`STMB_sp_${tpl.key}_lastMsgId`]) ??
                 (existingForLast && existingForLast.STMB_score_lastMsgId) ??
@@ -950,7 +1037,7 @@ export async function runSidePrompt(args) {
         const defaultOverrides = resolveSidePromptConnection(null);
         const prepared = await prepareSidePromptRun({
             tpl,
-            loreData: lore.data,
+            loreData: tplLores[0].data,
             compiledScene: compiled,
             defaultOverrides,
             fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
@@ -998,19 +1085,30 @@ export async function runSidePrompt(args) {
             }
             throwIfStmbStopped(runEpoch);
             const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
-            const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs);
+            const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runtimeMacros);
             const endId = compiled?.metadata?.sceneEnd ?? currentLast;
-            await upsertLorebookEntryByTitle(lore.name, lore.data, prepared.unifiedTitle, resultText, {
-                defaults,
-                entryOverrides,
-                metadataUpdates: {
-                    [`STMB_sp_${tpl.key}_lastMsgId`]: endId,
-                    [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
-                    STMB_tracker_lastMsgId: endId,
-                    STMB_tracker_lastRunAt: new Date().toISOString(),
-                },
-                refreshEditor: extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false,
-            });
+            const metadataUpdates = {
+                [`STMB_sp_${tpl.key}_lastMsgId`]: endId,
+                [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
+                STMB_tracker_lastMsgId: endId,
+                STMB_tracker_lastRunAt: new Date().toISOString(),
+            };
+            const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
+            for (const tplLore of tplLores) {
+                const targetData = tplLore.name === tplLores[0].name
+                    ? tplLore.data
+                    : (await loadWorldInfo(tplLore.name).catch(() => null));
+                if (!targetData) {
+                    console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
+                    continue;
+                }
+                await upsertLorebookEntryByTitle(tplLore.name, targetData, unifiedTitle, resultText, {
+                    defaults,
+                    entryOverrides,
+                    metadataUpdates,
+                    refreshEditor,
+                });
+            }
             console.log(`${MODULE_NAME}: SidePrompt success`, {
                 trigger: 'manual',
                 name: tpl.name,
