@@ -227,11 +227,39 @@ Example prompt ideas:
 * “Note new world-building details when they appear”
 * “Track the relationship between Character A and Character B”
 
+### 📚 **Override Write Lorebook(s) per Side Prompt**
+
+By default, every side prompt writes its entry into the same lorebook that is bound to the current chat. You can override this on a **per-side-prompt basis** to send the output to one or more different lorebooks instead.
+
+**When would you use this?**
+- Separate your trackers from your memories (e.g., plot threads go into a dedicated "Plot" lorebook while chat memories stay in the main one)
+- Mirror the same tracker entry into multiple lorebooks at once
+- Keep a shared world-state lorebook that is updated by side prompts across different chats
+
+**How to set it up:**
+
+1. Open the **Side Prompts Manager**
+2. Click **Edit** on any side prompt (or create a new one)
+3. Scroll down to the **Overrides** section at the bottom of the dialog
+4. Check **"Override write lorebook(s) for this side prompt"**
+5. A scrollable list of all your lorebooks will appear — check **one or more** to receive the output
+6. Click **Save**
+
+**What happens:**
+- If one or more lorebooks are selected, the side prompt writes its result there **instead of** the default chat-bound lorebook
+- If you select multiple lorebooks, every selected lorebook receives the **same output** (the entry title and content are duplicated into each)
+- If a selected lorebook has been deleted or renamed, the side prompt will fall back to the default lorebook and log a warning — nothing breaks
+- When the override is **disabled** or no lorebooks are checked, the side prompt behaves exactly as before using the chat-bound default
+
+> **Tip:** The default (chat-bound) lorebook is never written to when an override is active with at least one valid target. If you want the output in *both* the default and an additional lorebook, add the default lorebook to the checked list as well.
+
+---
+
 ### 🔧 **Creating Custom Side Prompts**
 
 1. Open Side Prompts Manager
 2. Click **Create New**
-3. Write a short, clear instructionCiao
+3. Write a short, clear instruction
    *(example: “Always note what the weather is like in each scene”)*
 4. Save and enable it
 5. The tracker will now update this information over time
