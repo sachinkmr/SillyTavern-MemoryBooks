@@ -245,12 +245,14 @@ Side Prompts can be used like trackers and create separate side-prompt entries i
 - Run them manually or automatically, depending on the template.
 - Use standard SillyTavern macros like `{{user}}` and `{{char}}` in side prompt `Prompt` and `Response Format`.
 - Use custom runtime macros like `{{npc name}}`, which are supplied when you run `/sideprompt`.
+- ⭐ **Per-side-prompt write lorebook override** – each side prompt can write its output to one or more lorebooks of your choice instead of the chat-bound default. Select multiple lorebooks in the **Overrides** section of the edit dialog to mirror output to all of them simultaneously.
 #### **Usage Tips:**
 - When creating a new prompt, you can copy from built-ins for best compatibility.
 - Manual syntax is `/sideprompt "Name" {{macro}}="value" [X-Y]`.
 - Once you choose a side prompt in slash-command autocomplete, STMB will suggest any required runtime macros for that template.
 - Side prompts with custom runtime macros are manual-only. STMB strips `On Interval` and `On After Memory` from those templates on save/import and warns you with a toast.
 - Additional Side Prompts Template Library [JSON file](resources/SidePromptTemplateLibrary.json) - just import to use
+- To keep trackers and memories in separate lorebooks, enable the lorebook override on each side prompt and point it at a dedicated lorebook.
 
 ---
 
