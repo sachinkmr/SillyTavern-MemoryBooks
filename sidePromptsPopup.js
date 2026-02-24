@@ -132,21 +132,21 @@ async function openEditTemplate(parentPopup, key) {
         const lbOverrideNames = Array.isArray(s.lorebookOverride?.lorebookNames) ? s.lorebookOverride.lorebookNames : [];
         const availableLorebooks = Array.isArray(world_names) ? world_names : [];
         const lorebookCheckboxes = availableLorebooks.map(n =>
-            `<label class="checkbox_label" style="display: block; padding: 2px 0; margin: 0;">
-                <input type="checkbox" name="stmb-sp-edit-lb-override-book" value="${escapeHtml(n)}" ${lbOverrideNames.includes(n) ? 'checked' : ''}>
-                <span>${escapeHtml(n)}</span>
+            `<label style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">
+                <input type="checkbox" name="stmb-sp-edit-lb-override-book" value="${escapeHtml(n)}" ${lbOverrideNames.includes(n) ? 'checked' : ''} style="flex-shrink: 0;">
+                <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(n)}</span>
             </label>`
         ).join('') || `<small class="opacity70p">${escapeHtml(translate('No lorebooks available.', 'STMemoryBooks_NoLorebooksAvailable'))}</small>`;
         const lorebookOverrideHtml = `
             <div class="world_entry_form_control">
                 <label class="checkbox_label">
                     <input type="checkbox" id="stmb-sp-edit-lb-override-enabled" ${lbOverrideEnabled ? 'checked' : ''}>
-                    <span>${escapeHtml(translate('Override write lorebook(s) for this side prompt', 'STMemoryBooks_OverrideWriteLorebooks'))}</span>
+                    <span>${escapeHtml(translate('Override lorebook(s) for this side prompt', 'STMemoryBooks_OverrideWriteLorebooks'))}</span>
                 </label>
             </div>
             <div class="world_entry_form_control" id="stmb-sp-edit-lb-override-container" style="display: ${lbOverrideEnabled ? 'block' : 'none'};">
                 <small class="opacity70p">${escapeHtml(translate('Write output to these lorebook(s) instead of the chat-bound default. Multiple lorebooks receive identical content.', 'STMemoryBooks_OverrideWriteLorebooksHelp'))}</small>
-                <div id="stmb-sp-edit-lb-override-list" style="max-height: 150px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor, #555); border-radius: 4px; padding: 6px; margin-top: 6px;">
+                <div id="stmb-sp-edit-lb-override-list" style="max-height: 120px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor, #555); border-radius: 4px; padding: 4px 6px; margin-top: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
                     ${lorebookCheckboxes}
                 </div>
             </div>
@@ -465,21 +465,21 @@ async function openNewTemplate(parentPopup) {
     // Lorebook write override (new template: all unchecked by default)
     const availableLorebooksNew = Array.isArray(world_names) ? world_names : [];
     const lorebookCheckboxesNew = availableLorebooksNew.map(n =>
-        `<label class="checkbox_label" style="display: block; padding: 2px 0; margin: 0;">
-            <input type="checkbox" name="stmb-sp-new-lb-override-book" value="${escapeHtml(n)}">
-            <span>${escapeHtml(n)}</span>
+        `<label style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">
+            <input type="checkbox" name="stmb-sp-new-lb-override-book" value="${escapeHtml(n)}" style="flex-shrink: 0;">
+            <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(n)}</span>
         </label>`
     ).join('') || `<small class="opacity70p">${escapeHtml(translate('No lorebooks available.', 'STMemoryBooks_NoLorebooksAvailable'))}</small>`;
     const lorebookOverrideHtmlNew = `
         <div class="world_entry_form_control">
             <label class="checkbox_label">
                 <input type="checkbox" id="stmb-sp-new-lb-override-enabled">
-                <span>${escapeHtml(translate('Override write lorebook(s) for this side prompt', 'STMemoryBooks_OverrideWriteLorebooks'))}</span>
+                <span>${escapeHtml(translate('Override lorebook(s) for this side prompt', 'STMemoryBooks_OverrideWriteLorebooks'))}</span>
             </label>
         </div>
         <div class="world_entry_form_control" id="stmb-sp-new-lb-override-container" style="display: none;">
             <small class="opacity70p">${escapeHtml(translate('Write output to these lorebook(s) instead of the chat-bound default. Multiple lorebooks receive identical content.', 'STMemoryBooks_OverrideWriteLorebooksHelp'))}</small>
-            <div id="stmb-sp-new-lb-override-list" style="max-height: 150px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor, #555); border-radius: 4px; padding: 6px; margin-top: 6px;">
+            <div id="stmb-sp-new-lb-override-list" style="max-height: 120px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor, #555); border-radius: 4px; padding: 4px 6px; margin-top: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
                 ${lorebookCheckboxesNew}
             </div>
         </div>
