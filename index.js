@@ -4848,7 +4848,8 @@ async function refreshPopupContent() {
     // Get current lorebook information
     const isManualMode = settings.moduleSettings.manualModeEnabled;
     const chatBoundLorebook = chat_metadata?.[METADATA_KEY] || null;
-    const manualLorebook = sceneMarkers?.manualLorebook || null;
+    const manualLorebookNames = resolveManualLorebookNames(sceneMarkers || {});
+    const manualLorebook = manualLorebookNames[0] || null;
 
     const templateData = {
       hasScene: !!sceneData,
@@ -4960,6 +4961,8 @@ async function refreshPopupContent() {
 
     // Repopulate profile buttons after content refresh
     populateInlineButtons();
+    // Update lorebook status display (reads resolveManualLorebookNames; must run after template render)
+    updateLorebookStatusDisplay();
   } catch (error) {
     console.error("STMemoryBooks: Error refreshing popup content:", error);
   }
