@@ -2,7 +2,7 @@ import { extension_settings } from '../../../extensions.js';
 import { chat, chat_metadata } from '../../../../script.js';
 import { METADATA_KEY, world_names } from '../../../world-info.js';
 import { getSceneMarkers, saveMetadataForCurrentContext, clearScene } from './sceneManager.js';
-import { getCurrentMemoryBooksContext, showLorebookSelectionPopup, clampInt } from './utils.js';
+import { getCurrentMemoryBooksContext, showLorebookSelectionPopup, resolveManualLorebookNames, clampInt } from './utils.js';
 import { autoCreateLorebook } from './autocreate.js';
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../../popup.js';
 import { isMemoryProcessing } from './index.js';
@@ -47,9 +47,10 @@ async function validateLorebookForAutoSummary() {
             }
         }
     } else {
-        // Manual mode - check if a lorebook is already selected
+        // Manual mode - check if any lorebooks are already selected
         const stmbData = getSceneMarkers() || {};
-        lorebookName = stmbData.manualLorebook ?? null;
+        const _mlNames = resolveManualLorebookNames(stmbData);
+        lorebookName = _mlNames[0] ?? null;
 
         // If no lorebook is selected, ask user what to do
         if (!lorebookName) {
@@ -79,7 +80,8 @@ async function validateLorebookForAutoSummary() {
                 // User wants to select a lorebook
                 const selectedLorebook = await showLorebookSelectionPopup();
                 if (selectedLorebook) {
-                    stmbData.manualLorebook = selectedLorebook;
+                    stmbData.manualLorebooks = [selectedLorebook];
+                    delete stmbData.manualLorebook; // migrate away from legacy format
                     saveMetadataForCurrentContext();
                     lorebookName = selectedLorebook;
                 } else {

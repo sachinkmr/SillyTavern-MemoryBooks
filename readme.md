@@ -236,15 +236,20 @@ Side Prompts can be used like trackers and will create entries in your memory lo
 - 🎯 Quest Progress ("What goals are active?")
 - 🌍 World State ("What's changed in the setting?")
 
-#### **Access:** From the Memory Books settings, click “🎡 Trackers & Side Prompts”.
+
+#### **Access:** From the Memory Books settings, click "🎡 Trackers & Side Prompts".
+
 #### **Features:**
+
 - View all side prompts.
 - Create new or duplicate prompts to experiment with different prompt styles.
 - Edit or delete any preset (including built-ins).
 - Export and import presets as JSON files for backup or sharing.
 - Run them manually or automatically with memory creation.
 - ⭐ **Per-side-prompt write lorebook override** – each side prompt can write its output to one or more lorebooks of your choice instead of (or in addition to) the chat-bound default. Select multiple lorebooks in the **Overrides** section of the edit dialog to mirror output to all of them simultaneously.
+
 #### **Usage Tips:**
+
 - When creating a new prompt, you can copy from built-ins for best compatibility.
 - Additional Side Prompts Template Library [JSON file](resources/SidePromptTemplateLibrary.json) - just import to use
 - To keep trackers and memories in separate lorebooks, enable the lorebook override on each side prompt and point it at a dedicated lorebook.

@@ -4,7 +4,7 @@ import { getRegexedString, regex_placement } from '../../../extensions/regex/eng
 import { METADATA_KEY, world_names, loadWorldInfo } from '../../../world-info.js';
 import { getSceneMarkers } from './sceneManager.js';
 import { createSceneRequest, compileScene, toReadableText } from './chatcompile.js';
-import { getCurrentApiInfo, getUIModelSettings, normalizeCompletionSource, resolveEffectiveConnectionFromProfile, clampInt } from './utils.js';
+import { getCurrentApiInfo, getUIModelSettings, normalizeCompletionSource, resolveEffectiveConnectionFromProfile, resolveManualLorebookNames, clampInt } from './utils.js';
 import { requestCompletion } from './stmemory.js';
 import { listByTrigger, findTemplateByName } from './sidePromptsManager.js';
 import { upsertLorebookEntryByTitle, upsertLorebookEntriesBatch, getEntryByTitle } from './addlore.js';
@@ -37,7 +37,8 @@ async function requireLorebookStrict() {
     // Manual mode uses per-chat manual selection in scene markers
     if (settings?.moduleSettings?.manualModeEnabled) {
         const stmbData = getSceneMarkers() || {};
-        lorebookName = stmbData.manualLorebook ?? null;
+        const _mlNames = resolveManualLorebookNames(stmbData);
+        lorebookName = _mlNames[0] ?? null;
     } else {
         // Chat-bound lorebook
         lorebookName = chat_metadata?.[METADATA_KEY] || null;
@@ -80,7 +81,7 @@ async function resolveLorebooksForTemplate(tpl, defaultLore) {
         return [defaultLore];
     }
 
-    const validNames = override.lorebookNames.filter(n => typeof n === 'string' && n.trim() && world_names?.includes(n));
+    const validNames = [...new Set(override.lorebookNames.filter(n => typeof n === 'string' && n.trim() && world_names?.includes(n)))];
     if (validNames.length === 0) {
         console.warn(`${MODULE_NAME}: lorebookOverride enabled for "${tpl.name}" but no valid lorebook names found; falling back to default.`);
         return [defaultLore];
@@ -676,42 +677,46 @@ export async function runAfterMemory(compiledScene, profile = null) {
             }
 
             if (items.length > 0) {
-                try {
-                    // Group items by target lorebook; items with multi-lorebook override appear in multiple groups
-                    const lorebookGroups = new Map();
-                    for (const item of items) {
-                        const targets = item._tplLores || [{ name: lore.name }];
-                        for (const target of targets) {
-                            if (!lorebookGroups.has(target.name)) lorebookGroups.set(target.name, []);
-                            lorebookGroups.get(target.name).push(item);
-                        }
+                // Group items by target lorebook; items with multi-lorebook override appear in multiple groups
+                const lorebookGroups = new Map();
+                for (const item of items) {
+                    const targets = item._tplLores || [{ name: lore.name }];
+                    for (const target of targets) {
+                        if (!lorebookGroups.has(target.name)) lorebookGroups.set(target.name, []);
+                        lorebookGroups.get(target.name).push(item);
                     }
-                    // Save each lorebook group, re-loading fresh data per lorebook
-                    for (const [lorebookName, groupItems] of lorebookGroups) {
+                }
+
+                // Save each lorebook group individually; failures are isolated per-lorebook
+                const failedItemTitles = new Set();
+                for (const [lorebookName, groupItems] of lorebookGroups) {
+                    try {
                         const fresh = await loadWorldInfo(lorebookName);
                         await upsertLorebookEntriesBatch(lorebookName, fresh, groupItems, { refreshEditor });
                         if (lorebookName === lore.name) lore.data = fresh;
-                    }
-
-                    // Only now count successes and toast per-template successes
-                    for (const name of succeededNames) {
-                        results.push({ name, ok: true });
-                        if (showNotifications) {
-                            toastr.success(__st_t_tag`SidePrompt "${name}" updated.`, 'STMemoryBooks');
+                    } catch (saveErr) {
+                        console.error(`${MODULE_NAME}: Wave save failed for lorebook "${lorebookName}":`, saveErr);
+                        toastr.error(translate('Failed to save SidePrompt updates for this wave', 'STMemoryBooks_Toast_FailedToSaveWave'), 'STMemoryBooks');
+                        for (const item of groupItems) {
+                            failedItemTitles.add(item.title);
+                            results.push({ name: item.title, ok: false, error: saveErr });
                         }
-                        console.log(`${MODULE_NAME}: SidePrompt success`, {
-                            trigger: 'onAfterMemory',
-                            name,
-                            saved: true,
-                        });
                     }
-                } catch (saveErr) {
-                    console.error(`${MODULE_NAME}: Wave save failed:`, saveErr);
-                    toastr.error(translate('Failed to save SidePrompt updates for this wave', 'STMemoryBooks_Toast_FailedToSaveWave'), 'STMemoryBooks');
-                    // Mark these as failed since they were not persisted
-                    for (const name of succeededNames) {
-                        results.push({ name, ok: false, error: saveErr });
+                }
+
+                // Count successes: skip items whose title appears in any failed lorebook group
+                for (const name of succeededNames) {
+                    const itemTitle = `${name} (STMB SidePrompt)`;
+                    if (failedItemTitles.has(itemTitle)) continue; // already pushed as failed above
+                    results.push({ name, ok: true });
+                    if (showNotifications) {
+                        toastr.success(__st_t_tag`SidePrompt "${name}" updated.`, 'STMemoryBooks');
                     }
+                    console.log(`${MODULE_NAME}: SidePrompt success`, {
+                        trigger: 'onAfterMemory',
+                        name,
+                        saved: true,
+                    });
                 }
             }
         }
