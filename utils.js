@@ -304,50 +304,88 @@ export function getCurrentMemoryBooksContext() {
 }
 
 /**
+ * Resolve the current list of manual lorebook names from stmbData.
+ * Supports both the new array format (manualLorebooks) and the legacy
+ * single-string format (manualLorebook) for backward compatibility.
+ * Filters out any names that no longer exist in world_names.
+ *
+ * @param {Object} stmbData - The scene markers / chat metadata object
+ * @returns {string[]} Array of valid lorebook names (may be empty)
+ */
+export function resolveManualLorebookNames(stmbData) {
+    // New array format
+    if (Array.isArray(stmbData?.manualLorebooks) && stmbData.manualLorebooks.length > 0) {
+        return [...new Set(stmbData.manualLorebooks.filter(n => typeof n === 'string' && n.trim() && world_names?.includes(n)))];
+    }
+    // Legacy single-string format
+    if (stmbData?.manualLorebook && typeof stmbData.manualLorebook === 'string') {
+        return world_names?.includes(stmbData.manualLorebook) ? [stmbData.manualLorebook] : [];
+    }
+    return [];
+}
+
+/**
+ * Build the scrollable multi-select checkbox list HTML for lorebook selection popups.
+ * @private
+ */
+function _buildLorebookCheckboxList(currentLorebooks = []) {
+    const currentSet = new Set(Array.isArray(currentLorebooks) ? currentLorebooks : (currentLorebooks ? [currentLorebooks] : []));
+    return world_names.map(n => {
+        const safe = n.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const checked = currentSet.has(n) ? ' checked' : '';
+        return `<label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 2px 0; white-space: nowrap; overflow: hidden; max-width: 100%;">
+            <input type="checkbox" name="stmb-manual-lb" value="${safe}"${checked} style="flex-shrink: 0;">
+            <span style="overflow: hidden; text-overflow: ellipsis;">${safe}</span>
+        </label>`;
+    }).join('');
+}
+
+/**
  * Determines which lorebook to use based on settings and chat metadata.
- * If in manual mode and no lorebook is set, it will trigger a selection popup.
+ * If in manual mode and no lorebook is set, it will trigger a multi-select popup.
  *
- * Note: This function only shows the selection popup when NO manual lorebook is currently set.
- * If a manual lorebook already exists, it returns that lorebook without prompting.
- * For "change" operations that should always show a selection popup, use showLorebookSelectionPopup() instead.
+ * Returns the FIRST (primary) lorebook name — suitable for read operations such as
+ * fetching previous summaries. For write operations that should target all selected
+ * lorebooks, use getEffectiveLorebookNames() instead.
  *
- * @returns {Promise<string|null>} The name of the effective lorebook, or null if none is available/selected.
+ * @returns {Promise<string|null>} The primary lorebook name, or null if none available/selected.
  */
 export async function getEffectiveLorebookName() {
     const settings = extension_settings.STMemoryBooks;
-    
+
     // If manual mode is OFF, use the default chat-bound lorebook
     if (!settings.moduleSettings.manualModeEnabled) {
         return chat_metadata?.[METADATA_KEY] || null;
     }
 
-    // Manual mode is ON. Check if a manual lorebook has already been designated for this chat.
-    const stmbData = getSceneMarkers(); // This function already gets the right metadata object
-    if (stmbData.manualLorebook ?? null) {
-        // Ensure the designated lorebook still exists
-        if (world_names.includes(stmbData.manualLorebook)) {
-            return stmbData.manualLorebook;
-        } else {
-            toastr.error(`The designated manual lorebook "${stmbData.manualLorebook}" no longer exists. Please select a new one.`);
-            delete stmbData.manualLorebook; // Clear the invalid entry
-        }
+    // Manual mode is ON. Check if lorebooks are already designated for this chat.
+    const stmbData = getSceneMarkers();
+    const names = resolveManualLorebookNames(stmbData);
+    if (names.length > 0) {
+        return names[0]; // Return primary lorebook for read ops
     }
 
-    // No manual lorebook is set. We need to ask the user.
-    const lorebookOptions = world_names.map(name => `<option value="${name}">${name}</option>`).join('');
-    
-    if (lorebookOptions.length === 0) {
+    // Clear any stale/deleted lorebook references
+    if (stmbData.manualLorebook || Array.isArray(stmbData.manualLorebooks)) {
+        toastr.error('Previously selected lorebook(s) no longer exist. Please select new ones.', 'STMemoryBooks');
+        delete stmbData.manualLorebook;
+        delete stmbData.manualLorebooks;
+    }
+
+    // No lorebook set — ask the user via multi-select checkbox popup
+    if (!world_names || world_names.length === 0) {
         toastr.error('No lorebooks found to select from.', 'STMemoryBooks');
         return null;
     }
 
+    const checkboxList = _buildLorebookCheckboxList([]);
     const popupContent = `
-        <h4>Select a Memory Book</h4>
+        <h4>Select Memory Lorebook(s)</h4>
         <div class="world_entry_form_control">
-            <p>Manual mode is enabled, but no lorebook has been designated for this chat's memories. Please select one.</p>
-            <select id="stmb-manual-lorebook-select" class="text_pole">
-                ${lorebookOptions}
-            </select>
+            <p>Manual mode is enabled. Select which lorebook(s) should receive memories for this chat.</p>
+            <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor,#aaa); border-radius: 4px; padding: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
+                ${checkboxList}
+            </div>
         </div>
     `;
 
@@ -355,47 +393,69 @@ export async function getEffectiveLorebookName() {
     const result = await popup.show();
 
     if (result === POPUP_RESULT.AFFIRMATIVE) {
-        const selectedLorebook = popup.dlg.querySelector('#stmb-manual-lorebook-select').value;
-        
-        // Save the selection to the chat's metadata
-        stmbData.manualLorebook = selectedLorebook;
-        saveMetadataForCurrentContext(); // Use the existing function from sceneManager to save correctly for groups/single chats
-        
-        toastr.success(`"${selectedLorebook}" is now the Memory Book for this chat.`, 'STMemoryBooks');
-        return selectedLorebook;
+        const checked = [...popup.dlg.querySelectorAll('input[name="stmb-manual-lb"]:checked')].map(el => el.value);
+        if (checked.length === 0) {
+            toastr.warning('No lorebook selected.', 'STMemoryBooks');
+            return null;
+        }
+        stmbData.manualLorebooks = checked;
+        delete stmbData.manualLorebook; // migrate away from legacy format
+        saveMetadataForCurrentContext();
+        toastr.success(`Memory lorebook(s) set: ${checked.join(', ')}`, 'STMemoryBooks');
+        return checked[0];
     }
 
-    // User cancelled the selection
     return null;
 }
 
 /**
- * Always shows a lorebook selection popup, regardless of current manual lorebook state.
- * This function is intended for "change" operations where the user explicitly wants to select a different lorebook.
+ * Returns ALL lorebook names selected for the current chat in manual mode.
+ * In automatic mode, returns a single-element array with the chat-bound lorebook (or []).
+ * Use this for write operations that should mirror the memory to every selected lorebook.
  *
- * @param {string} currentLorebook - The currently selected lorebook (optional, for display purposes)
- * @returns {Promise<string|null>} The name of the selected lorebook, or null if cancelled/no selection made.
+ * @returns {Promise<string[]>} Array of lorebook names (may be empty)
  */
-export async function showLorebookSelectionPopup(currentLorebook = null) {
-    // Check if lorebooks are available
-    if (world_names.length === 0) {
+export async function getEffectiveLorebookNames() {
+    const settings = extension_settings.STMemoryBooks;
+    if (!settings.moduleSettings.manualModeEnabled) {
+        const name = chat_metadata?.[METADATA_KEY] || null;
+        return name ? [name] : [];
+    }
+    const stmbData = getSceneMarkers();
+    return resolveManualLorebookNames(stmbData);
+}
+
+/**
+ * Always shows a multi-select lorebook selection popup, regardless of current state.
+ * Intended for "change" operations where the user explicitly wants to update the selection.
+ *
+ * @param {string[]|string|null} currentLorebooks - Currently selected lorebook(s) (pre-checks them)
+ * @returns {Promise<string|null>} The first selected lorebook name, or null if cancelled/none chosen.
+ */
+export async function showLorebookSelectionPopup(currentLorebooks = []) {
+    // Normalise to array
+    const currentArr = Array.isArray(currentLorebooks)
+        ? currentLorebooks
+        : (currentLorebooks ? [currentLorebooks] : []);
+
+    if (!world_names || world_names.length === 0) {
         toastr.error('No lorebooks found to select from.', 'STMemoryBooks');
         return null;
     }
 
-    const lorebookOptions = world_names.map(name => {
-        const selected = name === currentLorebook ? ' selected' : '';
-        return `<option value="${name}"${selected}>${name}</option>`;
-    }).join('');
+    const checkboxList = _buildLorebookCheckboxList(currentArr);
+    const currentSummary = currentArr.length > 0
+        ? `<p><strong>Current:</strong> ${currentArr.map(n => n.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')).join(', ')}</p>`
+        : '';
 
     const popupContent = `
-        <h4>Select a Memory Book</h4>
+        <h4>Select Memory Lorebook(s)</h4>
         <div class="world_entry_form_control">
-            <p>Choose which lorebook should be used for this chat's memories.</p>
-            ${currentLorebook ? `<p><strong>Current:</strong> ${currentLorebook}</p>` : ''}
-            <select id="stmb-manual-lorebook-select" class="text_pole">
-                ${lorebookOptions}
-            </select>
+            <p>Choose which lorebook(s) should receive memories for this chat.</p>
+            ${currentSummary}
+            <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--SmartThemeBorderColor,#aaa); border-radius: 4px; padding: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
+                ${checkboxList}
+            </div>
         </div>
     `;
 
@@ -403,23 +463,21 @@ export async function showLorebookSelectionPopup(currentLorebook = null) {
     const result = await popup.show();
 
     if (result === POPUP_RESULT.AFFIRMATIVE) {
-        const selectedLorebook = popup.dlg.querySelector('#stmb-manual-lorebook-select').value;
-
-        // Only save and show success if a different lorebook was actually selected
-        if (selectedLorebook !== currentLorebook) {
-            const stmbData = getSceneMarkers();
-            stmbData.manualLorebook = selectedLorebook;
-            saveMetadataForCurrentContext();
-
-            toastr.success(`Manual lorebook changed to: ${selectedLorebook}`, 'STMemoryBooks');
-            return selectedLorebook;
-        } else {
-            // Same lorebook selected, no need to save or show success
-            return selectedLorebook;
+        const checked = [...popup.dlg.querySelectorAll('input[name="stmb-manual-lb"]:checked')].map(el => el.value);
+        if (checked.length === 0) {
+            toastr.warning('No lorebook selected.', 'STMemoryBooks');
+            return null;
         }
+
+        const stmbData = getSceneMarkers();
+        stmbData.manualLorebooks = checked;
+        delete stmbData.manualLorebook; // migrate/clear legacy key
+        saveMetadataForCurrentContext();
+
+        toastr.success(`Manual lorebook(s) set: ${checked.join(', ')}`, 'STMemoryBooks');
+        return checked[0]; // return primary for backward-compatible callers
     }
 
-    // User cancelled the selection
     return null;
 }
 

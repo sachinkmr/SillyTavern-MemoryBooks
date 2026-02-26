@@ -86,7 +86,9 @@ import {
   SELECTORS,
   getCurrentMemoryBooksContext,
   getEffectiveLorebookName,
+  getEffectiveLorebookNames,
   showLorebookSelectionPopup,
+  resolveManualLorebookNames,
   readIntInput,
   clampInt,
   createStmbInFlightTask,
@@ -1469,7 +1471,10 @@ function isRetryableError(error) {
 }
 
 /**
- * Execute the core memory generation process - now with retry logic and BULLETPROOF settings restoration
+ * Parse a scene-range string like "10-25" into { start, end } integers.
+ * Returns null if the string is missing or malformed.
+ * @param {string|undefined} rangeStr
+ * @returns {{ start: number, end: number }|null}
  */
 function sleepWithAbort(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -1494,6 +1499,29 @@ function sleepWithAbort(ms, signal) {
   });
 }
 
+function _parseSceneRangeStr(rangeStr) {
+  if (!rangeStr || typeof rangeStr !== 'string') return null;
+  const m = rangeStr.match(/^(\d+)[^\d]+(\d+)$/);
+  if (!m) return null;
+  return { start: parseInt(m[1], 10), end: parseInt(m[2], 10) };
+}
+
+/**
+ * Returns true if lorebookData already contains a memory entry whose
+ * STMB_start/STMB_end matches the given range. Used to avoid duplicating
+ * mirror writes when a lorebook was previously a primary target.
+ * @param {Object} lorebookData
+ * @param {{ start: number, end: number }|null} range
+ * @returns {boolean}
+ */
+function _lorebookHasEntryForRange(lorebookData, range) {
+  if (!range || !lorebookData) return false;
+  const memEntries = identifyMemoryEntries(lorebookData);
+  return memEntries.some(m => {
+    const r = getRangeFromMemoryEntry(m.entry);
+    return r && r.start === range.start && r.end === range.end;
+  });
+}
 async function executeMemoryGeneration(
   sceneData,
   lorebookValidation,
@@ -1775,7 +1803,28 @@ async function executeMemoryGeneration(
       throw new Error(addResult.error || "Failed to add memory to lorebook");
     }
 
-    // Run side prompts that are enabled to run with memories
+    // Mirror to additional lorebooks if multi-lorebook manual mode is active
+    try {
+      const _sceneRange = _parseSceneRangeStr(finalMemoryResult?.metadata?.sceneRange);
+      const _allLoreNames = await getEffectiveLorebookNames();
+      const _extraLoreNames = _allLoreNames.filter(n => n !== lorebookValidation.name);
+      for (const extraName of _extraLoreNames) {
+        try {
+          const extraData = await loadWorldInfo(extraName);
+          if (extraData) {
+            if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
+              console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
+            } else {
+              await addMemoryToLorebook(finalMemoryResult, { valid: true, data: extraData, name: extraName });
+            }
+          }
+        } catch (e) {
+          console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
+        }
+      }
+    } catch (e) {
+      console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
+    }
     try {
       const connDbg =
         profileSettings?.effectiveConnection ||
@@ -2132,14 +2181,21 @@ function updateLorebookStatusDisplay() {
   // Update active lorebook display
   const activeLorebookSpan = document.querySelector("#stmb-active-lorebook");
   if (activeLorebookSpan) {
-    const currentLorebook = isManualMode
-      ? stmbData.manualLorebook
-      : chat_metadata?.[METADATA_KEY];
+    const currentLorebooks = isManualMode
+      ? resolveManualLorebookNames(stmbData)
+      : (chat_metadata?.[METADATA_KEY] ? [chat_metadata[METADATA_KEY]] : []);
 
-    activeLorebookSpan.textContent =
-      currentLorebook ||
-      translate("None selected", "STMemoryBooks_NoneSelected");
-    activeLorebookSpan.className = currentLorebook ? "" : "opacity50p";
+    const lorebookDisplayText = currentLorebooks.length > 1
+      ? `${currentLorebooks[0]} (+${currentLorebooks.length - 1} more)`
+      : (currentLorebooks[0] || translate("None selected", "STMemoryBooks_NoneSelected"));
+
+    activeLorebookSpan.textContent = lorebookDisplayText;
+    activeLorebookSpan.className = currentLorebooks.length > 0 ? "" : "opacity50p";
+    if (currentLorebooks.length > 1) {
+      activeLorebookSpan.title = currentLorebooks.join('\n');
+    } else {
+      activeLorebookSpan.removeAttribute('title');
+    }
   }
 
   // Manual lorebook buttons are now handled by populateInlineButtons()
@@ -2219,7 +2275,8 @@ function populateInlineButtons() {
 
   // Populate manual lorebook buttons if container exists and manual mode is enabled
   if (manualLorebookContainer && settings.moduleSettings.manualModeEnabled) {
-    const hasManualLorebook = stmbData.manualLorebook ?? null;
+    const currentManualLorebooks = resolveManualLorebookNames(stmbData);
+    const hasManualLorebook = currentManualLorebooks.length > 0;
 
     const manualLorebookButtons = [
       {
@@ -2229,9 +2286,9 @@ function populateInlineButtons() {
         id: "stmb-select-manual-lorebook",
         action: async () => {
           try {
-            // Use the dedicated selection popup that always shows options
+            // Use the dedicated multi-select popup
             const selectedLorebook = await showLorebookSelectionPopup(
-              hasManualLorebook ? stmbData.manualLorebook : null,
+              currentManualLorebooks,
             );
             if (selectedLorebook) {
               // Refresh the popup content to reflect the new selection
@@ -2254,7 +2311,7 @@ function populateInlineButtons() {
       },
     ];
 
-    // Add clear button if manual lorebook is set
+    // Add clear button if any manual lorebook(s) are set
     if (hasManualLorebook) {
       manualLorebookButtons.push({
         text:
@@ -2267,7 +2324,8 @@ function populateInlineButtons() {
         action: () => {
           try {
             const stmbData = getSceneMarkers() || {};
-            delete stmbData.manualLorebook;
+            delete stmbData.manualLorebooks;
+            delete stmbData.manualLorebook; // also clear legacy key
             saveMetadataForCurrentContext();
 
             // Refresh the popup content
@@ -5641,6 +5699,30 @@ async function applyManualFixedJson(correctedRaw) {
     if (!addResult.success) {
       throw new Error(addResult.error || "Failed to add memory to lorebook");
     }
+
+    // Mirror to additional lorebooks if multi-lorebook manual mode is active
+    try {
+      const _sceneRange = _parseSceneRangeStr(memoryResult?.metadata?.sceneRange);
+      const _allLoreNames = await getEffectiveLorebookNames();
+      const _extraLoreNames = _allLoreNames.filter(n => n !== context.lorebookValidation?.name);
+      for (const extraName of _extraLoreNames) {
+        try {
+          const extraData = await loadWorldInfo(extraName);
+          if (extraData) {
+            if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
+              console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
+            } else {
+              await addMemoryToLorebook(memoryResult, { valid: true, data: extraData, name: extraName });
+            }
+          }
+        } catch (e) {
+          console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
+        }
+      }
+    } catch (e) {
+      console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
+    }
+    throwIfStmbStopped(runEpoch);
 
     try {
       const connDbg = profile.effectiveConnection || profile.connection || {};
