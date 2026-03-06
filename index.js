@@ -3669,6 +3669,11 @@ async function showArcConsolidationPopup() {
     const presets = await ArcPrompts.listPresets();
     const defaultPresetKey = "arc_default";
 
+    // Get current chat context for chat-filter toggle
+    const arcContext = getCurrentMemoryBooksContext();
+    const currentChatId = arcContext.chatId || null;
+    const isGroupChatForArc = arcContext.isGroupChat || false;
+
     // Defaults from settings
     const settings = initializeSettings();
     const tokenThreshold = settings?.moduleSettings?.tokenWarningThreshold ?? 30000;
@@ -3744,6 +3749,16 @@ async function showArcConsolidationPopup() {
       content += '</div>';
     }
 
+    // Chat filter toggle (only shown when at least one candidate has a chatId)
+    const hasChatIdData = candidates.some(e => e.STMB_chatId);
+    if (hasChatIdData) {
+      content += '<div class="world_entry_form_control">';
+      content += `<label class="checkbox_label"><input id="stmb-arc-chat-filter" type="checkbox"${
+        isGroupChatForArc ? ' checked' : ''
+      } /> <span>${escapeHtml(translate("Only show memories from current chat", "STMemoryBooks_Arc_ChatFilter"))}</span></label>`;
+      content += '</div>';
+    }
+
     // Entries checklist
     content += `<div class="world_entry_form_control"><div class="flex-container flexGap10 marginBot5">`;
     content += `<button id="stmb-arc-select-all" class="menu_button">${escapeHtml(translate("Select All", "STMemoryBooks_SelectAll"))}</button>`;
@@ -3754,7 +3769,8 @@ async function showArcConsolidationPopup() {
       const title = e.comment || "(untitled)";
       const uid = String(e.uid);
       const ord = parseOrder(title);
-      content += `<label class="flex-container flexGap10" style="align-items:center; margin:2px 0;"><input type="checkbox" class="stmb-arc-item" value="${escapeHtml(uid)}" checked /> <span class="opacity70p">[${String(ord).padStart(3, "0")}]</span> <span>${escapeHtml(title)}</span></label>`;
+      const entryChatId = e.STMB_chatId ? escapeHtml(e.STMB_chatId) : '';
+      content += `<label class="flex-container flexGap10" style="align-items:center; margin:2px 0;" data-stmb-chatid="${entryChatId}"><input type="checkbox" class="stmb-arc-item" value="${escapeHtml(uid)}" checked /> <span class="opacity70p">[${String(ord).padStart(3, "0")}]</span> <span>${escapeHtml(title)}</span></label>`;
     }
     content += `</div>`;
     content += `<small class="opacity70p">${escapeHtml(translate("Tip: uncheck memories that should not be included.", "STMemoryBooks_ConsolidateArcs_Tip"))}</small>`;
@@ -3791,6 +3807,17 @@ async function showArcConsolidationPopup() {
           .querySelectorAll(".stmb-arc-item")
           .forEach((cb) => (cb.checked = false));
       });
+
+    // Chat filter toggle handler
+    const applyChatFilter = () => {
+      const filterOn = !!dlg.querySelector('#stmb-arc-chat-filter')?.checked;
+      dlg.querySelectorAll('#stmb-arc-list label[data-stmb-chatid]').forEach(label => {
+        const entryChat = label.dataset.stmbChatid;
+        label.style.display = filterOn && entryChat !== currentChatId ? 'none' : '';
+      });
+    };
+    dlg.querySelector('#stmb-arc-chat-filter')?.addEventListener('change', applyChatFilter);
+    applyChatFilter(); // apply immediately on open
 
     // Arc order mode visibility
     const syncArcOrderVisibility = () => {
@@ -3884,9 +3911,13 @@ async function showArcConsolidationPopup() {
     const res = await popup.show();
     if (res !== POPUP_RESULT.AFFIRMATIVE) return;
 
-    // Gather selections
+    // Gather selections (exclude entries hidden by the chat-filter toggle)
     const selected = Array.from(dlg.querySelectorAll(".stmb-arc-item"))
-      .filter((cb) => cb.checked)
+      .filter((cb) => {
+        if (!cb.checked) return false;
+        const parentLabel = cb.closest('label');
+        return !parentLabel || parentLabel.style.display !== 'none';
+      })
       .map((cb) => cb.value);
     if (selected.length === 0) {
       toastr.error(
