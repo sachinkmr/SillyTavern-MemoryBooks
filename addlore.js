@@ -374,6 +374,9 @@ function populateLorebookEntry(entry, memoryResult, entryTitle, lorebookSettings
             entry.STMB_end = parseInt(rangeParts[1], 10);
         }
     }
+    if (memoryResult.metadata?.chatId) { // Tag entry with the chat it belongs to
+        entry.STMB_chatId = memoryResult.metadata.chatId;
+    }
     
 }
 
