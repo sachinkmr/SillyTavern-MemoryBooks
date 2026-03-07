@@ -490,6 +490,32 @@ function cleanupChatObserver() {
   }
 }
 
+/**
+ * Detect and clear a stale highestMemoryProcessed value that is larger than
+ * the current chat. This can happen when a chat-switch race condition wrote
+ * the previous chat's sceneEnd into this chat's metadata.
+ */
+function sanitizeHighestMemoryProcessed() {
+  try {
+    const stmbData = getSceneMarkers();
+    if (!stmbData) return;
+    const highest = stmbData.highestMemoryProcessed;
+    if (!Number.isFinite(highest)) return;
+    // chat is 0-indexed; last valid message index is chat.length - 1
+    const lastIndex = chat.length - 1;
+    if (highest > lastIndex) {
+      console.warn(
+        `STMemoryBooks: highestMemoryProcessed (${highest}) exceeds chat length (${chat.length}). Clearing stale value.`,
+      );
+      delete stmbData.highestMemoryProcessed;
+      delete stmbData.highestMemoryProcessedManuallySet;
+      saveMetadataForCurrentContext();
+    }
+  } catch (e) {
+    console.warn("STMemoryBooks: sanitizeHighestMemoryProcessed failed:", e);
+  }
+}
+
 function handleChatChanged() {
   console.log(
     translate(
@@ -499,6 +525,7 @@ function handleChatChanged() {
   );
   updateSceneStateCache();
   validateAndCleanupSceneMarkers();
+  sanitizeHighestMemoryProcessed();
 
   setTimeout(() => {
     try {
