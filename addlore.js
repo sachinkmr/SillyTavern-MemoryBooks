@@ -122,6 +122,16 @@ export async function addMemoryToLorebook(memoryResult, lorebookValidation, opti
             throw new Error(i18n('addlore.errors.invalidLorebookValidation', 'Invalid lorebook validation data'));
         }
 
+        // Guard against race condition: if the user switched chats/characters during the
+        // async AI call, abort the lorebook write entirely to avoid corrupting the wrong chat.
+        if (options?.expectedChatId != null) {
+            const currentChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+            if (currentChatId !== options.expectedChatId) {
+                console.warn(`${MODULE_NAME}: Chat changed before lorebook write (was "${options.expectedChatId}", now "${currentChatId}"). Aborting write.`);
+                return { success: false, chatChanged: true, error: 'Chat changed during memory generation; lorebook write aborted.' };
+            }
+        }
+
         const settings = extension_settings.STMemoryBooks || {};
         let titleFormat = memoryResult.titleFormat;
         if (!titleFormat) {
