@@ -10,6 +10,7 @@ import { extension_settings } from '../../../extensions.js';
 import { moment } from '../../../../lib.js';
 import { executeSlashCommands } from '../../../slash-commands.js';
 import { getSceneMarkers, saveMetadataForCurrentContext } from './sceneManager.js';
+import { getCurrentMemoryBooksContext } from './utils.js';
 import { translate } from '../../../i18n.js';
 
 const MODULE_NAME = 'STMemoryBooks-AddLore';
@@ -123,7 +124,7 @@ const DEFAULT_TITLE_FORMATS = [
  * @param {string} lorebookValidation.name - Lorebook name
  * @returns {Promise<Object>} Result object with success status and details
  */
-export async function addMemoryToLorebook(memoryResult, lorebookValidation) {
+export async function addMemoryToLorebook(memoryResult, lorebookValidation, options = {}) {
 
     try {
         if (!memoryResult?.content) {
@@ -231,7 +232,7 @@ export async function addMemoryToLorebook(memoryResult, lorebookValidation) {
             }
         }
         // Update highest memory processed tracking
-        updateHighestMemoryProcessed(memoryResult);
+        updateHighestMemoryProcessed(memoryResult, options?.expectedChatId ?? null);
 
         return {
             success: true,
@@ -884,9 +885,19 @@ export async function getLorebookStats() {
  * Update the highest memory processed tracking for the current chat
  * @param {Object} memoryResult - The memory result containing metadata
  */
-function updateHighestMemoryProcessed(memoryResult) {
+function updateHighestMemoryProcessed(memoryResult, expectedChatId = null) {
     try {
         console.log(i18n('addlore.log.updateHighestCalled', `${MODULE_NAME}: updateHighestMemoryProcessed called with:`), memoryResult);
+
+        // Guard against race condition: if user switched chats during async AI generation,
+        // skip the write to avoid poisoning the new chat's metadata.
+        if (expectedChatId !== null) {
+            const currentChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+            if (currentChatId !== expectedChatId) {
+                console.warn(`${MODULE_NAME}: Chat changed during memory generation (was "${expectedChatId}", now "${currentChatId}"). Skipping highestMemoryProcessed update.`);
+                return;
+            }
+        }
 
         // Extract the end message number from the scene range
         const sceneRange = memoryResult.metadata?.sceneRange;

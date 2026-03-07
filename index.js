@@ -1429,6 +1429,8 @@ async function executeMemoryGeneration(
   effectiveSettings,
   retryCount = 0,
 ) {
+  // Capture chat identity up front so we can guard metadata writes after async AI calls.
+  const startChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
   const { profileSettings, summaryCount, tokenThreshold, settings } =
     effectiveSettings;
   currentProfile = profileSettings;
@@ -1687,6 +1689,7 @@ async function executeMemoryGeneration(
     const addResult = await addMemoryToLorebook(
       finalMemoryResult,
       lorebookValidation,
+      { expectedChatId: startChatId },
     );
 
     if (!addResult.success) {
@@ -1732,10 +1735,15 @@ async function executeMemoryGeneration(
 
     // Update auto-summary baseline so the next trigger starts after this scene
     try {
-      const stmbData = getSceneMarkers() || {};
-      stmbData.highestMemoryProcessed = sceneData.sceneEnd;
-      delete stmbData.highestMemoryProcessedManuallySet;
-      saveMetadataForCurrentContext();
+      const currentChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+      if (startChatId !== null && currentChatId !== startChatId) {
+        console.warn(`STMemoryBooks: Chat changed during memory generation (was "${startChatId}", now "${currentChatId}"). Skipping highestMemoryProcessed update.`);
+      } else {
+        const stmbData = getSceneMarkers() || {};
+        stmbData.highestMemoryProcessed = sceneData.sceneEnd;
+        delete stmbData.highestMemoryProcessedManuallySet;
+        saveMetadataForCurrentContext();
+      }
     } catch (e) {
       console.warn(
         "STMemoryBooks: Failed to update highestMemoryProcessed baseline:",
@@ -5372,6 +5380,8 @@ async function applyManualFixedJson(correctedRaw) {
     // even if an error/exception occurs before the try body completes. The trade-off is a very
     // small window between the initial guard and this assignment where a race could occur.
     isProcessingMemory = true;
+    // Capture chat identity so we can guard metadata writes after async lorebook operations.
+    const startChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
     const context = lastFailedAIContext; 
     if (
       !context?.compiledScene ||
@@ -5526,6 +5536,7 @@ async function applyManualFixedJson(correctedRaw) {
   const addResult = await addMemoryToLorebook(
     memoryResult,
     context.lorebookValidation,
+    { expectedChatId: startChatId },
   );
 
   if (!addResult.success) {
@@ -5568,10 +5579,15 @@ async function applyManualFixedJson(correctedRaw) {
   }
 
   try {
-    const stmbData = getSceneMarkers() || {};
-    stmbData.highestMemoryProcessed = context.sceneData.sceneEnd;
-    delete stmbData.highestMemoryProcessedManuallySet;
-    saveMetadataForCurrentContext();
+    const currentChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+    if (startChatId !== null && currentChatId !== startChatId) {
+      console.warn(`STMemoryBooks: Chat changed during manual JSON fix (was "${startChatId}", now "${currentChatId}"). Skipping highestMemoryProcessed update.`);
+    } else {
+      const stmbData = getSceneMarkers() || {};
+      stmbData.highestMemoryProcessed = context.sceneData.sceneEnd;
+      delete stmbData.highestMemoryProcessedManuallySet;
+      saveMetadataForCurrentContext();
+    }
   } catch (e) {
     console.warn(
       "STMemoryBooks: Failed to update highestMemoryProcessed baseline:",
