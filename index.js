@@ -1455,9 +1455,11 @@ async function executeMemoryGeneration(
   lorebookValidation,
   effectiveSettings,
   retryCount = 0,
+  chatIdAtStart = null,
 ) {
-  // Capture chat identity up front so we can guard metadata writes after async AI calls.
-  const startChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+  // Use the chat identity captured by the caller (before any popups/async waits),
+  // falling back to current chat if not provided.
+  const startChatId = chatIdAtStart ?? getCurrentMemoryBooksContext()?.chatId ?? null;
   const { profileSettings, summaryCount, tokenThreshold, settings } =
     effectiveSettings;
   currentProfile = profileSettings;
@@ -1663,6 +1665,7 @@ async function executeMemoryGeneration(
           lorebookValidation,
           effectiveSettings,
           nextRetryCount,
+          startChatId,
         );
       }
 
@@ -1720,26 +1723,43 @@ async function executeMemoryGeneration(
     );
 
     if (!addResult.success) {
+      if (addResult.chatChanged) {
+        // Chat switched during generation — lorebook write was intentionally aborted.
+        // Show a non-error notice and exit cleanly.
+        toastr.warning(
+          translate(
+            "Chat changed during memory generation — memory was not saved to avoid writing to the wrong character.",
+            "STMemoryBooks_ChatChangedAbort",
+          ),
+          "STMemoryBooks",
+        );
+        return;
+      }
       throw new Error(addResult.error || "Failed to add memory to lorebook");
     }
 
     // Mirror to additional lorebooks if multi-lorebook manual mode is active
     try {
-      const _sceneRange = _parseSceneRangeStr(finalMemoryResult?.metadata?.sceneRange);
-      const _allLoreNames = await getEffectiveLorebookNames();
-      const _extraLoreNames = _allLoreNames.filter(n => n !== lorebookValidation.name);
-      for (const extraName of _extraLoreNames) {
-        try {
-          const extraData = await loadWorldInfo(extraName);
-          if (extraData) {
-            if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
-              console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
-            } else {
-              await addMemoryToLorebook(finalMemoryResult, { valid: true, data: extraData, name: extraName });
+      const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+      if (startChatId !== null && _mirrorChatId !== startChatId) {
+        console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
+      } else {
+        const _sceneRange = _parseSceneRangeStr(finalMemoryResult?.metadata?.sceneRange);
+        const _allLoreNames = await getEffectiveLorebookNames();
+        const _extraLoreNames = _allLoreNames.filter(n => n !== lorebookValidation.name);
+        for (const extraName of _extraLoreNames) {
+          try {
+            const extraData = await loadWorldInfo(extraName);
+            if (extraData) {
+              if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
+                console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
+              } else {
+                await addMemoryToLorebook(finalMemoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
+              }
             }
+          } catch (e) {
+            console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
           }
-        } catch (e) {
-          console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
         }
       }
     } catch (e) {
@@ -1825,6 +1845,7 @@ async function executeMemoryGeneration(
         lorebookValidation,
         effectiveSettings,
         retryCount + 1,
+        startChatId,
       );
     }
 
@@ -1857,6 +1878,7 @@ async function executeMemoryGeneration(
         settings,
         summaryCount,
         tokenThreshold,
+        chatId: startChatId,
         sceneRange:
           compiledScene?.metadata?.sceneStart !== undefined
             ? `${compiledScene.metadata.sceneStart}-${compiledScene.metadata.sceneEnd}`
@@ -1897,6 +1919,10 @@ async function executeMemoryGeneration(
 }
 
 async function initiateMemoryCreation(selectedProfileIndex = null) {
+  // Capture chat identity NOW — before any async popup or validation — so the guard
+  // in executeMemoryGeneration can detect a switch that happened during the popup.
+  const chatIdAtStart = getCurrentMemoryBooksContext()?.chatId ?? null;
+
   // Early validation checks (no flag set yet) - GROUP CHAT COMPATIBLE
   const context = getCurrentMemoryBooksContext();
 
@@ -2038,6 +2064,8 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
       sceneData,
       lorebookValidation,
       effectiveSettings,
+      0,
+      chatIdAtStart,
     );
   } catch (error) {
     console.error(
@@ -5407,9 +5435,21 @@ async function applyManualFixedJson(correctedRaw) {
     // even if an error/exception occurs before the try body completes. The trade-off is a very
     // small window between the initial guard and this assignment where a race could occur.
     isProcessingMemory = true;
-    // Capture chat identity so we can guard metadata writes after async lorebook operations.
+    // Capture current chat identity.
     const startChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
-    const context = lastFailedAIContext; 
+    const context = lastFailedAIContext;
+    // Detect stale context: if the user switched chats after the original failure, the
+    // lorebookValidation and compiledScene belong to a different character.
+    if (context?.chatId && startChatId !== null && startChatId !== context.chatId) {
+      toastr.warning(
+        translate(
+          "The chat where the memory failed is no longer active. Switch back to apply the fix.",
+          "STMemoryBooks_ManualFix_WrongChat",
+        ),
+        "STMemoryBooks",
+      );
+      return;
+    }
     if (
       !context?.compiledScene ||
       !context?.profileSettings ||
@@ -5567,26 +5607,41 @@ async function applyManualFixedJson(correctedRaw) {
   );
 
   if (!addResult.success) {
+    if (addResult.chatChanged) {
+      toastr.warning(
+        translate(
+          "Chat changed during memory generation — memory was not saved to avoid writing to the wrong character.",
+          "STMemoryBooks_ChatChangedAbort",
+        ),
+        "STMemoryBooks",
+      );
+      return;
+    }
     throw new Error(addResult.error || "Failed to add memory to lorebook");
   }
 
   // Mirror to additional lorebooks if multi-lorebook manual mode is active
   try {
-    const _sceneRange = _parseSceneRangeStr(memoryResult?.metadata?.sceneRange);
-    const _allLoreNames = await getEffectiveLorebookNames();
-    const _extraLoreNames = _allLoreNames.filter(n => n !== context.lorebookValidation?.name);
-    for (const extraName of _extraLoreNames) {
-      try {
-        const extraData = await loadWorldInfo(extraName);
-        if (extraData) {
-          if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
-            console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
-          } else {
-            await addMemoryToLorebook(memoryResult, { valid: true, data: extraData, name: extraName });
+    const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+    if (startChatId !== null && _mirrorChatId !== startChatId) {
+      console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
+    } else {
+      const _sceneRange = _parseSceneRangeStr(memoryResult?.metadata?.sceneRange);
+      const _allLoreNames = await getEffectiveLorebookNames();
+      const _extraLoreNames = _allLoreNames.filter(n => n !== context.lorebookValidation?.name);
+      for (const extraName of _extraLoreNames) {
+        try {
+          const extraData = await loadWorldInfo(extraName);
+          if (extraData) {
+            if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
+              console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
+            } else {
+              await addMemoryToLorebook(memoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
+            }
           }
+        } catch (e) {
+          console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
         }
-      } catch (e) {
-        console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
       }
     }
   } catch (e) {
