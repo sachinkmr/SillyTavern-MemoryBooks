@@ -798,6 +798,7 @@ export async function runSidePrompt(args) {
             try {
                 compiled = compileRange(start, end);
             } catch (err) {
+                console.error(`${MODULE_NAME}: compileRange(${start}, ${end}) failed:`, err);
                 toastr.error(translate('Failed to compile the specified range', 'STMemoryBooks_Toast_FailedToCompileRange'), 'STMemoryBooks');
                 return '';
             }
@@ -826,6 +827,7 @@ export async function runSidePrompt(args) {
             try {
                 compiled = compileRange(boundedStart, currentLast);
             } catch (err) {
+                console.error(`${MODULE_NAME}: compileRange(${boundedStart}, ${currentLast}) failed:`, err);
                 toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
                 return '';
             }
