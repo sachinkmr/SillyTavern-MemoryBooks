@@ -539,7 +539,8 @@ export async function evaluateTrackers() {
             }
         }
     } catch (outer) {
-        // No lorebook or other fatal issues
+        // No lorebook or other fatal issues — log unexpected errors for debugging
+        console.error(`${MODULE_NAME}: runInterval fatal error:`, outer);
     }
 }
 
@@ -740,7 +741,8 @@ export async function runAfterMemory(compiledScene, profile = null) {
             }
         }
     } catch (outer) {
-        // No lorebook => do nothing
+        // No lorebook or other fatal issues — log unexpected errors for debugging
+        console.error(`${MODULE_NAME}: runAfterMemory fatal error:`, outer);
     }
 }
 
@@ -934,6 +936,7 @@ export async function runSidePrompt(args) {
         toastr.success(__st_t_tag`SidePrompt "${tpl.name}" updated.`, 'STMemoryBooks');
         return '';
     } catch (outer) {
+        console.error(`${MODULE_NAME}: runSidePrompt fatal error:`, outer);
         return '';
     }
 }
