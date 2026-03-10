@@ -756,9 +756,9 @@ export async function runSidePrompt(args) {
     try {
         const lore = await requireLorebookStrict();
 
-        const { name, range } = parseNameAndRange(args);
+        const { name, range, lastN } = parseNameAndRange(args);
         if (!name) {
-            toastr.error(translate('SidePrompt name not provided. Usage: /sideprompt "Name" [X-Y]', 'STMemoryBooks_Toast_SidePromptNameNotProvided'), 'STMemoryBooks');
+            toastr.error(translate('SidePrompt name not provided. Usage: /sideprompt "Name" [X-Y or last:N]', 'STMemoryBooks_Toast_SidePromptNameNotProvided'), 'STMemoryBooks');
             return '';
         }
 
@@ -783,7 +783,18 @@ export async function runSidePrompt(args) {
 
         // Compile window
         let compiled = null;
-        if (range) {
+        if (lastN) {
+            // last:N — take the last N messages regardless of checkpoint
+            const n = Math.max(1, Math.min(lastN, currentLast + 1));
+            const lastNStart = currentLast - n + 1;
+            try {
+                compiled = compileRange(lastNStart, currentLast);
+            } catch (err) {
+                console.error(`${MODULE_NAME}: compileRange(${lastNStart}, ${currentLast}) failed:`, err);
+                toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
+                return '';
+            }
+        } else if (range) {
             const m = String(range).trim().match(/^(\d+)\s*[-–—]\s*(\d+)$/);
             if (!m) {
                 toastr.error(translate('Invalid range format. Use X-Y', 'STMemoryBooks_Toast_InvalidRangeFormat'), 'STMemoryBooks');
@@ -805,7 +816,7 @@ export async function runSidePrompt(args) {
         } else {
             // Since-last behavior with cap
             if (!hasShownSidePromptRangeTip) {
-                toastr.info(translate('Tip: You can run a specific range with /sideprompt "Name" X-Y (e.g., /sideprompt "Scoreboard" 100-120). Running without a range uses messages since the last checkpoint.', 'STMemoryBooks_Toast_SidePromptRangeTip'), 'STMemoryBooks');
+                toastr.info(translate('Tip: You can run a specific range with /sideprompt "Name" X-Y (e.g., /sideprompt "Scoreboard" 100-120), or use last:N to take the last N messages (e.g., /sideprompt "Scoreboard" last:30). Running without a range uses messages since the last checkpoint.', 'STMemoryBooks_Toast_SidePromptRangeTip'), 'STMemoryBooks');
                 hasShownSidePromptRangeTip = true;
             }
             const unifiedTitle = `${tpl.name} (STMB SidePrompt)`;
@@ -822,7 +833,13 @@ export async function runSidePrompt(args) {
 
             const start = Math.max(0, lastMsgId + 1);
             const cap = 200;
-            const boundedStart = Math.max(start, currentLast - cap + 1);
+            // If start > currentLast the checkpoint is from a different (longer) chat sharing
+            // the same lorebook — treat it as "no checkpoint" and fall back to cap from end
+            const effectiveStart = start > currentLast ? 0 : start;
+            const boundedStart = Math.max(effectiveStart, currentLast - cap + 1);
+            if (start > currentLast) {
+                console.warn(`${MODULE_NAME}: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Falling back to last ${cap} messages.`);
+            }
 
             try {
                 compiled = compileRange(boundedStart, currentLast);
@@ -948,7 +965,7 @@ export async function runSidePrompt(args) {
  */
 function parseNameAndRange(input) {
     const s = String(input || '').trim();
-    if (!s) return { name: '', range: null };
+    if (!s) return { name: '', range: null, lastN: null };
 
     let name = '';
     let rest = '';
@@ -962,9 +979,13 @@ function parseNameAndRange(input) {
         name = mQuoteS[1];
         rest = mQuoteS[2] || '';
     } else {
-        // If a range appears at the end, strip it from name
-        const mRange = s.match(/(\d+)\s*[-–—]\s*(\d+)\s*$/);
-        if (mRange) {
+        // If a range or last:N appears at the end, strip it from name
+        const mLastN = s.match(/last:\s*(\d+)\s*$/i);
+        const mRange = !mLastN && s.match(/(\d+)\s*[-–—]\s*(\d+)\s*$/);
+        if (mLastN) {
+            name = s.slice(0, mLastN.index).trim();
+            rest = s.slice(mLastN.index);
+        } else if (mRange) {
             name = s.slice(0, mRange.index).trim();
             rest = s.slice(mRange.index);
         } else {
@@ -974,10 +995,16 @@ function parseNameAndRange(input) {
     }
 
     let range = null;
+    let lastN = null;
     if (rest) {
-        const r = rest.match(/(\d+)\s*[-–—]\s*(\d+)/);
-        if (r) range = `${r[1]}-${r[2]}`;
+        const rLastN = rest.match(/last:\s*(\d+)/i);
+        if (rLastN) {
+            lastN = Math.max(1, parseInt(rLastN[1], 10));
+        } else {
+            const r = rest.match(/(\d+)\s*[-–—]\s*(\d+)/);
+            if (r) range = `${r[1]}-${r[2]}`;
+        }
     }
 
-    return { name, range };
+    return { name, range, lastN };
 }
