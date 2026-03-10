@@ -421,14 +421,13 @@ export async function evaluateTrackers() {
                 continue;
             }
 
-            // Build compiled scene for (effectiveLastMsgId+1 .. currentLast) with cap
-            const start = Math.max(0, effectiveLastMsgId + 1);
-            const cap = 200;
-            // If lastMsgId was stale (from another chat), log a warning
+            // Build compiled scene using the interval window (last N messages)
+            // Using onInterval.visibleMessages as the window keeps the compile range
+            // consistent and avoids checkpoint bleed on shared lorebooks.
             if (lastMsgId > currentLast) {
-                console.warn(`${MODULE_NAME}: Interval: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Resetting for this run.`);
+                console.warn(`${MODULE_NAME}: Interval: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Running with interval window.`);
             }
-            const boundedStart = Math.max(start, currentLast - cap + 1);
+            const boundedStart = Math.max(0, currentLast - threshold + 1);
 
             let compiled = null;
             try {
@@ -820,37 +819,21 @@ export async function runSidePrompt(args) {
                 return '';
             }
         } else {
-            // Since-last behavior with cap
+            // No explicit range — use onInterval.visibleMessages as the window, fallback to 20.
+            // This avoids checkpoint bleed on shared lorebooks and keeps manual runs
+            // consistent with what the interval trigger would compile.
+            const defaultN = Math.max(1, Number(tpl?.triggers?.onInterval?.visibleMessages ?? 20));
             if (!hasShownSidePromptRangeTip) {
-                toastr.info(translate('Tip: You can run a specific range with /sideprompt "Name" X-Y (e.g., /sideprompt "Scoreboard" 100-120), or use last:N to take the last N messages (e.g., /sideprompt "Scoreboard" last:30). Running without a range uses messages since the last checkpoint.', 'STMemoryBooks_Toast_SidePromptRangeTip'), 'STMemoryBooks');
+                toastr.info(translate('Tip: You can run a specific range with /sideprompt "Name" X-Y (e.g., /sideprompt "Scoreboard" 100-120), or use last:N to take the last N messages (e.g., /sideprompt "Scoreboard" last:30). Running without a range uses the last {{n}} messages (from interval setting).', 'STMemoryBooks_Toast_SidePromptRangeTip').replace('{{n}}', defaultN), 'STMemoryBooks');
                 hasShownSidePromptRangeTip = true;
             }
-            const unifiedTitle = `${tpl.name} (STMB SidePrompt)`;
-            const existingForLast = getEntryByTitle(tplLores[0].data, unifiedTitle)
-                || getEntryByTitle(tplLores[0].data, `${tpl.name} (STMB Scoreboard)`)
-                || getEntryByTitle(tplLores[0].data, `${tpl.name} (STMB Plotpoints)`)
-                || getEntryByTitle(tplLores[0].data, `${tpl.name} (STMB Tracker)`);
-            const lastMsgId = Number(
-                (existingForLast && existingForLast[`STMB_sp_${tpl.key}_lastMsgId`]) ??
-                (existingForLast && existingForLast.STMB_score_lastMsgId) ??
-                (existingForLast && existingForLast.STMB_tracker_lastMsgId) ??
-                -1
-            );
-
-            const start = Math.max(0, lastMsgId + 1);
-            const cap = 200;
-            // If start > currentLast the checkpoint is from a different (longer) chat sharing
-            // the same lorebook — treat it as "no checkpoint" and fall back to cap from end
-            const effectiveStart = start > currentLast ? 0 : start;
-            const boundedStart = Math.max(effectiveStart, currentLast - cap + 1);
-            if (start > currentLast) {
-                console.warn(`${MODULE_NAME}: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Falling back to last ${cap} messages.`);
-            }
+            const autoStart = Math.max(0, currentLast - defaultN + 1);
+            console.log(`${MODULE_NAME}: Manual run — no range given, using last ${defaultN} messages (${autoStart}→${currentLast})`);
 
             try {
-                compiled = compileRange(boundedStart, currentLast);
+                compiled = compileRange(autoStart, currentLast);
             } catch (err) {
-                console.error(`${MODULE_NAME}: compileRange(${boundedStart}, ${currentLast}) failed:`, err);
+                console.error(`${MODULE_NAME}: compileRange(${autoStart}, ${currentLast}) failed:`, err);
                 toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
                 return '';
             }
