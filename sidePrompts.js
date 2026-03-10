@@ -733,7 +733,7 @@ export async function evaluateTrackers() {
         }
     } catch (outer) {
         if (isStmbStopError(outer)) return;
-        // No lorebook or other fatal issues
+        console.error(`${MODULE_NAME}: runInterval fatal error:`, outer);
     } finally {
         parentTask.finish();
     }
@@ -940,7 +940,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
         }
     } catch (outer) {
         if (isStmbStopError(outer)) return;
-        // No lorebook => do nothing
+        console.error(`${MODULE_NAME}: runAfterMemory fatal error:`, outer);
     } finally {
         parentTask.finish();
     }
@@ -1133,6 +1133,7 @@ export async function runSidePrompt(args) {
         return '';
     } catch (outer) {
         if (isStmbStopError(outer)) return '';
+        console.error(`${MODULE_NAME}: runSidePrompt fatal error:`, outer);
         return '';
     } finally {
         parentTask.finish();
