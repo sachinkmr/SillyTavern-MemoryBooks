@@ -595,15 +595,21 @@ export async function evaluateTrackers() {
             }
 
             // Count visible messages since last checkpoint
-            const visibleSince = countVisibleMessagesSince(lastMsgId, currentLast);
+            // If lastMsgId is from a different (longer) chat, treat as no checkpoint
+            const effectiveLastMsgId = lastMsgId > currentLast ? -1 : lastMsgId;
+            const visibleSince = countVisibleMessagesSince(effectiveLastMsgId, currentLast);
             const threshold = Math.max(1, Number(tpl?.triggers?.onInterval?.visibleMessages ?? 50));
             if (visibleSince < threshold) {
                 continue;
             }
 
-            // Build compiled scene for (lastMsgId+1 .. currentLast) with cap
-            const start = Math.max(0, lastMsgId + 1);
+            // Build compiled scene for (effectiveLastMsgId+1 .. currentLast) with cap
+            const start = Math.max(0, effectiveLastMsgId + 1);
             const cap = 200;
+            // If lastMsgId was stale (from another chat), log a warning
+            if (lastMsgId > currentLast) {
+                console.warn(`${MODULE_NAME}: Interval: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Resetting for this run.`);
+            }
             const boundedStart = Math.max(start, currentLast - cap + 1);
 
             let compiled = null;
