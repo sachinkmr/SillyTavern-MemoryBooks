@@ -960,10 +960,10 @@ export async function runSidePrompt(args) {
 
         const parsed = parseSidePromptCommandInput(args);
         if (parsed.error || !parsed.name) {
-            toastr.error(translate('SidePrompt name not provided. Usage: /sideprompt "Name" {{macro}}="value" [X-Y]', 'STMemoryBooks_Toast_SidePromptNameNotProvided'), 'STMemoryBooks');
+            toastr.error(translate('SidePrompt name not provided. Usage: /sideprompt "Name" {{macro}}="value" [X-Y or last:N]', 'STMemoryBooks_Toast_SidePromptNameNotProvided'), 'STMemoryBooks');
             return '';
         }
-        const { name, range, runtimeMacros } = parsed;
+        const { name, range, lastN, runtimeMacros } = parsed;
 
         const tpl = await findTemplateByName(name);
         if (!tpl) {
@@ -997,7 +997,18 @@ export async function runSidePrompt(args) {
 
         // Compile window
         let compiled = null;
-        if (range) {
+        if (lastN) {
+            // last:N — take the last N messages regardless of checkpoint
+            const n = Math.max(1, Math.min(lastN, currentLast + 1));
+            const lastNStart = currentLast - n + 1;
+            try {
+                compiled = compileRange(lastNStart, currentLast);
+            } catch (err) {
+                console.error(`${MODULE_NAME}: compileRange(${lastNStart}, ${currentLast}) failed:`, err);
+                toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
+                return '';
+            }
+        } else if (range) {
             const m = String(range).trim().match(/^(\d+)\s*[-–—]\s*(\d+)$/);
             if (!m) {
                 toastr.error(translate('Invalid range format. Use X-Y', 'STMemoryBooks_Toast_InvalidRangeFormat'), 'STMemoryBooks');
@@ -1017,11 +1028,21 @@ export async function runSidePrompt(args) {
                 return '';
             }
         } else {
-            // Since-last behavior with cap
+            // Since-last behavior with cap (or explicit last:N override)
             if (!hasShownSidePromptRangeTip) {
-                toastr.info(translate('Tip: You can run a specific range with /sideprompt "Name" {{macro}}="value" X-Y (e.g., /sideprompt "Scoreboard" 100-120). Running without a range uses messages since the last checkpoint.', 'STMemoryBooks_Toast_SidePromptRangeTip'), 'STMemoryBooks');
+                toastr.info(translate('Tip: You can run a specific range with /sideprompt "Name" {{macro}}="value" X-Y (e.g., /sideprompt "Scoreboard" 100-120), or use last:N to take the last N messages (e.g., /sideprompt "Scoreboard" last:30). Running without a range uses messages since the last checkpoint.', 'STMemoryBooks_Toast_SidePromptRangeTip'), 'STMemoryBooks');
                 hasShownSidePromptRangeTip = true;
             }
+            if (Number.isFinite(lastN) && lastN > 0) {
+                const boundedStart = Math.max(0, currentLast - Number(lastN) + 1);
+                try {
+                    compiled = compileRange(boundedStart, currentLast);
+                } catch (err) {
+                    console.error(`${MODULE_NAME}: compileRange(${boundedStart}, ${currentLast}) failed:`, err);
+                    toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
+                    return '';
+                }
+            } else {
             const existingForLast = findFirstLoreEntryByTitle(tplLores[0].data, getSidePromptLookupTitles(tpl, runtimeMacros, ['scoreboard', 'plotpoints', 'tracker']));
             const lastMsgId = Number(
                 (existingForLast && existingForLast[`STMB_sp_${tpl.key}_lastMsgId`]) ??
@@ -1032,7 +1053,13 @@ export async function runSidePrompt(args) {
 
             const start = Math.max(0, lastMsgId + 1);
             const cap = 200;
-            const boundedStart = Math.max(start, currentLast - cap + 1);
+            // If start > currentLast the checkpoint is from a different (longer) chat sharing
+            // the same lorebook — treat it as "no checkpoint" and fall back to cap from end
+            const effectiveStart = start > currentLast ? 0 : start;
+            const boundedStart = Math.max(effectiveStart, currentLast - cap + 1);
+            if (start > currentLast) {
+                console.warn(`${MODULE_NAME}: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Falling back to last ${cap} messages.`);
+            }
 
             try {
                 compiled = compileRange(boundedStart, currentLast);
@@ -1040,6 +1067,7 @@ export async function runSidePrompt(args) {
                 console.error(`${MODULE_NAME}: compileRange(${boundedStart}, ${currentLast}) failed:`, err);
                 toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
                 return '';
+            }
             }
         }
         const defaultOverrides = resolveSidePromptConnection(null);

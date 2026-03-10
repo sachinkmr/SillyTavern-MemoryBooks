@@ -85,6 +85,7 @@ export function parseSidePromptCommandInput(input, options = {}) {
         nameClosed: false,
         runtimeMacros: {},
         range: null,
+        lastN: null,
         trailing: '',
         error: null,
         macroToken: null,
@@ -119,6 +120,11 @@ export function parseSidePromptCommandInput(input, options = {}) {
         if (i >= source.length) return result;
 
         const remaining = source.slice(i);
+        const lastNMatch = remaining.match(/^last\s*:\s*(\d+)\s*$/i);
+        if (lastNMatch) {
+            result.lastN = Math.max(1, Number.parseInt(lastNMatch[1], 10));
+            return result;
+        }
         const rangeMatch = remaining.match(/^(\d+)\s*[-–—]\s*(\d+)\s*$/);
         if (rangeMatch) {
             result.range = `${rangeMatch[1]}-${rangeMatch[2]}`;
