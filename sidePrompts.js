@@ -28,31 +28,43 @@ function enqueuePreview(task) {
 /**
  * Strict lorebook requirement: no auto-create, no selection popup.
  * Throws with a user-facing toast if unavailable.
- * @returns {Promise<{ name: string, data: any }>}
+ * In manual mode, returns all selected lorebooks. In auto mode, returns the single chat-bound lorebook.
+ * @returns {Promise<Array<{ name: string, data: any }>>}
  */
 async function requireLorebookStrict() {
     const settings = extension_settings.STMemoryBooks;
-    let lorebookName = null;
+    let lorebookNames = [];
 
-    // Manual mode uses per-chat manual selection in scene markers
+    // Manual mode uses per-chat manual selection in scene markers (supports multiple)
     if (settings?.moduleSettings?.manualModeEnabled) {
         const stmbData = getSceneMarkers() || {};
-        const _mlNames = resolveManualLorebookNames(stmbData);
-        lorebookName = _mlNames[0] ?? null;
+        lorebookNames = resolveManualLorebookNames(stmbData);
     } else {
         // Chat-bound lorebook
-        lorebookName = chat_metadata?.[METADATA_KEY] || null;
+        const name = chat_metadata?.[METADATA_KEY] || null;
+        if (name) lorebookNames = [name];
     }
 
-    if (!lorebookName || !world_names || !world_names.includes(lorebookName)) {
+    // Filter to valid (existing) lorebook names
+    lorebookNames = lorebookNames.filter(n => world_names?.includes(n));
+
+    if (lorebookNames.length === 0) {
         toastr.error(translate('No memory lorebook is assigned. Open Memory Books settings and select or bind a lorebook.', 'STMemoryBooks_Toast_NoMemoryLorebookAssigned'), 'STMemoryBooks');
         throw new Error(translate('No memory lorebook assigned', 'STMemoryBooks_Error_NoMemoryLorebookAssigned'));
     }
 
     try {
-        const lorebookData = await loadWorldInfo(lorebookName);
-        if (!lorebookData) throw new Error(translate('Failed to load lorebook', 'STMemoryBooks_Error_FailedToLoadLorebook'));
-        return { name: lorebookName, data: lorebookData };
+        const lores = [];
+        for (const name of lorebookNames) {
+            const data = await loadWorldInfo(name);
+            if (!data) {
+                console.warn(`${MODULE_NAME}: requireLorebookStrict: failed to load lorebook "${name}"; skipping.`);
+                continue;
+            }
+            lores.push({ name, data });
+        }
+        if (lores.length === 0) throw new Error(translate('Failed to load lorebook', 'STMemoryBooks_Error_FailedToLoadLorebook'));
+        return lores;
     } catch (err) {
         toastr.error(translate('Failed to load the selected lorebook.', 'STMemoryBooks_Toast_FailedToLoadLorebook'), 'STMemoryBooks');
         throw err;
@@ -72,26 +84,27 @@ async function requireLorebookStrict() {
  * array so all callers can uniformly iterate).
  *
  * @param {object} tpl - Side prompt template object
- * @param {{ name: string, data: any }} defaultLore - Default lorebook from requireLorebookStrict
+ * @param {Array<{ name: string, data: any }>} defaultLores - Default lorebooks from requireLorebookStrict
  * @returns {Promise<Array<{ name: string, data: any }>>}
  */
-async function resolveLorebooksForTemplate(tpl, defaultLore) {
+async function resolveLorebooksForTemplate(tpl, defaultLores) {
     const override = tpl?.settings?.lorebookOverride;
     if (!override?.enabled || !Array.isArray(override.lorebookNames) || override.lorebookNames.length === 0) {
-        return [defaultLore];
+        return defaultLores;
     }
 
     const validNames = [...new Set(override.lorebookNames.filter(n => typeof n === 'string' && n.trim() && world_names?.includes(n)))];
     if (validNames.length === 0) {
         console.warn(`${MODULE_NAME}: lorebookOverride enabled for "${tpl.name}" but no valid lorebook names found; falling back to default.`);
-        return [defaultLore];
+        return defaultLores;
     }
 
     const results = [];
     for (const name of validNames) {
         // Reuse already-loaded default to avoid double fetch
-        if (name === defaultLore.name) {
-            results.push(defaultLore);
+        const cached = defaultLores.find(l => l.name === name);
+        if (cached) {
+            results.push(cached);
             continue;
         }
         try {
@@ -105,7 +118,7 @@ async function resolveLorebooksForTemplate(tpl, defaultLore) {
 
     if (results.length === 0) {
         console.warn(`${MODULE_NAME}: All override lorebooks failed to load for "${tpl.name}"; falling back to default.`);
-        return [defaultLore];
+        return defaultLores;
     }
 
     return results;
@@ -382,7 +395,7 @@ export async function evaluateTrackers() {
         if (!enabledInterval || enabledInterval.length === 0) return;
 
         // Ensure lorebook exists up-front
-        const lore = await requireLorebookStrict();
+        const lores = await requireLorebookStrict();
 
         const currentLast = chat.length - 1;
         if (currentLast < 0) return;
@@ -392,7 +405,7 @@ export async function evaluateTrackers() {
             const legacyTitle = `${tpl.name} (STMB Tracker)`;
 
             // Per-template lorebook resolution (supports lorebookOverride; falls back to default)
-            const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+            const tplLores = await resolveLorebooksForTemplate(tpl, lores);
 
             // Read existing entry to get last checkpoint (generic first, then legacy)
             const existing = getEntryByTitle(tplLores[0].data, unifiedTitle) || getEntryByTitle(tplLores[0].data, legacyTitle);
@@ -555,7 +568,7 @@ export async function evaluateTrackers() {
  */
 export async function runAfterMemory(compiledScene, profile = null) {
     try {
-        const lore = await requireLorebookStrict();
+        const lores = await requireLorebookStrict();
         const enabledAfter = await listByTrigger('onAfterMemory');
 
         if (!enabledAfter || enabledAfter.length === 0) return;
@@ -582,7 +595,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
             const llmPromises = wave.map(async (tpl) => {
                 try {
                     const unifiedTitle = `${tpl.name} (STMB SidePrompt)`;
-                    const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+                    const tplLores = await resolveLorebooksForTemplate(tpl, lores);
                     const existing = getEntryByTitle(tplLores[0].data, unifiedTitle)
                         || getEntryByTitle(tplLores[0].data, `${tpl.name} (STMB Plotpoints)`)
                         || getEntryByTitle(tplLores[0].data, `${tpl.name} (STMB Scoreboard)`);
@@ -699,7 +712,8 @@ export async function runAfterMemory(compiledScene, profile = null) {
                     try {
                         const fresh = await loadWorldInfo(lorebookName);
                         await upsertLorebookEntriesBatch(lorebookName, fresh, groupItems, { refreshEditor });
-                        if (lorebookName === lore.name) lore.data = fresh;
+                        const loreToUpdate = lores.find(l => l.name === lorebookName);
+                        if (loreToUpdate) loreToUpdate.data = fresh;
                     } catch (saveErr) {
                         console.error(`${MODULE_NAME}: Wave save failed for lorebook "${lorebookName}":`, saveErr);
                         toastr.error(translate('Failed to save SidePrompt updates for this wave', 'STMemoryBooks_Toast_FailedToSaveWave'), 'STMemoryBooks');
@@ -759,7 +773,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
  */
 export async function runSidePrompt(args) {
     try {
-        const lore = await requireLorebookStrict();
+        const lores = await requireLorebookStrict();
 
         const { name, range, lastN } = parseNameAndRange(args);
         if (!name) {
@@ -779,7 +793,7 @@ export async function runSidePrompt(args) {
             return '';
         }
 
-        const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+        const tplLores = await resolveLorebooksForTemplate(tpl, lores);
         const currentLast = chat.length - 1;
         if (currentLast < 0) {
             toastr.error(translate('No messages available.', 'STMemoryBooks_Toast_NoMessagesAvailable'), 'STMemoryBooks');
