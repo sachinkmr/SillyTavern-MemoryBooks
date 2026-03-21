@@ -5680,14 +5680,10 @@ async function applyManualFixedJson(correctedRaw) {
   const stmbTask = createStmbInFlightTask("MemoryManualRepair");
   const runEpoch = stmbTask.epoch;
   try {
-    // Set processing flag IMMEDIATELY after validation to prevent race conditions.
-    // NOTE: placing the assignment *inside* the try ensures the matching `finally` clears the flag
-    // even if an error/exception occurs before the try body completes. The trade-off is a very
-    // small window between the initial guard and this assignment where a race could occur.
     isProcessingMemory = true;
-    // Capture chat identity so we can guard metadata writes after async lorebook operations.
     const startChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
-    const context = lastFailedAIContext; 
+    const context = lastFailedAIContext;
+
     if (
       !context?.compiledScene ||
       !context?.profileSettings ||
@@ -5702,6 +5698,7 @@ async function applyManualFixedJson(correctedRaw) {
       );
       return;
     }
+
     throwIfStmbStopped(runEpoch);
     if (
       !context?.sceneData ||
@@ -5717,6 +5714,7 @@ async function applyManualFixedJson(correctedRaw) {
       );
       return;
     }
+
     const trimmedRaw = String(correctedRaw || "").trim();
     if (!trimmedRaw) {
       toastr.error(
@@ -5789,6 +5787,7 @@ async function applyManualFixedJson(correctedRaw) {
     const sceneRange =
       context.sceneRange ||
       `${compiledScene.metadata.sceneStart}-${compiledScene.metadata.sceneEnd}`;
+
     const memoryResult = {
       content: cleanContent,
       extractedTitle: cleanTitle,
@@ -5815,11 +5814,40 @@ async function applyManualFixedJson(correctedRaw) {
       lorebookSettings: {
         constVectMode: profile.constVectMode,
         position: profile.position,
-      { expectedChatId: startChatId },
         orderMode: profile.orderMode,
         orderValue: profile.orderValue,
         preventRecursion: profile.preventRecursion,
         delayUntilRecursion: profile.delayUntilRecursion,
+        outletName:
+          Number(profile.position) === 7 ? profile.outletName || "" : undefined,
+      },
+      lorebook: {
+        content: cleanContent,
+        comment: `Auto-generated memory from messages ${sceneRange}. Profile: ${profile.name}.`,
+        key: cleanKeywords || [],
+        keysecondary: [],
+        selective: true,
+        constant: false,
+        order: 100,
+        position: "before_char",
+        disable: false,
+        addMemo: true,
+        excludeRecursion: false,
+        delayUntilRecursion: true,
+        probability: 100,
+        useProbability: false,
+      },
+    };
+
+    throwIfStmbStopped(runEpoch);
+    const addResult = await addMemoryToLorebook(
+      memoryResult,
+      context.lorebookValidation,
+      { expectedChatId: startChatId },
+    );
+    throwIfStmbStopped(runEpoch);
+
+    if (!addResult.success) {
       if (addResult.chatChanged) {
         toastr.warning(
           translate(
@@ -5830,11 +5858,10 @@ async function applyManualFixedJson(correctedRaw) {
         );
         return;
       }
-        outletName:
-          Number(profile.position) === 7 ? profile.outletName || "" : undefined,
-      },
-      lorebook: {
-        content: cleanContent,
+      throw new Error(addResult.error || "Failed to add memory to lorebook");
+    }
+
+    try {
       const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
       if (startChatId !== null && _mirrorChatId !== startChatId) {
         console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
@@ -5855,28 +5882,6 @@ async function applyManualFixedJson(correctedRaw) {
           } catch (e) {
             console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
           }
-
-        }
-      }
-    } catch (e) {
-      console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
-    }
-    throwIfStmbStopped(runEpoch);
-      const _sceneRange = _parseSceneRangeStr(memoryResult?.metadata?.sceneRange);
-      const _allLoreNames = await getEffectiveLorebookNames();
-      const _extraLoreNames = _allLoreNames.filter(n => n !== context.lorebookValidation?.name);
-      for (const extraName of _extraLoreNames) {
-        try {
-          const extraData = await loadWorldInfo(extraName);
-          if (extraData) {
-            if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
-              console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
-            } else {
-              await addMemoryToLorebook(memoryResult, { valid: true, data: extraData, name: extraName });
-            }
-          }
-        } catch (e) {
-          console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
         }
       }
     } catch (e) {
@@ -5929,7 +5934,6 @@ async function applyManualFixedJson(correctedRaw) {
       __st_t_tag`Memory "${addResult.entryTitle}" created successfully${contextMsg}!`,
       "STMemoryBooks",
     );
-  
   } catch (error) {
     if (isStmbStopError(error)) {
       return;
@@ -5941,8 +5945,6 @@ async function applyManualFixedJson(correctedRaw) {
     );
   } finally {
     stmbTask.finish();
-    // ALWAYS reset the flag, no matter how we exit.
-    // This clears the `isProcessingMemory` flag set inside the try block above.
     isProcessingMemory = false;
   }
 }
