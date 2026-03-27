@@ -111,11 +111,22 @@ import {
 import { showSidePromptsPopup } from "./sidePromptsPopup.js";
 import { listTemplates } from "./sidePromptsManager.js";
 import {
-  runArcAnalysisSequential,
-  commitArcs,
-  parseArcJsonResponse,
+  runSummaryAnalysisSequential,
+  commitSummaryEntries,
+  parseSummaryJsonResponse,
 } from "./arcanalysis.js";
 import * as ArcPrompts from "./arcAnalysisPromptManager.js";
+import {
+  MIN_SUMMARY_CHILDREN,
+  STMB_SUMMARY_TIERS,
+  getDefaultSummaryMinChildren,
+  getEntrySummaryTier,
+  getSourceTierForTarget,
+  getSummaryTierLabel,
+  isEligibleSummarySourceEntry,
+  migrateLorebookSummarySchema,
+  normalizeSummaryMinChildren,
+} from "./summaryTiers.js";
 import { summaryPromptsTableTemplate } from "./templatesSummaryPrompts.js";
 import {
   t as __st_t_tag,
@@ -320,6 +331,8 @@ const defaultSettings = {
     autoSummaryEnabled: false,
     autoSummaryInterval: 50,
     autoSummaryBuffer: 2,
+    autoConsolidationPromptEnabled: false,
+    autoConsolidationTargetTiers: [1],
     autoCreateLorebook: false,
     lorebookNameTemplate: "LTM - {{char}} - {{chat}}",
     useRegex: false,
@@ -329,6 +342,17 @@ const defaultSettings = {
     arcOrderMode: "auto",
     arcOrderValue: 100,
     arcReverseStart: 9999,
+    summaryOrderMode: "auto",
+    summaryOrderValue: 100,
+    summaryReverseStart: 9999,
+    summaryTierMinimums: {
+      1: 5,
+      2: 5,
+      3: 5,
+      4: 5,
+      5: 5,
+      6: 5,
+    },
   },
   titleFormat: "[000] - {{title}}",
   profiles: [], // Will be populated dynamically with current ST settings
@@ -1232,6 +1256,15 @@ function validateSettings(settings) {
   }
 
   settings.moduleSettings.autoSummaryBuffer = clampInt(settings.moduleSettings.autoSummaryBuffer ?? 0, 0, 50);
+  if (settings.moduleSettings.autoConsolidationPromptEnabled === undefined) {
+    settings.moduleSettings.autoConsolidationPromptEnabled = false;
+  }
+  settings.moduleSettings.autoConsolidationTargetTiers =
+    normalizeAutoConsolidationTargetTiers(
+      settings.moduleSettings.autoConsolidationTargetTiers ??
+        settings.moduleSettings.autoConsolidationTargetTier,
+      { fallback: [1] },
+    );
 
   // Validate auto-create lorebook setting - always defaults to false
   if (settings.moduleSettings.autoCreateLorebook === undefined) {
@@ -1248,40 +1281,59 @@ function validateSettings(settings) {
     settings.moduleSettings.lorebookNameTemplate = "LTM - {{char}} - {{chat}}";
   }
 
-  // Validate arc ordering settings (for newly created arcs)
-  if (
-    settings.moduleSettings.arcOrderMode === undefined ||
-    settings.moduleSettings.arcOrderMode === null
-  ) {
-    settings.moduleSettings.arcOrderMode = "auto";
-  }
-  const aom = String(settings.moduleSettings.arcOrderMode || "").toLowerCase();
-  settings.moduleSettings.arcOrderMode =
-    aom === "manual" || aom === "reverse" ? aom : "auto";
+  const legacyOrderMode =
+    settings.moduleSettings.summaryOrderMode ??
+    settings.moduleSettings.arcOrderMode ??
+    "auto";
+  const legacyOrderValue =
+    settings.moduleSettings.summaryOrderValue ??
+    settings.moduleSettings.arcOrderValue ??
+    100;
+  const legacyReverseStart =
+    settings.moduleSettings.summaryReverseStart ??
+    settings.moduleSettings.arcReverseStart ??
+    9999;
 
-  if (
-    settings.moduleSettings.arcOrderValue === undefined ||
-    settings.moduleSettings.arcOrderValue === null
-  ) {
-    settings.moduleSettings.arcOrderValue = 100;
-  } else {
-    const ov = Number(settings.moduleSettings.arcOrderValue);
-    settings.moduleSettings.arcOrderValue = Number.isFinite(ov)
-      ? clampInt(Math.trunc(ov), 0, 9999)
-      : 100;
-  }
+  const som = String(legacyOrderMode || "").toLowerCase();
+  settings.moduleSettings.summaryOrderMode =
+    som === "manual" || som === "reverse" ? som : "auto";
+  settings.moduleSettings.summaryOrderValue = clampInt(
+    Number.isFinite(Number(legacyOrderValue))
+      ? Math.trunc(Number(legacyOrderValue))
+      : 100,
+    0,
+    9999,
+  );
+  settings.moduleSettings.summaryReverseStart = clampInt(
+    Number.isFinite(Number(legacyReverseStart))
+      ? Math.trunc(Number(legacyReverseStart))
+      : 9999,
+    100,
+    9999,
+  );
 
-  if (
-    settings.moduleSettings.arcReverseStart === undefined ||
-    settings.moduleSettings.arcReverseStart === null
-  ) {
-    settings.moduleSettings.arcReverseStart = 9999;
-  } else {
-    const rs = Number(settings.moduleSettings.arcReverseStart);
-    settings.moduleSettings.arcReverseStart = Number.isFinite(rs)
-      ? clampInt(Math.trunc(rs), 100, 9999)
-      : 9999;
+  settings.moduleSettings.arcOrderMode = settings.moduleSettings.summaryOrderMode;
+  settings.moduleSettings.arcOrderValue = settings.moduleSettings.summaryOrderValue;
+  settings.moduleSettings.arcReverseStart =
+    settings.moduleSettings.summaryReverseStart;
+
+  const defaultsByTier =
+    deepClone(defaultSettings.moduleSettings.summaryTierMinimums) || {};
+  const existingMinimums =
+    settings.moduleSettings.summaryTierMinimums &&
+    typeof settings.moduleSettings.summaryTierMinimums === "object"
+      ? settings.moduleSettings.summaryTierMinimums
+      : {};
+  const normalizedMinimums = {};
+  for (const cfg of STMB_SUMMARY_TIERS) {
+    if (cfg.tier <= 0 || cfg.tier > 6) continue;
+    const fallback = defaultsByTier[cfg.tier] ?? getDefaultSummaryMinChildren(cfg.tier);
+    normalizedMinimums[cfg.tier] = normalizeSummaryMinChildren(
+      existingMinimums[cfg.tier],
+      fallback,
+    );
   }
+  settings.moduleSettings.summaryTierMinimums = normalizedMinimums;
 
   // Ensure mutual exclusion: both cannot be true at the same time
   if (
@@ -1925,6 +1977,7 @@ async function executeMemoryGeneration(
       __st_t_tag`Memory "${addResult.entryTitle}" created successfully${contextMsg}${retryMsg}!`,
       "STMemoryBooks",
     );
+    await maybePromptAutoConsolidation(1, lorebookValidation);
   } catch (error) {
     if (isStmbStopError(error)) {
       return;
@@ -2591,19 +2644,22 @@ function populateInlineButtons() {
     {
       text:
         "🧱 " +
-        translate("Arc Prompt Manager", "STMemoryBooks_ArcPromptManager"),
+        translate(
+          "Consolidation Prompt Manager",
+          "STMemoryBooks_ArcPromptManager",
+        ),
       id: "stmb-arc-prompt-manager",
       action: async () => {
         try {
           await showArcPromptManagerPopup();
         } catch (error) {
           console.error(
-            `${MODULE_NAME}: Error opening Arc Prompt Manager:`,
+            `${MODULE_NAME}: Error opening Consolidation Prompt Manager:`,
             error,
           );
           toastr.error(
             translate(
-              "Failed to open Arc Prompt Manager",
+              "Failed to open Consolidation Prompt Manager",
               "STMemoryBooks_FailedToOpenArcPromptManager",
             ),
             "STMemoryBooks",
@@ -3331,16 +3387,16 @@ async function showArcPromptManagerPopup() {
 
     // Build the popup content
     let content =
-      '<h3 data-i18n="STMemoryBooks_ArcPromptManager_Title">🧱 Arc Prompt Manager</h3>';
+      '<h3 data-i18n="STMemoryBooks_ArcPromptManager_Title">🧱 Consolidation Prompt Manager</h3>';
     content += '<div class="world_entry_form_control">';
     content +=
-      '<p data-i18n="STMemoryBooks_ArcPromptManager_Desc">Manage your Arc Analysis prompts. All presets are editable.</p>';
+      '<p data-i18n="STMemoryBooks_ArcPromptManager_Desc">Manage your Consolidation Analysis prompts. All presets are editable.</p>';
     content += "</div>";
 
     // Search/filter box
     content += '<div class="world_entry_form_control">';
     content +=
-      '<input type="text" id="stmb-apm-search" class="text_pole" placeholder="Search arc presets..." aria-label="Search arc presets" data-i18n="[placeholder]STMemoryBooks_ArcPromptManager_Search;[aria-label]STMemoryBooks_ArcPromptManager_Search" />';
+      '<input type="text" id="stmb-apm-search" class="text_pole" placeholder="Search consolidation presets..." aria-label="Search consolidation presets" data-i18n="[placeholder]STMemoryBooks_ArcPromptManager_Search;[aria-label]STMemoryBooks_ArcPromptManager_Search" />';
     content += "</div>";
 
     // Preset list container
@@ -3351,13 +3407,13 @@ async function showArcPromptManagerPopup() {
     content +=
       '<div class="buttons_block justifyCenter gap10px whitespacenowrap">';
     content +=
-      '<button id="stmb-apm-new" class="menu_button whitespacenowrap" data-i18n="STMemoryBooks_ArcPromptManager_New">➕ New Arc Preset</button>';
+      '<button id="stmb-apm-new" class="menu_button whitespacenowrap" data-i18n="STMemoryBooks_ArcPromptManager_New">➕ New Consolidation Preset</button>';
     content +=
       '<button id="stmb-apm-export" class="menu_button whitespacenowrap" data-i18n="STMemoryBooks_ArcPromptManager_Export">📤 Export JSON</button>';
     content +=
       '<button id="stmb-apm-import" class="menu_button whitespacenowrap" data-i18n="STMemoryBooks_ArcPromptManager_Import">📥 Import JSON</button>';
     content +=
-      '<button id="stmb-apm-recreate-builtins" class="menu_button whitespacenowrap" data-i18n="STMemoryBooks_ArcPromptManager_RecreateBuiltins">♻️ Recreate Built-in Arc Prompts</button>';
+      '<button id="stmb-apm-recreate-builtins" class="menu_button whitespacenowrap" data-i18n="STMemoryBooks_ArcPromptManager_RecreateBuiltins">♻️ Recreate Built-in Consolidation Prompts</button>';
     content += "</div>";
 
     // Hidden file input for import
@@ -3389,10 +3445,13 @@ async function showArcPromptManagerPopup() {
 
     await popup.show();
   } catch (error) {
-    console.error("STMemoryBooks: Error showing Arc Prompt Manager:", error);
+    console.error(
+      "STMemoryBooks: Error showing Consolidation Prompt Manager:",
+      error,
+    );
     toastr.error(
       translate(
-        "Failed to open Arc Prompt Manager",
+        "Failed to open Consolidation Prompt Manager",
         "STMemoryBooks_FailedToOpenArcPromptManager",
       ),
       "STMemoryBooks",
@@ -3790,10 +3849,167 @@ async function importArcPrompts(event, popup) {
   }
 }
 
+function pluralizeSummaryLabel(label) {
+  const raw = String(label || "").trim();
+  if (!raw) return "Entries";
+  if (/series$/i.test(raw)) return raw;
+  if (/memory$/i.test(raw)) return `${raw.slice(0, -1)}ies`;
+  if (/y$/i.test(raw)) return `${raw.slice(0, -1)}ies`;
+  return `${raw}s`;
+}
+
+function normalizeAutoConsolidationTargetTiers(value, options = {}) {
+  const fallback = Array.isArray(options?.fallback)
+    ? options.fallback
+    : [1];
+
+  if (value === undefined || value === null) {
+    return [...fallback];
+  }
+
+  const isExplicitCollection =
+    Array.isArray(value) || typeof value === "string";
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,\s]+/g)
+      : [value];
+  const normalized = Array.from(
+    new Set(
+      rawValues
+        .map((item) => Number(item))
+        .filter((item) => Number.isFinite(item))
+        .map((item) => clampInt(Math.trunc(item), 1, 5))
+        .filter((item) => item >= 1 && item <= 5),
+    ),
+  ).sort((a, b) => a - b);
+  if (normalized.length) {
+    return normalized;
+  }
+  return isExplicitCollection ? [] : [...fallback];
+}
+
+function getSummaryTierOptions() {
+  return STMB_SUMMARY_TIERS.filter((cfg) => cfg.tier >= 1 && cfg.tier <= 6).map(
+    (cfg) => ({
+      value: cfg.tier,
+      label: `${cfg.tier} - ${cfg.label}`,
+    }),
+  );
+}
+
+function getAutoConsolidationTierOptions() {
+  return getSummaryTierOptions().filter((option) => Number(option.value) <= 5);
+}
+
+async function maybePromptAutoConsolidation(targetTier, lorebookValidation = null) {
+  try {
+    const settings = initializeSettings();
+    if (!settings?.moduleSettings?.autoConsolidationPromptEnabled) {
+      return;
+    }
+
+    const normalizedTargetTier = clampInt(Number(targetTier), 1, 6);
+    const configuredTargetTiers = normalizeAutoConsolidationTargetTiers(
+      settings.moduleSettings.autoConsolidationTargetTiers ??
+        settings.moduleSettings.autoConsolidationTargetTier,
+    );
+    if (!configuredTargetTiers.includes(normalizedTargetTier)) {
+      return;
+    }
+
+    const sourceTier = getSourceTierForTarget(normalizedTargetTier);
+    const lorebookState =
+      lorebookValidation && lorebookValidation.valid
+        ? lorebookValidation
+        : await validateLorebook(true);
+    if (!lorebookState?.valid || !lorebookState?.data) {
+      return;
+    }
+
+    const lorebookData = lorebookState.data;
+    if (migrateLorebookSummarySchema(lorebookData)) {
+      await saveWorldInfo(lorebookState.name, lorebookData, true);
+    }
+
+    const requiredMin = normalizeSummaryMinChildren(
+      settings.moduleSettings.summaryTierMinimums?.[normalizedTargetTier],
+      getDefaultSummaryMinChildren(normalizedTargetTier),
+    );
+    const eligibleCount = Object.values(lorebookData.entries || {}).filter((entry) =>
+      isEligibleSummarySourceEntry(entry, sourceTier),
+    ).length;
+    if (eligibleCount < requiredMin) {
+      return;
+    }
+
+    const stmbData = getSceneMarkers() || {};
+    const promptKey = `${normalizedTargetTier}:${eligibleCount}`;
+    if (stmbData.autoConsolidationLastPromptKey === promptKey) {
+      return;
+    }
+    stmbData.autoConsolidationLastPromptKey = promptKey;
+    saveMetadataForCurrentContext();
+
+    const sourceLabel = getSummaryTierLabel(sourceTier).toLowerCase();
+    const sourcePlural = pluralizeSummaryLabel(sourceLabel).toLowerCase();
+    const targetLabel = getSummaryTierLabel(normalizedTargetTier).toLowerCase();
+    const content = `
+      <h3>${escapeHtml(translate("Consolidation Available", "STMemoryBooks_AutoConsolidationPrompt_Title"))}</h3>
+      <p>${escapeHtml(
+        tr(
+          "STMemoryBooks_AutoConsolidationPrompt_Body",
+          "You now have {{count}} eligible {{sourcePlural}}. That meets the minimum of {{min}} needed to create a {{targetLabel}}.",
+          {
+            count: eligibleCount,
+            sourcePlural,
+            min: requiredMin,
+            targetLabel,
+          },
+        ),
+      )}</p>
+      <p class="opacity70p">${escapeHtml(
+        translate(
+          "Open Consolidate Memories now?",
+          "STMemoryBooks_AutoConsolidationPrompt_Question",
+        ),
+      )}</p>
+    `;
+
+    const popup = new Popup(content, POPUP_TYPE.CONFIRM, "", {
+      okButton: translate(
+        "Open Consolidation",
+        "STMemoryBooks_OpenConsolidation",
+      ),
+      cancelButton: translate("Later", "STMemoryBooks_Later"),
+    });
+    const result = await popup.show();
+    if (result === POPUP_RESULT.AFFIRMATIVE) {
+      await showSummaryConsolidationPopup({
+        initialTargetTier: normalizedTargetTier,
+      });
+    }
+  } catch (error) {
+    console.error("STMemoryBooks: Auto-consolidation prompt check failed:", error);
+  }
+}
+
+function clearAutoConsolidationPromptState(targetTier) {
+  const stmbData = getSceneMarkers() || {};
+  const prefix = `${clampInt(Number(targetTier), 1, 6)}:`;
+  if (
+    typeof stmbData.autoConsolidationLastPromptKey === "string" &&
+    stmbData.autoConsolidationLastPromptKey.startsWith(prefix)
+  ) {
+    delete stmbData.autoConsolidationLastPromptKey;
+    saveMetadataForCurrentContext();
+  }
+}
+
 /**
- * Show Arc Consolidation popup
+ * Show summary consolidation popup
  */
-async function showArcConsolidationPopup() {
+async function showSummaryConsolidationPopup(popupOptions = {}) {
   try {
     // Load ALL effective lorebooks; allow UI to render even if none assigned
     const allLorebookNames = await getEffectiveLorebookNames();
@@ -3828,12 +4044,8 @@ async function showArcConsolidationPopup() {
       if (m2) return parseInt(m2[1], 10);
       return 0;
     };
-    const candidates = allEntries
-      .filter(
-        (e) =>
-          e && e.stmemorybooks === true && e.stmbArc !== true && !e.disable,
-      )
-      .sort(
+    const sortEntries = (entries) =>
+      [...entries].sort(
         (a, b) => parseOrder(a.comment || "") - parseOrder(b.comment || ""),
       );
 
@@ -3850,17 +4062,31 @@ async function showArcConsolidationPopup() {
     // Defaults from settings
     const settings = initializeSettings();
     const tokenThreshold = settings?.moduleSettings?.tokenWarningThreshold ?? 30000;
-    const arcOrderMode = String(settings?.moduleSettings?.arcOrderMode || "auto");
-    const arcOrderValue = Number.isFinite(Number(settings?.moduleSettings?.arcOrderValue))
-      ? Math.trunc(Number(settings.moduleSettings.arcOrderValue))
+    const arcOrderMode = String(settings?.moduleSettings?.summaryOrderMode || "auto");
+    const arcOrderValue = Number.isFinite(Number(settings?.moduleSettings?.summaryOrderValue))
+      ? Math.trunc(Number(settings.moduleSettings.summaryOrderValue))
       : 100;
-    const arcReverseStart = Number.isFinite(Number(settings?.moduleSettings?.arcReverseStart))
-      ? Math.trunc(Number(settings.moduleSettings.arcReverseStart))
+    const arcReverseStart = Number.isFinite(Number(settings?.moduleSettings?.summaryReverseStart))
+      ? Math.trunc(Number(settings.moduleSettings.summaryReverseStart))
       : 9999;
+    const tierOptions = getSummaryTierOptions();
+    const initialTargetTier = clampInt(
+      Number(popupOptions?.initialTargetTier ?? 1),
+      1,
+      6,
+    );
 
-    // Build popup content
     let content = "";
-    content += `<h3>${escapeHtml(translate("🌈 Consolidate Memories into Arcs", "STMemoryBooks_ConsolidateArcs_Title"))}</h3>`;
+    content += `<h3>${escapeHtml(translate("Consolidate Memories", "STMemoryBooks_ConsolidateArcs_Title"))}</h3>`;
+
+    content += '<div class="world_entry_form_control">';
+    content += `<label><strong>${escapeHtml(translate("Summary Tier", "STMemoryBooks_SummaryTier_Label"))}:</strong> `;
+    content += '<select id="stmb-summary-tier" class="text_pole">';
+    for (const cfg of tierOptions) {
+      const selected = Number(cfg.value) === initialTargetTier ? " selected" : "";
+      content += `<option value="${cfg.value}"${selected}>${escapeHtml(cfg.label)}</option>`;
+    }
+    content += "</select></label></div>";
 
     // Preset selector
     content += '<div class="world_entry_form_control">';
@@ -3875,21 +4101,22 @@ async function showArcConsolidationPopup() {
     content += `</select></label> <button id="stmb-arc-rebuild-builtins" class="menu_button whitespacenowrap">${escapeHtml(translate("Rebuild from built-ins", "STMemoryBooks_Arc_RebuildBuiltins"))}</button></div>`;
 
     // Options row
-    content += '<div class="flex-container flexGap10">';
-    content += `<label>${escapeHtml(translate("Maximum number of memories to process in each pass", "STMemoryBooks_Arc_MaxPerPass"))} <input id="stmb-arc-maxpass" type="number" min="1" max="100" value="15" class="text_pole" style="width:80px"/></label>`;
-    content += `<label>${escapeHtml(translate("Number of automatic arc attempts", "STMemoryBooks_Arc_MaxPasses"))} <input id="stmb-arc-maxpasses" type="number" min="1" max="50" value="10" class="text_pole" style="width:100px"/></label>`;
-    content += `<label>${escapeHtml(translate("Minimum number of memories in each arc", "STMemoryBooks_Arc_MinAssigned"))} <input id="stmb-arc-minassigned" type="number" min="1" max="50" value="10" class="text_pole" style="width:110px"/></label>`;
+    content += '<div class="flex-container">';
+    content += `<label><span id="stmb-summary-maxpass-label">${escapeHtml(tr("STMemoryBooks_Arc_MaxPerPass", "Maximum number of {{stmbchildtier}} entries to process in each pass", { stmbchildtier: "memory" }))}</span> <input id="stmb-arc-maxpass" type="number" min="1" max="100" value="15" class="text_pole" style="width:80px"/></label>`;
     content += `<label>${escapeHtml(translate("Token Budget", "STMemoryBooks_Arc_TokenBudget"))} <input id="stmb-arc-token" type="number" min="1000" max="150000" value="${tokenThreshold}" class="text_pole" style="width:120px"/></label>`;
+    content += `<label>${escapeHtml(translate("Number of automatic summary attempts", "STMemoryBooks_Arc_MaxPasses"))} <input id="stmb-arc-maxpasses" type="number" min="1" max="50" value="10" class="text_pole" style="width:100px"/></label>`;
+    content += `<label><span id="stmb-summary-minassigned-label">${escapeHtml(tr("STMemoryBooks_Arc_MinAssigned", "Saved minimum eligible {{stmbchildtier}} needed before {{stmbtier}} is ready", { stmbchildtier: "memories", stmbtier: "arc" }))}</span> <input id="stmb-arc-minassigned" type="number" min="${MIN_SUMMARY_CHILDREN}" step="1" value="${getDefaultSummaryMinChildren(initialTargetTier)}" class="text_pole" style="width:110px"/></label>`;
+    content += `<small id="stmb-summary-minassigned-note" class="opacity70p">${escapeHtml(translate("Also used for auto-consolidation readiness for this tier.", "STMemoryBooks_Arc_MinAssignedNote"))}</small>`;
     content += "</div>";
 
     // Arc ordering (applies to newly created arcs)
     content += '<div class="world_entry_form_control">';
-    content += `<div><strong>${escapeHtml(translate("Arc entry order", "STMemoryBooks_Arc_Order_Label"))}</strong></div>`;
-    content += `<small class="opacity70p">${escapeHtml(translate("Controls the lorebook 'order' for newly created arcs only.", "STMemoryBooks_Arc_Order_Help"))}</small>`;
+    content += `<div><h4 class="stmb-section-title">${escapeHtml(translate("Summary entry order", "STMemoryBooks_Arc_Order_Label"))}</h4></div>`;
+    content += `<small class="opacity70p">${escapeHtml(translate("Controls the lorebook 'order' for newly created summaries only.", "STMemoryBooks_Arc_Order_Help"))}</small>`;
     content += '<div style="display:flex; flex-direction:column; gap:6px; margin-top:6px">';
     content += `<label class="checkbox_label"><input type="radio" name="stmb-arc-order-mode" value="auto"${
       arcOrderMode === "auto" ? " checked" : ""
-    }> <span>${escapeHtml(translate("Auto (uses arc #)", "STMemoryBooks_Arc_AutoOrder"))}</span></label>`;
+    }> <span>${escapeHtml(translate("Auto (uses summary #)", "STMemoryBooks_Arc_AutoOrder"))}</span></label>`;
     content += `<label class="checkbox_label"><input type="radio" name="stmb-arc-order-mode" value="reverse"${
       arcOrderMode === "reverse" ? " checked" : ""
     }> <span>${escapeHtml(translate("Reverse (only use with Outlets)", "STMemoryBooks_ReverseOrder"))}</span> <input type="number" id="stmb-arc-reverse-start" value="${escapeHtml(String(arcReverseStart))}" class="text_pole ${
@@ -3905,7 +4132,7 @@ async function showArcConsolidationPopup() {
 
     // Disable originals toggle
     content += '<div class="world_entry_form_control" class="flex-container"><div class="flex flexFlowRow alignItemsBaseline">';
-    content += `<label class="checkbox_label"><input id="stmb-arc-disable-originals" type="checkbox" checked /> ${escapeHtml(translate("Disable original memories after creating arcs", "STMemoryBooks_ConsolidateArcs_DisableOriginals"))}</label>`;
+    content += `<label class="checkbox_label"><input id="stmb-arc-disable-originals" type="checkbox" checked /> ${escapeHtml(translate("Disable selected source entries after creating summaries", "STMemoryBooks_ConsolidateArcs_DisableOriginals"))}</label>`;
     content += "</div></div>";
 
     // Target lorebook selector (only shown when multiple are attached)
@@ -3933,7 +4160,7 @@ async function showArcConsolidationPopup() {
     }
 
     // Entries checklist
-    content += `<div class="world_entry_form_control"><div class="flex-container flexGap10 marginBot5">`;
+    content += `<div class="world_entry_form_control"><div id="stmb-summary-lock-status" class="opacity70p marginBot5"></div><div class="flex-container flexGap10 marginBot5">`;
     content += `<button id="stmb-arc-select-all" class="menu_button">${escapeHtml(translate("Select All", "STMemoryBooks_SelectAll"))}</button>`;
     content += `<button id="stmb-arc-deselect-all" class="menu_button">${escapeHtml(translate("Deselect All", "STMemoryBooks_DeselectAll"))}</button>`;
     content += `</div>`;
@@ -3964,6 +4191,126 @@ async function showArcConsolidationPopup() {
     } catch (e) {
       /* noop */
     }
+    const getCurrentTargetTier = () =>
+      clampInt(readIntInput(dlg.querySelector("#stmb-summary-tier"), 1), 1, 6);
+    const getCandidatesForTier = (targetTier) =>
+      sortEntries(
+        allEntries.filter((entry) =>
+          isEligibleSummarySourceEntry(entry, getSourceTierForTarget(targetTier)),
+        ),
+      );
+    const getSavedSummaryTierMinimum = (targetTier) =>
+      settings.moduleSettings.summaryTierMinimums?.[targetTier] ??
+      getDefaultSummaryMinChildren(targetTier);
+    const persistCurrentTierMinimum = () => {
+      const targetTier = getCurrentTargetTier();
+      const minInput = dlg.querySelector("#stmb-arc-minassigned");
+      const requiredMin = normalizeSummaryMinChildren(
+        readIntInput(minInput, getSavedSummaryTierMinimum(targetTier)),
+        getSavedSummaryTierMinimum(targetTier),
+      );
+      if (minInput) {
+        minInput.value = String(requiredMin);
+      }
+      settings.moduleSettings.summaryTierMinimums[targetTier] = requiredMin;
+      extension_settings.STMemoryBooks.moduleSettings.summaryTierMinimums[
+        targetTier
+      ] = requiredMin;
+      saveSettingsDebounced();
+      return requiredMin;
+    };
+    const renderTierState = () => {
+      const targetTier = getCurrentTargetTier();
+      const sourceTier = getSourceTierForTarget(targetTier);
+      const sourceLabel = getSummaryTierLabel(sourceTier);
+      const sourcePlural = pluralizeSummaryLabel(sourceLabel);
+      const targetLabel = getSummaryTierLabel(targetTier);
+      const candidates = getCandidatesForTier(targetTier);
+      const requiredMin = normalizeSummaryMinChildren(
+        getSavedSummaryTierMinimum(targetTier),
+        getDefaultSummaryMinChildren(targetTier),
+      );
+
+      const minLabel = dlg.querySelector("#stmb-summary-minassigned-label");
+      const maxPassLabel = dlg.querySelector("#stmb-summary-maxpass-label");
+      if (maxPassLabel) {
+        maxPassLabel.textContent = tr(
+          "STMemoryBooks_Arc_MaxPerPass",
+          "Maximum number of {{stmbchildtier}} entries to process in each pass",
+          { stmbchildtier: sourceLabel.toLowerCase() },
+        );
+      }
+      if (minLabel) {
+        minLabel.textContent = tr(
+          "STMemoryBooks_Arc_MinAssigned",
+          "Saved minimum eligible {{stmbchildtier}} needed before {{stmbtier}} is ready",
+          {
+            stmbchildtier: sourcePlural.toLowerCase(),
+            stmbtier: targetLabel.toLowerCase(),
+          },
+        );
+      }
+      const minInput = dlg.querySelector("#stmb-arc-minassigned");
+      if (minInput) {
+        minInput.value = String(requiredMin);
+        minInput.min = String(MIN_SUMMARY_CHILDREN);
+      }
+      const locked = candidates.length < requiredMin;
+      const statusEl = dlg.querySelector("#stmb-summary-lock-status");
+      if (statusEl) {
+        statusEl.textContent = `Need ${requiredMin} eligible ${sourcePlural}, have ${candidates.length}.`;
+        statusEl.className = locked
+          ? "info-block warning marginBot5"
+          : "info-block marginBot5";
+      }
+      const tipEl = dlg.querySelector("#stmb-summary-tip");
+      if (tipEl) {
+        tipEl.textContent = `Tip: uncheck ${sourcePlural.toLowerCase()} that should not be included.`;
+      }
+
+      const listEl = dlg.querySelector("#stmb-arc-list");
+      if (listEl) {
+        listEl.innerHTML = "";
+        for (const e of candidates) {
+          const title = e.comment || "(untitled)";
+          const uid = String(e.uid);
+          const row = document.createElement("label");
+          row.className = "flex-container flexGap10";
+          row.style.alignItems = "center";
+          row.style.margin = "2px 0";
+          row.innerHTML = `<input type="checkbox" class="stmb-arc-item" value="${escapeHtml(uid)}" checked /> <span>${escapeHtml(title)}</span>`;
+          listEl.appendChild(row);
+        }
+      }
+
+      if (popup.okButton) {
+        popup.okButton.style.pointerEvents = locked ? "none" : "";
+        popup.okButton.style.opacity = locked ? "0.5" : "";
+        popup.okButton.title = locked
+          ? `Need at least ${requiredMin} eligible ${sourcePlural.toLowerCase()}`
+          : "";
+      }
+    };
+    dlg
+      .querySelector("#stmb-summary-tier")
+      ?.addEventListener("change", renderTierState);
+    dlg
+      .querySelector("#stmb-arc-minassigned")
+      ?.addEventListener("input", () => {
+        persistCurrentTierMinimum();
+        const listEl = dlg.querySelector("#stmb-arc-list");
+        const selectedById = new Set(
+          Array.from(dlg.querySelectorAll(".stmb-arc-item"))
+            .filter((cb) => cb.checked)
+            .map((cb) => String(cb.value)),
+        );
+        renderTierState();
+        if (listEl) {
+          dlg.querySelectorAll(".stmb-arc-item").forEach((cb) => {
+            cb.checked = selectedById.has(String(cb.value));
+          });
+        }
+      });
     dlg
       .querySelector("#stmb-arc-select-all")
       ?.addEventListener("click", (e) => {
@@ -4008,6 +4355,7 @@ async function showArcConsolidationPopup() {
       .querySelectorAll('input[name="stmb-arc-order-mode"]')
       .forEach((el) => el.addEventListener("change", syncArcOrderVisibility));
     syncArcOrderVisibility();
+    renderTierState();
 
     // Rebuild Arc prompts from built-ins with backup and refresh preset list
     dlg
@@ -4016,9 +4364,9 @@ async function showArcConsolidationPopup() {
         e.preventDefault();
         try {
           const confirmContent = `
-                    <h3>${escapeHtml(translate("Rebuild Arc Prompts from Built-ins", "STMemoryBooks_Arc_RebuildTitle"))}</h3>
+                    <h3>${escapeHtml(translate("Rebuild Consolidation Prompts from Built-ins", "STMemoryBooks_Arc_RebuildTitle"))}</h3>
                     <div class="info-block warning">
-                        ${escapeHtml(translate("This will overwrite your saved Arc prompt presets with the built-ins. A timestamped backup will be created.", "STMemoryBooks_Arc_RebuildWarning"))}
+                        ${escapeHtml(translate("This will overwrite your saved Consolidation prompt presets with the built-ins. A timestamped backup will be created.", "STMemoryBooks_Arc_RebuildWarning"))}
                     </div>
                     <p class="opacity70p">${escapeHtml(translate("After rebuild, the preset list will refresh automatically.", "STMemoryBooks_Arc_RebuildNote"))}</p>
                 `;
@@ -4069,13 +4417,13 @@ async function showArcConsolidationPopup() {
             ? ` (backup: ${result.backupName}) `
             : "";
           toastr.success(
-            __st_t_tag`Rebuilt Arc prompts (${result?.count || 0} presets)${backupMsg}`,
+            __st_t_tag`Rebuilt consolidation prompts (${result?.count || 0} presets)${backupMsg}`,
             "STMemoryBooks",
           );
         } catch (err) {
           console.error("STMemoryBooks: Arc prompts rebuild failed:", err);
           toastr.error(
-            __st_t_tag`Failed to rebuild Arc prompts: ${err.message}`,
+            __st_t_tag`Failed to rebuild consolidation prompts: ${err.message}`,
             "STMemoryBooks",
           );
         }
@@ -4094,19 +4442,15 @@ async function showArcConsolidationPopup() {
       .map((cb) => cb.value);
     if (selected.length === 0) {
       toastr.error(
-        translate(
-          "Select at least one memory to consolidate.",
-          "STMemoryBooks_SelectAtLeastOne",
-        ),
+        translate("Select at least one memory to consolidate.", "STMemoryBooks_ConsolidateArcs_NoneSelected"),
         "STMemoryBooks",
       );
       return;
     }
 
-    // If there is no lorebook assigned, show a focused toast and stop before heavy work
     if (!lorebookName) {
       toastr.info(
-        "Arc consolidation requires a memory lorebook. No lorebook assigned.",
+        "Summary consolidation requires a memory lorebook. No lorebook assigned.",
         "STMemoryBooks",
       );
       return;
@@ -4130,6 +4474,7 @@ async function showArcConsolidationPopup() {
     );
     const options = {
       presetKey,
+      targetTier,
       maxItemsPerPass: Math.max(
         1,
         readIntInput(dlg.querySelector("#stmb-arc-maxpass"), 12),
@@ -4138,10 +4483,7 @@ async function showArcConsolidationPopup() {
         1,
         readIntInput(dlg.querySelector("#stmb-arc-maxpasses"), 10),
       ),
-      minAssigned: Math.max(
-        1,
-        readIntInput(dlg.querySelector("#stmb-arc-minassigned"), 2),
-      ),
+      minAssigned: requiredMin,
       tokenTarget: Math.max(
         1000,
         readIntInput(dlg.querySelector("#stmb-arc-token"), tokenThreshold),
@@ -4150,7 +4492,6 @@ async function showArcConsolidationPopup() {
     const disableOriginals = !!dlg.querySelector("#stmb-arc-disable-originals")
       ?.checked;
 
-    // Persist arc order preferences (applies to newly created arcs)
     const chosenArcOrderMode = String(
       dlg.querySelector('input[name="stmb-arc-order-mode"]:checked')?.value ||
         "auto",
@@ -4169,6 +4510,15 @@ async function showArcConsolidationPopup() {
       chosenArcOrderMode === "manual" || chosenArcOrderMode === "reverse"
         ? chosenArcOrderMode
         : "auto";
+    extension_settings.STMemoryBooks.moduleSettings.summaryOrderMode =
+      normalizedArcOrderMode;
+    extension_settings.STMemoryBooks.moduleSettings.summaryOrderValue =
+      chosenArcOrderValue;
+    extension_settings.STMemoryBooks.moduleSettings.summaryReverseStart =
+      chosenArcReverseStart;
+    extension_settings.STMemoryBooks.moduleSettings.summaryTierMinimums[
+      targetTier
+    ] = requiredMin;
     extension_settings.STMemoryBooks.moduleSettings.arcOrderMode =
       normalizedArcOrderMode;
     extension_settings.STMemoryBooks.moduleSettings.arcOrderValue =
@@ -4183,18 +4533,16 @@ async function showArcConsolidationPopup() {
       .filter(Boolean);
 
     toastr.info(
-      translate(
-        "Consolidating memories into arcs...",
-        "STMemoryBooks_ConsolidatingArcs",
-      ),
+      `Consolidating ${sourcePlural.toLowerCase()} into ${pluralizeSummaryLabel(
+        targetLabel,
+      ).toLowerCase()}...`,
       "STMemoryBooks",
       { timeOut: 0 },
     );
 
-    // Run analysis (uses current UI model if no profile is passed)
     let analysis;
     try {
-      analysis = await runArcAnalysisSequential(selectedEntries, options, null);
+      analysis = await runSummaryAnalysisSequential(selectedEntries, options, null);
     } catch (e) {
       if (isStmbStopError(e)) {
         return;
@@ -4209,14 +4557,15 @@ async function showArcConsolidationPopup() {
         selectedEntries,
         options,
         disableOriginals,
-        arcOrderMode: normalizedArcOrderMode,
-        arcOrderValue: chosenArcOrderValue,
-        arcReverseStart: chosenArcReverseStart,
+        targetTier,
+        summaryOrderMode: normalizedArcOrderMode,
+        summaryOrderValue: chosenArcOrderValue,
+        summaryReverseStart: chosenArcReverseStart,
       };
 
       if (e?.name === "ArcAIResponseError") {
         lastArcFailureToast = toastr.error(
-          __st_t_tag`Arc analysis failed (invalid JSON): ${e.message}`,
+          __st_t_tag`Summary analysis failed (invalid JSON): ${e.message}`,
           "STMemoryBooks",
           {
             timeOut: 0,
@@ -4225,7 +4574,7 @@ async function showArcConsolidationPopup() {
             tapToDismiss: false,
             onclick: () => {
               try {
-                showFailedArcResponsePopup(lastFailedArcError);
+                showFailedSummaryResponsePopup(lastFailedArcError);
               } catch (e3) {
                 console.error(e3);
               }
@@ -4233,23 +4582,24 @@ async function showArcConsolidationPopup() {
           },
         );
       } else {
-        toastr.error(__st_t_tag`Arc analysis failed: ${e.message}`, "STMemoryBooks");
+        toastr.error(
+          __st_t_tag`Summary analysis failed: ${e.message}`,
+          "STMemoryBooks",
+        );
       }
       return;
     }
-    const { arcCandidates, leftovers } = analysis || {
-      arcCandidates: [],
+    const { summaryCandidates, leftovers } = analysis || {
+      summaryCandidates: [],
       leftovers: [],
     };
 
-    if (!arcCandidates || arcCandidates.length === 0) {
-      // Even if parsing "succeeded", the model may have returned unusable structure
-      // (e.g. empty arcs, missing title/summary, or salvageable-but-messy output).
+    if (!summaryCandidates || summaryCandidates.length === 0) {
       const syntheticError = {
         name: "ArcAIResponseError",
-        code: "ARC_NO_USABLE_ARCS",
+        code: "SUMMARY_NO_USABLE_SUMMARIES",
         message: translate(
-          "No usable arcs were produced from the model response.",
+          "No usable summaries were produced from the model response.",
           "STMemoryBooks_ArcAnalysis_NoUsableArcs",
         ),
         rawText: analysis?.rawText || "",
@@ -4262,15 +4612,16 @@ async function showArcConsolidationPopup() {
         selectedEntries,
         options,
         disableOriginals,
-        arcOrderMode: normalizedArcOrderMode,
-        arcOrderValue: chosenArcOrderValue,
-        arcReverseStart: chosenArcReverseStart,
+        targetTier,
+        summaryOrderMode: normalizedArcOrderMode,
+        summaryOrderValue: chosenArcOrderValue,
+        summaryReverseStart: chosenArcReverseStart,
       };
       try {
         toastr.clear(lastArcFailureToast);
       } catch (e2) {}
       lastArcFailureToast = toastr.warning(
-        __st_t_tag`Arc analysis produced no usable arcs. Review the raw response to fix/extract an arc.`,
+        __st_t_tag`Summary analysis produced no usable summaries. Review the raw response to fix/extract a summary.`,
         "STMemoryBooks",
         {
           timeOut: 0,
@@ -4279,7 +4630,7 @@ async function showArcConsolidationPopup() {
           tapToDismiss: false,
           onclick: () => {
             try {
-              showFailedArcResponsePopup(lastFailedArcError);
+              showFailedSummaryResponsePopup(lastFailedArcError);
             } catch (e3) {
               console.error(e3);
             }
@@ -4287,7 +4638,7 @@ async function showArcConsolidationPopup() {
         },
       );
       try {
-        showFailedArcResponsePopup(lastFailedArcError);
+        showFailedSummaryResponsePopup(lastFailedArcError);
       } catch (e2) {
         console.error(e2);
       }
@@ -4349,22 +4700,69 @@ async function showArcConsolidationPopup() {
         toastr.clear(lastArcFailureToast);
       } catch (e) {}
       lastArcFailureToast = null;
+      clearAutoConsolidationPromptState(targetTier);
+      if (targetTier < 6) {
+        await maybePromptAutoConsolidation(targetTier + 1, {
+          valid: true,
+          name: lorebookName,
+          data: lorebookData,
+        });
+      }
     } catch (e) {
       if (isStmbStopError(e)) {
         return;
       }
       toastr.error(
-        __st_t_tag`Failed to commit arcs: ${e.message}`,
+        __st_t_tag`Failed to commit summaries: ${e.message}`,
         "STMemoryBooks",
       );
     }
   } catch (error) {
-    console.error("STMemoryBooks: showArcConsolidationPopup failed:", error);
+    console.error("STMemoryBooks: showSummaryConsolidationPopup failed:", error);
     toastr.error(
       __st_t_tag`Failed to open consolidate popup: ${error.message}`,
       "STMemoryBooks",
     );
   }
+}
+
+async function showArcConsolidationPopup() {
+  return showSummaryConsolidationPopup();
+}
+
+function initializeSettingsPopupSelect2() {
+  if (!currentPopupInstance?.dlg) return;
+
+  setTimeout(() => {
+    try {
+      if (!window.jQuery || typeof window.jQuery.fn.select2 !== "function") {
+        return;
+      }
+
+      const $select = window.jQuery("#stmb-auto-consolidation-target-tier");
+      if (!$select.length) return;
+
+      if ($select.hasClass("select2-hidden-accessible")) {
+        $select.select2("destroy");
+      }
+
+      $select.select2({
+        width: "100%",
+        placeholder: translate(
+          "Select tiers…",
+          "STMemoryBooks_AutoConsolidationTierPlaceholder",
+        ),
+        closeOnSelect: false,
+        allowClear: true,
+        dropdownParent: window.jQuery(currentPopupInstance.dlg),
+      });
+    } catch (error) {
+      console.warn(
+        "STMemoryBooks: Settings Select2 initialization failed (using native select)",
+        error,
+      );
+    }
+  }, 0);
 }
 
 /**
@@ -4444,10 +4842,24 @@ async function showSettingsPopup() {
     autoSummaryEnabled: settings.moduleSettings.autoSummaryEnabled ?? false,
     autoSummaryInterval: settings.moduleSettings.autoSummaryInterval ?? 50,
     autoSummaryBuffer: settings.moduleSettings.autoSummaryBuffer ?? 2,
+    autoConsolidationPromptEnabled:
+      settings.moduleSettings.autoConsolidationPromptEnabled ?? false,
+    autoConsolidationTargetTiers: normalizeAutoConsolidationTargetTiers(
+      settings.moduleSettings.autoConsolidationTargetTiers ??
+        settings.moduleSettings.autoConsolidationTargetTier,
+    ),
     autoCreateLorebook: settings.moduleSettings.autoCreateLorebook ?? false,
     lorebookNameTemplate:
       settings.moduleSettings.lorebookNameTemplate ||
       "LTM - {{char}} - {{chat}}",
+    autoConsolidationTierOptions: getAutoConsolidationTierOptions().map((option) => ({
+      ...option,
+      isSelected:
+        normalizeAutoConsolidationTargetTiers(
+          settings.moduleSettings.autoConsolidationTargetTiers ??
+            settings.moduleSettings.autoConsolidationTargetTier,
+        ).includes(Number(option.value)),
+    })),
     profiles: settings.profiles.map((profile, index) => ({
       ...profile,
       name:
@@ -4550,13 +4962,13 @@ async function showSettingsPopup() {
       text:
         "🌈 " +
         translate(
-          "Consolidate Memories into Arcs",
+          "Consolidate Memories",
           "STMemoryBooks_ConsolidateArcsButton",
         ),
       result: null,
       classes: ["menu_button"],
       action: async () => {
-        await showArcConsolidationPopup();
+        await showSummaryConsolidationPopup();
       },
     }),
     customButtons.push({
@@ -4590,6 +5002,7 @@ async function showSettingsPopup() {
     );
     setupSettingsEventListeners();
     populateInlineButtons();
+    initializeSettingsPopupSelect2();
     await currentPopupInstance.show();
   } catch (error) {
     console.error("STMemoryBooks: Error showing settings popup:", error);
@@ -4944,6 +5357,22 @@ function setupSettingsEventListeners() {
       return;
     }
 
+    if (e.target.matches("#stmb-auto-consolidation-prompt-enabled")) {
+      settings.moduleSettings.autoConsolidationPromptEnabled = e.target.checked;
+      saveSettingsDebounced();
+      return;
+    }
+
+    if (e.target.matches("#stmb-auto-consolidation-target-tier")) {
+      const value = normalizeAutoConsolidationTargetTiers(
+        Array.from(e.target.selectedOptions || []).map((option) => option.value),
+        { fallback: [] },
+      );
+      settings.moduleSettings.autoConsolidationTargetTiers = value;
+      saveSettingsDebounced();
+      return;
+    }
+
     if (e.target.matches("#stmb-max-tokens")) {
       const value = readIntInput(e.target, DEFAULT_MAX_TOKENS);
       settings.moduleSettings.maxTokens =
@@ -5079,6 +5508,16 @@ function persistMainPopupSettings(popupElement) {
     0,
     50,
   );
+  const autoConsolidationPromptEnabled =
+    popupElement.querySelector("#stmb-auto-consolidation-prompt-enabled")
+      ?.checked ?? settings.moduleSettings.autoConsolidationPromptEnabled;
+  const autoConsolidationTargetTiers = normalizeAutoConsolidationTargetTiers(
+    Array.from(
+      popupElement.querySelector("#stmb-auto-consolidation-target-tier")
+        ?.selectedOptions ?? [],
+    ).map((option) => option.value),
+    { fallback: [] },
+  );
   const maxTokens = readIntInput(
     popupElement.querySelector("#stmb-max-tokens"),
     DEFAULT_MAX_TOKENS,
@@ -5171,6 +5610,29 @@ function persistMainPopupSettings(popupElement) {
 
   if (autoSummaryBuffer !== settings.moduleSettings.autoSummaryBuffer) {
     settings.moduleSettings.autoSummaryBuffer = autoSummaryBuffer;
+    hasChanges = true;
+  }
+
+  if (
+    autoConsolidationPromptEnabled !==
+    settings.moduleSettings.autoConsolidationPromptEnabled
+  ) {
+    settings.moduleSettings.autoConsolidationPromptEnabled =
+      autoConsolidationPromptEnabled;
+    hasChanges = true;
+  }
+
+  if (
+    JSON.stringify(autoConsolidationTargetTiers) !==
+    JSON.stringify(
+      normalizeAutoConsolidationTargetTiers(
+        settings.moduleSettings.autoConsolidationTargetTiers ??
+          settings.moduleSettings.autoConsolidationTargetTier,
+      ),
+    )
+  ) {
+    settings.moduleSettings.autoConsolidationTargetTiers =
+      autoConsolidationTargetTiers;
     hasChanges = true;
   }
 
@@ -5282,10 +5744,24 @@ async function refreshPopupContent() {
       autoSummaryEnabled: settings.moduleSettings.autoSummaryEnabled ?? false,
       autoSummaryInterval: settings.moduleSettings.autoSummaryInterval ?? 50,
       autoSummaryBuffer: settings.moduleSettings.autoSummaryBuffer ?? 0,
+      autoConsolidationPromptEnabled:
+        settings.moduleSettings.autoConsolidationPromptEnabled ?? false,
+      autoConsolidationTargetTiers: normalizeAutoConsolidationTargetTiers(
+        settings.moduleSettings.autoConsolidationTargetTiers ??
+          settings.moduleSettings.autoConsolidationTargetTier,
+      ),
       autoCreateLorebook: settings.moduleSettings.autoCreateLorebook ?? false,
       lorebookNameTemplate:
         settings.moduleSettings.lorebookNameTemplate ||
         "LTM - {{char}} - {{chat}}",
+      autoConsolidationTierOptions: getAutoConsolidationTierOptions().map((option) => ({
+        ...option,
+        isSelected:
+          normalizeAutoConsolidationTargetTiers(
+            settings.moduleSettings.autoConsolidationTargetTiers ??
+              settings.moduleSettings.autoConsolidationTargetTier,
+          ).includes(Number(option.value)),
+      })),
       profiles: settings.profiles.map((profile, index) => ({
         ...profile,
         name:
@@ -5949,11 +6425,11 @@ async function applyManualFixedJson(correctedRaw) {
   }
 }
 
-async function applyManualFixedArcJson(correctedRaw) {
+async function applyManualFixedSummaryJson(correctedRaw) {
   if (isProcessingArc) {
     toastr.warning(
       translate(
-        "Arc consolidation is already in progress.",
+        "Summary consolidation is already in progress.",
         "STMemoryBooks_ArcManualFix_InProgress",
       ),
       "STMemoryBooks",
@@ -5972,7 +6448,7 @@ async function applyManualFixedArcJson(correctedRaw) {
     ) {
       toastr.error(
         translate(
-          "Missing failure context; cannot apply corrected Arc JSON.",
+          "Missing failure context; cannot apply corrected summary JSON.",
           "STMemoryBooks_ArcManualFix_NoContext",
         ),
         "STMemoryBooks",
@@ -5994,22 +6470,22 @@ async function applyManualFixedArcJson(correctedRaw) {
 
     let parsed;
     try {
-      parsed = parseArcJsonResponse(trimmedRaw);
+      parsed = parseSummaryJsonResponse(trimmedRaw);
     } catch (error) {
-      const msg = error?.message || "Failed to parse corrected Arc JSON.";
+      const msg = error?.message || "Failed to parse corrected summary JSON.";
       const code = error?.code ? ` [${error.code}]` : "";
       toastr.error(
-        __st_t_tag`Corrected Arc JSON is still invalid${code}: ${msg}`,
+        __st_t_tag`Corrected summary JSON is still invalid${code}: ${msg}`,
         "STMemoryBooks",
       );
       return;
     }
 
-    const arcs = Array.isArray(parsed?.arcs) ? parsed.arcs : [];
-    if (arcs.length === 0) {
+    const summaries = Array.isArray(parsed?.summaries) ? parsed.summaries : [];
+    if (summaries.length === 0) {
       toastr.error(
         translate(
-          "Corrected JSON is missing arcs.",
+          "Corrected JSON is missing summaries.",
           "STMemoryBooks_ArcManualFix_MissingArcs",
         ),
         "STMemoryBooks",
@@ -6017,13 +6493,13 @@ async function applyManualFixedArcJson(correctedRaw) {
       return;
     }
 
-    const hasAnyMemberIds = arcs.some(
+    const hasAnyMemberIds = summaries.some(
       (a) => Array.isArray(a?.member_ids) && a.member_ids.length > 0,
     );
-    if (arcs.length > 1 && !hasAnyMemberIds) {
+    if (summaries.length > 1 && !hasAnyMemberIds) {
       toastr.error(
         translate(
-          "Multiple arcs require member_ids to avoid ambiguous assignment. Add member_ids or reduce to one arc.",
+          "Multiple summaries require member_ids to avoid ambiguous assignment. Add member_ids or reduce to one summary.",
           "STMemoryBooks_ArcManualFix_MultiArcNeedsMemberIds",
         ),
         "STMemoryBooks",
@@ -6046,8 +6522,8 @@ async function applyManualFixedArcJson(correctedRaw) {
     const resolveId = (raw) => idResolver.get(String(raw).trim());
 
     const unassignedIds = new Set();
-    const unassigned = Array.isArray(parsed?.unassigned_memories)
-      ? parsed.unassigned_memories
+    const unassigned = Array.isArray(parsed?.unassigned_items)
+      ? parsed.unassigned_items
       : [];
     unassigned.forEach((u) => {
       const rid = resolveId(u?.id);
@@ -6055,7 +6531,7 @@ async function applyManualFixedArcJson(correctedRaw) {
     });
     const assignedIds = selectedUids.filter((id) => !unassignedIds.has(id));
 
-    const arcCandidates = arcs.map((a) => {
+    const summaryCandidates = summaries.map((a) => {
       const title = String(a?.title || "").trim();
       const summary = String(a?.summary || "").trim();
       let keywords = Array.isArray(a?.keywords) ? a.keywords : [];
@@ -6079,48 +6555,55 @@ async function applyManualFixedArcJson(correctedRaw) {
 
     const arcOrderFallback = initializeSettings();
     const fallbackMode = String(
-      arcOrderFallback?.moduleSettings?.arcOrderMode || "auto",
+      arcOrderFallback?.moduleSettings?.summaryOrderMode || "auto",
     ).toLowerCase();
     const fallbackOrderMode =
       fallbackMode === "manual" || fallbackMode === "reverse"
         ? fallbackMode
         : "auto";
     const fallbackOrderValue = clampInt(
-      Number.isFinite(Number(arcOrderFallback?.moduleSettings?.arcOrderValue))
-        ? Math.trunc(Number(arcOrderFallback.moduleSettings.arcOrderValue))
+      Number.isFinite(Number(arcOrderFallback?.moduleSettings?.summaryOrderValue))
+        ? Math.trunc(Number(arcOrderFallback.moduleSettings.summaryOrderValue))
         : 100,
       0,
       9999,
     );
     const fallbackReverseStart = clampInt(
-      Number.isFinite(Number(arcOrderFallback?.moduleSettings?.arcReverseStart))
-        ? Math.trunc(Number(arcOrderFallback.moduleSettings.arcReverseStart))
+      Number.isFinite(Number(arcOrderFallback?.moduleSettings?.summaryReverseStart))
+        ? Math.trunc(Number(arcOrderFallback.moduleSettings.summaryReverseStart))
         : 9999,
       100,
       9999,
     );
 
-    const res = await commitArcs({
+    const targetTier = clampInt(Number(context?.targetTier ?? 1), 1, 6);
+    const targetLabel = getSummaryTierLabel(targetTier);
+    const res = await commitSummaryEntries({
       lorebookName: context.lorebookName,
       lorebookData: context.lorebookData,
-      arcCandidates,
+      summaryCandidates,
+      targetTier,
       disableOriginals: !!context.disableOriginals,
-      orderMode: context.arcOrderMode || fallbackOrderMode,
+      orderMode: context.summaryOrderMode || fallbackOrderMode,
       orderValue:
-        context.arcOrderValue !== undefined && context.arcOrderValue !== null
-          ? clampInt(Number(context.arcOrderValue), 0, 9999)
+        context.summaryOrderValue !== undefined && context.summaryOrderValue !== null
+          ? clampInt(Number(context.summaryOrderValue), 0, 9999)
           : fallbackOrderValue,
       reverseStart:
-        context.arcReverseStart !== undefined && context.arcReverseStart !== null
-          ? clampInt(Number(context.arcReverseStart), 100, 9999)
+        context.summaryReverseStart !== undefined && context.summaryReverseStart !== null
+          ? clampInt(Number(context.summaryReverseStart), 100, 9999)
           : fallbackReverseStart,
     });
 
     const created = Array.isArray(res?.results)
       ? res.results.length
-      : arcCandidates.length;
+      : summaryCandidates.length;
+    const createdLabel =
+      created === 1
+        ? targetLabel.toLowerCase()
+        : pluralizeSummaryLabel(targetLabel).toLowerCase();
     toastr.success(
-      __st_t_tag`Created ${created} arc${created === 1 ? "" : "s"} from corrected JSON.`,
+      __st_t_tag`Created ${created} ${createdLabel} from corrected JSON.`,
       "STMemoryBooks",
     );
 
@@ -6130,13 +6613,21 @@ async function applyManualFixedArcJson(correctedRaw) {
       toastr.clear(lastArcFailureToast);
     } catch (e) {}
     lastArcFailureToast = null;
+    clearAutoConsolidationPromptState(targetTier);
+    if (targetTier < 6) {
+      await maybePromptAutoConsolidation(targetTier + 1, {
+        valid: true,
+        name: context.lorebookName,
+        data: context.lorebookData,
+      });
+    }
   } catch (e) {
     if (isStmbStopError(e)) {
       return;
     }
-    console.error("STMemoryBooks: applyManualFixedArcJson failed:", e);
+    console.error("STMemoryBooks: applyManualFixedSummaryJson failed:", e);
     toastr.error(
-      __st_t_tag`Failed to apply corrected Arc JSON: ${e.message}`,
+      __st_t_tag`Failed to apply corrected summary JSON: ${e.message}`,
       "STMemoryBooks",
     );
   } finally {
@@ -6144,7 +6635,7 @@ async function applyManualFixedArcJson(correctedRaw) {
   }
 }
 
-function showFailedArcResponsePopup(error) {
+function showFailedSummaryResponsePopup(error) {
   try {
     const esc = (s) => escapeHtml(String(s ?? ""));
     const message = esc(
@@ -6168,13 +6659,12 @@ function showFailedArcResponsePopup(error) {
         .filter(Boolean)
         .slice(0, 30);
 
-    const extractArcFieldsFromText = (raw) => {
+      const extractArcFieldsFromText = (raw) => {
       const text = String(raw || "");
 
-      // Best case: it's actually (repairable) arc JSON already.
       try {
-        const parsed = parseArcJsonResponse(text);
-        const a0 = Array.isArray(parsed?.arcs) ? parsed.arcs[0] : null;
+        const parsed = parseSummaryJsonResponse(text);
+        const a0 = Array.isArray(parsed?.summaries) ? parsed.summaries[0] : null;
         if (a0) {
           return {
             title: String(a0.title || "").trim(),
@@ -6234,7 +6724,7 @@ function showFailedArcResponsePopup(error) {
     const prefill = rawPrimary ? extractArcFieldsFromText(rawPrimary) : null;
 
     let content = "";
-    content += `<h3>${esc(translate("Review Failed Arc Response", "STMemoryBooks_ReviewFailedArc_Title"))}</h3>`;
+    content += `<h3>${esc(translate("Review Failed Summary Response", "STMemoryBooks_ReviewFailedArc_Title"))}</h3>`;
     content += `<div><strong>${esc(translate("Error", "STMemoryBooks_ReviewFailedArc_ErrorLabel"))}:</strong> ${message}</div>`;
     if (code) {
       content += `<div><strong>${esc(translate("Code", "STMemoryBooks_ReviewFailedArc_CodeLabel"))}:</strong> ${code}</div>`;
@@ -6248,12 +6738,12 @@ function showFailedArcResponsePopup(error) {
       content += `<button id="stmb-arc-copy-raw" class="menu_button">${esc(translate("Copy Raw", "STMemoryBooks_ReviewFailedArc_CopyRaw"))}</button>`;
       content += `<button id="stmb-arc-extract-fields" class="menu_button">${esc(translate("Extract Title/Summary/Keywords", "STMemoryBooks_ReviewFailedArc_ExtractFields"))}</button>`;
       content += `<button id="stmb-arc-fill-json" class="menu_button">${esc(translate("Fill JSON from fields", "STMemoryBooks_ReviewFailedArc_FillJson"))}</button>`;
-      content += `<button id="stmb-arc-apply-corrected-raw" class="menu_button" ${canManualFix ? "" : "disabled"}>${esc(translate("Create Arcs from corrected JSON", "STMemoryBooks_ReviewFailedArc_CreateArcs"))}</button>`;
+      content += `<button id="stmb-arc-apply-corrected-raw" class="menu_button" ${canManualFix ? "" : "disabled"}>${esc(translate("Create summaries from corrected JSON", "STMemoryBooks_ReviewFailedArc_CreateArcs"))}</button>`;
       content += `</div>`;
 
       content += `<div class="world_entry_form_control">`;
       content += `<h4>${esc(translate("Extractable Fields", "STMemoryBooks_ReviewFailedArc_FieldsTitle"))}</h4>`;
-      content += `<div class="opacity70p">${esc(translate("Use Extract to populate fields from the raw response, then Fill JSON to generate a valid Arc JSON object.", "STMemoryBooks_ReviewFailedArc_FieldsDesc"))}</div>`;
+      content += `<div class="opacity70p">${esc(translate("Use Extract to populate fields from the raw response, then Fill JSON to generate valid summary JSON.", "STMemoryBooks_ReviewFailedArc_FieldsDesc"))}</div>`;
       content += `<div class="world_entry_form_control"><label>${esc(translate("Title", "STMemoryBooks_Title"))}</label><input id="stmb-arc-field-title" class="text_pole" style="width:100%" value="${escapeHtml(String(prefill?.title || ""))}"></div>`;
       content += `<div class="world_entry_form_control"><label>${esc(translate("Summary", "STMemoryBooks_Summary"))}</label><textarea id="stmb-arc-field-summary" class="text_pole" style="width:100%; min-height: 110px; white-space: pre-wrap;">${escapeHtml(String(prefill?.summary || ""))}</textarea></div>`;
       content += `<div class="world_entry_form_control"><label>${esc(translate("Keywords (one per line or comma-separated)", "STMemoryBooks_Keywords"))}</label><textarea id="stmb-arc-field-keywords" class="text_pole" style="width:100%; min-height: 90px; white-space: pre-wrap;">${escapeHtml(Array.isArray(prefill?.keywords) ? prefill.keywords.join("\n") : "")}</textarea></div>`;
@@ -6348,7 +6838,7 @@ function showFailedArcResponsePopup(error) {
           if (!title || !summary) {
             toastr.warning(
               translate(
-                "Title and Summary are required to build an arc.",
+                "Title and Summary are required to build a summary.",
                 "STMemoryBooks_ReviewFailedArc_TitleSummaryRequired",
               ),
               "STMemoryBooks",
@@ -6357,8 +6847,8 @@ function showFailedArcResponsePopup(error) {
           }
 
           const obj = {
-            arcs: [{ title, summary, keywords }],
-            unassigned_memories: [],
+            summaries: [{ title, summary, keywords }],
+            unassigned_items: [],
           };
           const json = JSON.stringify(obj, null, 2);
           const rawEl = dlg.querySelector("#stmb-arc-corrected-raw");
@@ -6387,12 +6877,12 @@ function showFailedArcResponsePopup(error) {
           dlg.querySelector("#stmb-arc-corrected-raw")?.value ??
           rawPrimary ??
           rawOriginal;
-        void applyManualFixedArcJson(corrected);
+        void applyManualFixedSummaryJson(corrected);
       });
 
     void popup.show();
   } catch (e) {
-    console.error("STMemoryBooks: Failed to show failed Arc response popup:", e);
+    console.error("STMemoryBooks: Failed to show failed summary response popup:", e);
   }
 }
 
@@ -6499,7 +6989,7 @@ function showFailedAIResponsePopup(error) {
 }
 
 /**
- * Initialize the extension with BULLETPROOF settings management
+ * Initialize the extension
  */
 async function init() {
   if (hasBeenInitialized) return;

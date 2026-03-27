@@ -1,368 +1,482 @@
-# 📕 ST Memory Books - Votre Assistant Mémoire IA pour le Chat
+# 📕 ST Memory Books - Votre assistant mémoire IA pour le chat
 
-**Transformez vos conversations interminables en souvenirs organisés et consultables !**
+**Transformez vos longues conversations en souvenirs organisés et faciles à retrouver !**
 
-Vous avez besoin que le bot se souvienne de certaines choses, mais la discussion est trop longue pour le contexte ? Vous voulez suivre automatiquement les points importants de l'intrigue sans prendre de notes manuellement ? ST Memory Books fait exactement cela : il surveille vos discussions et crée des résumés intelligents pour que vous ne perdiez plus jamais le fil de votre histoire.
+Vous voulez que le bot se souvienne de ce qui s'est passé, mais votre chat est devenu trop long pour tenir dans le contexte ? Vous voulez suivre les éléments importants de l'histoire sans prendre des notes à la main ? ST Memory Books fait exactement cela : il surveille vos discussions et crée des résumés intelligents pour que vous ne perdiez plus le fil de votre récit.
 
-(Vous cherchez des détails techniques sur les coulisses ? Peut-être préférez-vous [Comment fonctionne STMB](userguides\howSTMBworks-en.md).)
+(Vous cherchez plutôt les détails techniques et le déroulement interne ? Consultez [Comment STMB fonctionne](howSTMBworks-fr.md).)
 
----
+## 📑 Table des matières
 
-## 🚀 Démarrage Rapide (Votre premier souvenir en 5 minutes !)
+- [🚀 Démarrage rapide (5 minutes pour votre première mémoire)](#-démarrage-rapide-5-minutes-pour-votre-première-mémoire)
+  - [Étape 1 : trouver l'extension](#étape-1--trouver-lextension)
+  - [Étape 2 : activer l'auto-magie](#étape-2--activer-lauto-magie)
+  - [Étape 3 : discuter normalement](#étape-3--discuter-normalement)
+- [💡 Ce que fait réellement ST Memory Books](#-ce-que-fait-réellement-st-memory-books)
+  - [🤖 Résumés automatiques](#-résumés-automatiques)
+  - [✋ Création manuelle de mémoire](#-création-manuelle-de-mémoire)
+  - [📊 Prompts secondaires et trackers intelligents](#-prompts-secondaires-et-trackers-intelligents)
+  - [📚 Collections de mémoires](#-collections-de-mémoires)
+- [🎯 Choisir votre style](#-choisir-votre-style)
+- [🙈 Économie de tokens : masquer / afficher](#-économie-de-tokens--masquer--afficher)
+  - [Que signifie « masquer » ?](#que-signifie--masquer--)
+  - [Pourquoi utiliser cela ?](#pourquoi-utiliser-cela-)
+  - [Masquage automatique après création de mémoire](#masquage-automatique-après-création-de-mémoire)
+  - [Afficher avant la génération](#afficher-avant-la-génération)
+  - [Réglage simple pour commencer](#réglage-simple-pour-commencer)
+- [🌈 Consolidation des résumés](#-consolidation-des-résumés)
+  - [Q : Qu'est-ce que la consolidation des résumés ?](#q--quest-ce-que-la-consolidation-des-résumés-)
+  - [Q : Pourquoi s'en servir ?](#q--pourquoi-sen-servir-)
+  - [Q : Est-ce automatique ?](#q--est-ce-automatique-)
+  - [Q : Comment s'en servir ?](#q--comment-sen-servir-)
+  - [Que consolide-t-on, et que ne consolide-t-on pas ?](#que-consolide-t-on-et-que-ne-consolide-t-on-pas-)
+  - [Pourquoi est-ce important ?](#pourquoi-est-ce-important-)
+  - [Règle simple](#règle-simple)
+- [🎨 Trackers, prompts secondaires et modèles (fonction avancée)](#-trackers-prompts-secondaires-et-modèles-fonction-avancée)
+  - [🚀 Démarrage rapide avec des modèles](#-démarrage-rapide-avec-des-modèles)
+  - [⚙️ Comment fonctionnent les prompts secondaires](#-comment-fonctionnent-les-prompts-secondaires)
+  - [🛠️ Gérer les prompts secondaires](#-gérer-les-prompts-secondaires)
+  - [💡 Exemples de modèles](#-exemples-de-modèles)
+  - [🔧 Créer vos propres prompts secondaires](#-créer-vos-propres-prompts-secondaires)
+  - [💬 Conseil pratique](#-conseil-pratique)
+  - [⌨️ Syntaxe manuelle de /sideprompt](#-syntaxe-manuelle-de-sideprompt)
+  - [🧠 Contrôle avancé du texte avec l'extension Regex](#-contrôle-avancé-du-texte-avec-lextension-regex)
+- [⚙️ Les réglages à apprendre en premier](#-les-réglages-à-apprendre-en-premier)
+- [🔧 Dépannage (quand les choses ne fonctionnent pas)](#-dépannage-quand-les-choses-ne-fonctionnent-pas)
+- [🚫 Ce que ST Memory Books ne fait pas](#-ce-que-st-memory-books-ne-fait-pas)
+- [💡 Aide et informations](#-aide-et-informations)
+  - [📚 Boostez le tout avec STLO](#-boostez-le-tout-avec-stlo)
 
-**Nouveau sur ST Memory Books ?** Configurons votre première mémoire automatique en quelques clics :
+## 🚀 Démarrage rapide (5 minutes pour votre première mémoire)
 
-### Étape 1 : Trouvez l'extension
-- Cherchez l'icône de baguette magique (🪄) à côté de votre zone de saisie de chat.
-- Cliquez dessus, puis cliquez sur **"Memory Books"**.
-- Vous verrez le panneau de contrôle de ST Memory Books.
+**Vous découvrez ST Memory Books ?** Voici la façon la plus simple de mettre en place votre première mémoire automatique.
 
-### Étape 2 : Activez la "Magie Automatique"
-- Dans le panneau de contrôle, trouvez **"Auto-Summary"** (Résumé Automatique).
-- Mettez-le sur **ON**.
-- Réglez-le pour créer des souvenirs tous les **20-30 messages** (un bon point de départ).
-- C'est tout ! 🎉
+### Étape 1 : trouver l'extension
 
-### Étape 3 : Discutez normalement
-- Continuez à discuter comme d'habitude.
-- Après 20-30 nouveaux messages, ST Memory Books va automatiquement :
-  - Choisir les meilleures limites de scène.
-  - Demander à votre IA d'écrire un résumé.
-  - L'enregistrer dans votre collection de souvenirs.
-  - Vous afficher une notification une fois terminé.
+- Repérez l'icône de baguette magique (🪄) à côté de la zone de saisie du chat
+- Cliquez dessus, puis ouvrez **Memory Books**
+- Vous verrez le panneau principal de ST Memory Books
 
-**Félicitations !** Vous disposez maintenant d'une gestion automatisée de la mémoire. Plus besoin d'oublier ce qui s'est passé il y a plusieurs chapitres !
+### Étape 2 : activer l'auto-magie
+
+- Dans le panneau, activez **Créer des résumés de mémoire automatiques**
+- Réglez **Intervalle d'Auto-Résumé** sur **20-30 messages** pour commencer
+- Laissez **Tampon d'Auto-Résumé** assez bas au début (`0-2` est une bonne plage de départ)
+- Créez d'abord **une mémoire manuelle** pour amorcer le chat
+- Et voilà ! 🎉
+
+### Étape 3 : discuter normalement
+
+- Continuez votre discussion comme d'habitude
+- Après 20 à 30 nouveaux messages, STMB va automatiquement :
+  - prendre les nouveaux messages depuis le dernier point traité
+  - demander à l'IA de rédiger un résumé
+  - l'enregistrer dans votre collection de mémoires
+  - afficher une notification une fois terminé
+
+**Félicitations !** Vous avez maintenant une gestion de mémoire automatique. Plus besoin de vous demander ce qui s'est passé plusieurs chapitres plus tôt.
 
 ---
 
 ## 💡 Ce que fait réellement ST Memory Books
 
-Considérez ST Memory Books comme votre **bibliothécaire IA personnel** pour les conversations de chat :
+Pensez à ST Memory Books comme à votre **bibliothécaire IA personnel** pour les discussions.
 
-### 🤖 **Résumés Automatiques**
-*"Je ne veux pas y penser, je veux juste que ça marche"*
-- Surveille votre chat en arrière-plan.
-- Crée automatiquement des souvenirs tous les X messages.
-- Parfait pour les longs roleplays, l'écriture créative ou les histoires en cours.
+### 🤖 **Résumés automatiques**
+*"Je ne veux pas y penser, je veux juste que ça marche."*
 
-### ✋ **Création Manuelle de Souvenirs**
-*"Je veux avoir le contrôle sur ce qui est sauvegardé"*
-- Marquez les scènes importantes avec de simples boutons fléchés (► ◄).
-- Créez des souvenirs à la demande pour les moments spéciaux.
-- Idéal pour capturer les points clés de l'intrigue ou l'évolution des personnages.
+- Surveille le chat en arrière-plan
+- Crée automatiquement des mémoires à intervalles réguliers
+- Idéal pour les longs roleplays, l'écriture créative et les histoires continues
 
-### 📊 **Prompts Secondaires & Suivi Intelligent**
-*"Je veux suivre les relations, les fils de l'intrigue ou les statistiques"*
-- Des fragments de prompt réutilisables qui améliorent la génération de mémoire.
-- Bibliothèque de modèles avec des traceurs prêts à l'emploi.
-- Prompts IA personnalisés qui suivent tout ce que vous voulez.
-- Mise à jour automatique des tableaux de scores, des statuts relationnels, des résumés d'intrigue.
-- Exemples : "Qui aime qui ?", "Statut actuel de la quête", "Suivi de l'humeur du personnage".
+### ✋ **Création manuelle de mémoire**
+*"Je veux décider précisément ce qui mérite d'être gardé."*
 
-### 📚 **Collections de Souvenirs (Lorebooks)**
-*L'endroit où vivent tous vos souvenirs*
-- Organisés et consultables automatiquement.
-- Fonctionne avec le système de Lorebook intégré de SillyTavern.
-- Votre IA peut faire référence aux souvenirs passés dans de nouvelles conversations.
+- Marquez une scène avec les petites flèches (► ◄)
+- Créez une mémoire à la demande pour un moment important
+- Très pratique pour les tournants de scénario, scènes clés et évolutions de personnages
+
+### 📊 **Prompts secondaires et trackers intelligents**
+*"Je veux suivre les relations, les arcs, les stats ou l'état du monde."*
+
+- Fragments de prompts réutilisables qui complètent la mémoire
+- Bibliothèque de modèles prêts à l'emploi
+- Possibilité de suivre tout ce que vous voulez avec des prompts personnalisés
+- Mise à jour automatique d'éléments comme les relations, objectifs, scoreboards ou résumés d'état
+
+### 📚 **Collections de mémoires**
+*L'endroit où tout est stocké*
+
+- Les mémoires sont organisées et consultables
+- Elles s'intègrent au système de lorebook de SillyTavern
+- Votre IA peut ensuite s'appuyer sur ces souvenirs dans les conversations futures
 
 ---
 
-## 🎯 Choisissez votre style
+## 🎯 Choisir votre style
 
 <details>
-<summary><strong>🔄 "Régler et Oublier" (Recommandé pour les débutants)</strong></summary>
+<summary><strong>🔄 « Régler et oublier » (idéal pour commencer)</strong></summary>
 
-**Parfait si vous voulez :** Une automatisation sans intervention qui fonctionne tout simplement.
+**Parfait si vous voulez :** une automatisation discrète qui tourne toute seule.
 
 **Comment ça marche :**
-1. Activez "Auto-Summary" dans les paramètres.
-2. Choisissez la fréquence de création des souvenirs (tous les 20-50 messages fonctionne bien).
-3. Continuez à discuter normalement - les souvenirs se créent automatiquement !
+1. Activez `Créer des résumés de mémoire automatiques`
+2. Réglez `Intervalle d'Auto-Résumé` selon le rythme de votre chat
+3. Ajoutez éventuellement un petit `Tampon d'Auto-Résumé`
+4. Continuez à discuter normalement après avoir créé la première mémoire manuelle
 
-**Ce que vous obtenez :**
-- Aucun travail manuel requis.
-- Création de mémoire cohérente.
-- Ne manquez jamais les moments importants de l'histoire.
-- Fonctionne aussi bien dans les chats solo que de groupe.
+**Ce que vous y gagnez :**
+- Aucun travail manuel au quotidien
+- Une création régulière de mémoires
+- Moins de risques d'oublier des éléments importants
+- Un fonctionnement valable pour les chats solo comme pour les groupes
 
-**Conseil pro :** Commencez avec 30 messages, puis ajustez en fonction de votre style de chat. Les chats rapides peuvent nécessiter 50+, les chats lents et détaillés peuvent préférer 20.
+**Conseil pratique :** commencez vers 30 messages puis ajustez. Un chat lent et détaillé peut préférer 20, un chat rapide peut monter à 50 ou plus.
 
 </details>
 
 <details>
-<summary><strong>✋ "Contrôle Manuel" (Pour une création de mémoire sélective)</strong></summary>
+<summary><strong>✋ « Contrôle manuel » (pour choisir précisément)</strong></summary>
 
-**Parfait si vous voulez :** Décider exactement ce qui devient un souvenir.
+**Parfait si vous voulez :** décider exactement de ce qui devient une mémoire.
 
 **Comment ça marche :**
-1. Cherchez les petits boutons fléchés (► ◄) sur vos messages de chat.
-2. Cliquez sur ► sur le premier message d'une scène importante.
-3. Cliquez sur ◄ sur le dernier message de cette scène.
-4. Ouvrez Memory Books (🪄) et cliquez sur "Create Memory" (Créer un souvenir).
+1. Repérez les flèches (► ◄) sur les messages
+2. Cliquez sur ► au début de la scène importante
+3. Cliquez sur ◄ à la fin de cette scène
+4. Ouvrez Memory Books puis cliquez sur `Créer une mémoire`
 
-**Ce que vous obtenez :**
-- Contrôle total sur le contenu de la mémoire.
-- Parfait pour capturer des moments spécifiques.
-- Idéal pour les scènes complexes qui nécessitent des limites précises.
+**Ce que vous y gagnez :**
+- Un contrôle total sur le contenu sauvegardé
+- Une bonne méthode pour les scènes complexes
+- Une sélection plus fine des moments qui comptent vraiment
 
-**Conseil pro :** Les boutons fléchés apparaissent quelques secondes après le chargement d'un chat. Si vous ne les voyez pas, attendez un instant ou actualisez la page.
+**Conseil pratique :** les flèches apparaissent quelques secondes après le chargement du chat. Si vous ne les voyez pas, attendez un peu ou rechargez la page.
 
 </details>
 
 <details>
-<summary><strong>⚡ "Utilisateur Expert" (Commandes Slash)</strong></summary>
+<summary><strong>⚡ « Power User » (slash commands)</strong></summary>
 
-**Parfait si vous voulez :** Des raccourcis clavier et des fonctionnalités avancées.
+**Parfait si vous voulez :** des raccourcis clavier et des workflows plus avancés.
 
 **Commandes essentielles :**
-- `/scenememory 10-25` - Créer un souvenir à partir des messages 10 à 25.
-- `/creatememory` - Créer un souvenir à partir de la scène actuellement marquée.
-- `/nextmemory` - Résumer tout ce qui s'est passé depuis le dernier souvenir.
-- `/sideprompt "Relationship Tracker" {{macro}}="value"` - Lancer un traceur personnalisé.
+- `/scenememory 10-25` - créer une mémoire des messages 10 à 25
+- `/creatememory` - créer une mémoire à partir de la scène déjà marquée
+- `/nextmemory` - résumer tout ce qui s'est passé depuis la dernière mémoire
+- `/sideprompt "Relationship Tracker" {{macro}}="value" [X-Y]` - lancer un Side Prompt, avec macros runtime et plage optionnelle
+- `/sideprompt-on "Name"` ou `/sideprompt-off "Name"` - activer ou désactiver un Side Prompt
+- `/stmb-set-highest <N|none>` - ajuster la base de référence de l'auto-summary dans ce chat
 
-**Ce que vous obtenez :**
-- Création de mémoire ultra-rapide.
-- Opérations par lots.
-- Intégration avec des flux de travail personnalisés.
+**Ce que vous y gagnez :**
+- Une création de mémoire très rapide
+- De meilleures possibilités de workflow
+- Une intégration plus confortable si vous aimez travailler au clavier
 
 </details>
 
 ---
 
-## 🌈 Résumés d'Arc (Arc Summaries)
+## 🙈 Économie de tokens : masquer / afficher
 
-Les Résumés d'Arc sont créés manuellement. Rien n'est résumé ou supprimé à moins que vous ne choisissiez de le faire.
+Une des façons les plus simples d'alléger un chat long est de masquer les messages une fois qu'ils ont déjà été transformés en mémoire.
 
-### Q : Que sont les Résumés d'Arc ?
+### Que signifie « masquer » ?
 
-**R :** Les Résumés d'Arc aident à garder les longues histoires gérables. Avec le temps, vous pouvez accumuler de nombreuses entrées de mémoire. Certaines d'entre elles décrivent la même partie de l'histoire.
-Un Résumé d'Arc vous permet de combiner plusieurs anciens souvenirs en un seul résumé plus court.
+Masquer des messages ne les supprime **pas**. Ils restent présents dans le chat, et les mémoires restent enregistrées dans le lorebook. Cela retire simplement ces messages du flux habituel envoyé à l'IA.
 
-### Q : Que se passe-t-il lorsque je fais un Résumé d'Arc ?
+### Pourquoi utiliser cela ?
 
-**R :** Lorsque vous créez un Résumé d'Arc :
+C'est utile quand :
 
-* Les souvenirs sélectionnés sont combinés en une nouvelle entrée.
-* Le nouveau résumé remplace ces anciens souvenirs.
-  *(les anciens souvenirs peuvent être masqués automatiquement — pas supprimés)*
-* L'histoire est toujours mémorisée, mais avec moins de tokens.
+- le chat commence à devenir très long
+- les messages ont déjà été couverts par une mémoire
+- vous voulez alléger l'affichage et économiser des tokens
 
-### Q : Pourquoi faire des Résumés d'Arc ?
+### Masquage automatique après création de mémoire
 
-**R :** Les Résumés d'Arc sont utiles lorsque :
+STMB peut masquer automatiquement les messages après la création d'une mémoire. Vous pouvez choisir :
 
-* Votre liste de souvenirs devient très longue.
-* Les anciens souvenirs ne sont plus nécessaires dans tous leurs détails.
-* Vous voulez réduire l'utilisation de tokens dans les longs chats.
+- **Ne pas masquer automatiquement** : tout reste visible
+- **Masquer automatiquement tous les messages jusqu'à la dernière mémoire** : tout ce qui a déjà été couvert est masqué
+- **Masquer automatiquement uniquement les messages de la dernière mémoire** : seule la dernière plage traitée est masquée
 
-### Q : Comment faire un Résumé d'Arc ?
+Vous pouvez aussi décider du nombre de messages récents qui restent visibles avec **Messages à laisser visibles**.
 
-**R :** Pour créer un Résumé d'Arc :
+### Afficher avant la génération
 
-1. Cliquez sur **🌈 Consolidate Memories into Arcs** au bas de la fenêtre contextuelle principale de STMB.
-2. Choisissez un type d'arc :
+Le réglage **Afficher les messages cachés pour la génération (exécute /unhide X-Y)** demande à STMB de lancer temporairement `/unhide X-Y` sur la plage concernée avant de générer la mémoire. C'est utile si vous retravaillez souvent des mémoires ou si vous masquez beaucoup de choses manuellement.
 
-   * **Multi-Arc**
-     L'IA recherche les pauses naturelles et crée plusieurs arcs.
-     Vous pouvez définir un nombre minimum de souvenirs par arc.
-     *Fonctionne mieux avec des modèles puissants (GPT, Gemini, Sonnet). Les modèles locaux peuvent avoir du mal.*
-   * **Single Arc (Arc Unique)**
-     L'IA combine tous les souvenirs sélectionnés en un seul arc.
-     Les arcs précédents sont inclus pour aider à garder l'histoire cohérente.
-   * **Tiny (Minuscule)**
-     Une option plus rapide et plus simple qui peut mieux fonctionner avec les modèles locaux, mais les résultats peuvent être moins détaillés.
-3. Sélectionnez les souvenirs que vous souhaitez inclure.
-4. Cliquez sur **Run** et attendez que l'analyse de l'arc soit terminée.
+### Réglage simple pour commencer
+
+Une bonne base de départ :
+
+- utiliser **Masquer automatiquement uniquement les messages de la dernière mémoire**
+- laisser **2** messages visibles
+- activer **Afficher les messages cachés pour la génération (exécute /unhide X-Y)**
 
 ---
 
-## 🎨 Traceurs, Prompts Secondaires & Modèles (Fonctionnalité Avancée)
+## 🌈 Consolidation des résumés
 
-Les **Side Prompts** (Prompts Secondaires) sont des traceurs d'arrière-plan qui aident à maintenir les informations de l'histoire en cours.
-Ils créent des entrées Side Prompt séparées dans le lorebook et s'exécutent parallèlement à la création de mémoire. Considérez-les comme des **assistants qui surveillent votre histoire et maintiennent certains détails à jour**.
-Les macros ST standard comme `{{user}}` et `{{char}}` sont développées dans `Prompt` et `Response Format`. Les macros non standard `{{...}}` deviennent des entrées obligatoires pour l'exécution manuelle.
+La consolidation permet de garder les longues histoires lisibles et gérables en compressant d'anciennes mémoires STMB dans des résumés de niveau supérieur.
 
-### 🚀 **Démarrage Rapide avec les Modèles**
+### Q : Qu'est-ce que la consolidation des résumés ?
 
-1. Ouvrez les paramètres de Memory Books.
-2. Cliquez sur **Side Prompts**.
-3. Parcourez la **bibliothèque de modèles** (template library) et choisissez ce qui convient à votre histoire :
+**R :** Au lieu d'accumuler uniquement des mémoires de scène, STMB peut combiner des mémoires ou des résumés existants pour en faire une entrée plus compacte. Le premier niveau est **Arc**, puis viennent aussi :
 
-   * **Character Development Tracker** – Suit les changements de personnalité et la croissance.
-   * **Relationship Dynamics** – Suit les relations entre les personnages.
-   * **Plot Thread Tracker** – Suit les intrigues en cours.
-   * **Mood & Atmosphere** – Suit le ton émotionnel.
-   * **World Building Notes** – Suit les détails du cadre et le lore.
-4. Activez les modèles que vous souhaitez (vous pouvez les personnaliser plus tard).
-5. Si le modèle contient des macros d'exécution personnalisées, il ne s'exécutera pas automatiquement et devra être lancé manuellement avec `/sideprompt`.
+- Arc
+- Chapter
+- Book
+- Legend
+- Series
+- Epic
 
-### ⚙️ **Comment fonctionnent les Prompts Secondaires**
+### Q : Pourquoi s'en servir ?
 
-* **Traceurs d'arrière-plan** : Ils s'exécutent discrètement et mettent à jour les informations au fil du temps.
-* **Non-intrusifs** : Ils ne modifient pas vos paramètres principaux d'IA ou les prompts de personnage.
-* **Contrôle par chat** : Différents chats peuvent utiliser différents traceurs.
-* **Basé sur des modèles** : Utilisez des modèles intégrés ou créez les vôtres.
-* **Automatique ou Manuel** : Les modèles standards peuvent s'exécuter automatiquement ; ceux qui contiennent des macros d'exécution personnalisées sont réservés au mode manuel.
-* **Prise en charge des macros** : `Prompt` et `Response Format` développent les macros ST standard comme `{{user}}` et `{{char}}`.
-* **Contrôles de sécurité** : Si un modèle contient des macros d'exécution personnalisées, STMB supprime `onInterval` et `onAfterMemory` lors de la sauvegarde/import et affiche un avertissement.
+**R :** C'est utile quand :
 
-Cela rend le comportement de déclenchement compréhensible sans termes techniques.
+- votre liste de mémoires devient très longue
+- les anciennes scènes n'ont plus besoin d'un niveau de détail scène par scène
+- vous voulez réduire les tokens sans perdre la continuité
+- vous voulez des récapitulatifs narratifs plus larges et plus propres
 
-### 🛠️ **Gérer les Prompts Secondaires**
+### Q : Est-ce automatique ?
 
-* **Side Prompts Manager** : Créez, modifiez, dupliquez et organisez les traceurs.
-* **Enable / Disable** : Activez ou désactivez les traceurs à tout moment.
-* **Import / Export** : Partagez des modèles ou sauvegardez-les.
-* **Status View** : Voyez quels traceurs sont actifs dans le chat actuel.
+**R :** Non. La consolidation demande toujours une confirmation.
 
-La "Status View" (Vue d'état) est plus claire que "Live Preview" pour les lecteurs non anglophones.
+- Vous pouvez ouvrir **Consolider les mémoires** manuellement depuis la fenêtre principale
+- Vous pouvez aussi activer **Demander une consolidation lorsqu'un niveau est prêt**
+- Quand un niveau cible sélectionné atteint son minimum requis, STMB affiche une confirmation **yes/later**
+- Choisir **Yes** ouvre simplement la fenêtre de consolidation avec ce niveau déjà sélectionné ; cela ne lance pas la consolidation en silence
 
-### 💡 **Exemples de Modèles**
+### Q : Comment s'en servir ?
 
-* Bibliothèque de modèles de Side Prompts (importez ce JSON) :
+**R :** Pour créer un résumé consolidé :
+
+1. Cliquez sur **Consolider les mémoires** dans la fenêtre principale de STMB
+2. Choisissez le niveau de résumé cible
+3. Sélectionnez les entrées source à inclure
+4. Décidez si vous voulez désactiver les entrées source après création
+5. Cliquez sur **Run**
+
+Si l'IA renvoie une mauvaise réponse, STMB peut vous proposer une étape de relecture/correction avant de réessayer la validation.
+
+### Que consolide-t-on, et que ne consolide-t-on pas ?
+
+La consolidation porte sur **les mémoires STMB et les résumés STMB**.
+
+Cela signifie :
+
+- les mémoires normales peuvent être consolidées dans des résumés de niveau supérieur
+- les résumés de niveau supérieur peuvent eux-mêmes être consolidés plus tard
+
+Les prompts secondaires sont différents.
+
+**Les prompts secondaires sont des entrées de suivi**, pas des entrées de type mémoire/résumé. Ils servent à maintenir à jour un état continu, par exemple :
+
+- le statut d'une relation
+- les objectifs actuels
+- des scoreboards
+- l'état du monde
+- des trackers de trame
+
+En clair :
+
+- **Mémoires** = « que s'est-il passé dans cette scène ? »
+- **Prompts secondaires** = « quel est l'état actuel de cette chose ? »
+- **Consolidation** = « résumer plusieurs mémoires en un récapitulatif plus large »
+
+### Pourquoi est-ce important ?
+
+Des utilisateurs s'attendent parfois à ce que les trackers et scoreboards remontent automatiquement dans les résumés Arc ou Chapter.
+
+Ce n'est **pas** le cas.
+
+Si vous voulez qu'un élément fasse partie de la consolidation, il doit exister sous forme de mémoire/résumé STMB normal, pas uniquement comme Side Prompt.
+
+### Règle simple
+
+Utilisez :
+
+- **les mémoires** pour résumer une scène
+- **les prompts secondaires** pour les suivis continus
+- **la consolidation** pour réduire plusieurs mémoires en récapitulatifs plus larges
+
+---
+
+## 🎨 Trackers, prompts secondaires et modèles (fonction avancée)
+
+Les **prompts secondaires** sont des trackers en arrière-plan. Ils tournent à côté de la création de mémoire et mettent à jour des entrées séparées dans votre lorebook. Pensez-y comme à de petits assistants qui surveillent un aspect précis de votre histoire.
+
+### 🚀 **Démarrage rapide avec des modèles**
+
+1. Ouvrez les réglages de Memory Books
+2. Cliquez sur **Prompts secondaires**
+3. Parcourez la bibliothèque de modèles et choisissez ceux qui conviennent à votre histoire :
+   - **Character Development Tracker** - suit l'évolution d'un personnage
+   - **Relationship Dynamics** - suit les relations entre personnages
+   - **Plot Thread Tracker** - suit les fils narratifs en cours
+   - **Mood & Atmosphere** - suit l'ambiance et la tonalité
+   - **World Building Notes** - suit le lore et les détails du monde
+4. Activez les modèles qui vous intéressent
+5. Si le modèle utilise des déclencheurs automatiques, STMB mettra cette entrée à jour en même temps que les mémoires
+
+[Guide Scribe pas à pas pour activer les prompts secondaires automatiques](https://scribehow.com/viewer/How_to_Enable_Side_Prompts_in_Memory_Books__fif494uSSjCmxE2ZCmRGxQ)
+
+### ⚙️ **Comment fonctionnent les prompts secondaires**
+
+- **Trackers de fond** : ils tournent discrètement et mettent à jour une information au fil du temps
+- **Non intrusifs** : ils ne modifient pas vos prompts principaux ni votre fiche personnage
+- **Contrôle par chat** : différents chats peuvent utiliser différents trackers
+- **Basés sur des modèles** : vous pouvez partir des modèles fournis ou créer les vôtres
+- **Automatiques ou manuels** : les modèles standard peuvent tourner automatiquement ; ceux avec macros runtime personnalisées sont manuels uniquement
+- **Support des macros** : `Prompt`, `Response Format`, `Title` et les champs de mots-clés peuvent utiliser les macros ST standard comme `{{user}}` et `{{char}}`
+- **Macros runtime** : les `{{...}}` non standard deviennent des arguments obligatoires, par exemple `{{npc name}}="Jane Doe"`
+- **Texte brut autorisé** : les prompts secondaires n'ont pas besoin de renvoyer du JSON
+- **Comportement d'écrasement** : un Side Prompt met à jour sa propre entrée au fil du temps au lieu de créer une nouvelle mémoire séquentielle à chaque exécution
+
+### 🛠️ **Gérer les prompts secondaires**
+
+- **Gestionnaire de prompts secondaires** : créer, modifier, dupliquer et organiser les trackers
+- **Activer / désactiver** : les allumer ou les couper à tout moment
+- **Importer / exporter** : partager des modèles ou faire des sauvegardes
+- **Vue d'état** : voir quels trackers sont actifs dans le chat actuel et quand ils se déclenchent
+- **Vérifications de sécurité** : si un modèle contient des macros runtime personnalisées, STMB retire ses déclencheurs automatiques lors de l'enregistrement/de l'import et affiche un avertissement
+
+### 💡 **Exemples de modèles**
+
+- Bibliothèque de modèles Side Prompt (JSON à importer) :
   [SidePromptTemplateLibrary.json](/resources/SidePromptTemplateLibrary.json)
 
-Exemples d'idées de prompts :
+Exemples d'idées :
 
-* "Suivre les dialogues importants et les interactions entre les personnages"
-* "Tenir à jour le statut actuel de la quête"
-* "Noter les nouveaux détails de construction du monde (world-building) lorsqu'ils apparaissent"
-* "Suivre la relation entre le Personnage A et le Personnage B"
+- « suivre les dialogues importants et les interactions entre personnages »
+- « garder le statut de la quête à jour »
+- « noter les nouveaux éléments de worldbuilding quand ils apparaissent »
+- « suivre la relation entre le personnage A et le personnage B »
 
-### 🔧 **Créer des Prompts Secondaires Personnalisés**
+### 🔧 **Créer vos propres prompts secondaires**
 
-1. Ouvrez le **Side Prompts Manager**.
-2. Cliquez sur **Create New**.
-3. Écrivez une instruction courte et claire.
-   *(exemple : "Toujours noter quel temps il fait dans chaque scène")*
-4. Ajoutez si nécessaire des macros ST standard ou des macros d'exécution au format `{{macro}}="value"`.
-5. Sauvegardez et activez-le.
-6. Le traceur mettra désormais à jour cette information au fil du temps si les déclencheurs automatiques restent activés.
+1. Ouvrez le gestionnaire de prompts secondaires
+2. Cliquez sur **Créer nouveau**
+3. Écrivez une instruction claire et courte
+4. Ajoutez si besoin des macros ST standard comme `{{user}}` ou `{{char}}`
+5. Si vous ajoutez des macros runtime personnalisées comme `{{location name}}`, lancez le modèle manuellement avec `/sideprompt "Name" {{location name}}="value"`
+6. Enregistrez puis activez-le
+7. Le tracker mettra ensuite cette information à jour automatiquement si le modèle utilise des déclencheurs automatiques ; sinon, lancez-le manuellement
 
-### 💬 **Conseil Pro**
+### 💬 **Conseil pratique**
 
-Les Prompts Secondaires fonctionnent mieux lorsqu'ils sont **petits et ciblés**.
-Au lieu de "tout suivre", essayez "suivre la tension romantique entre les personnages principaux".
+Les prompts secondaires fonctionnent mieux quand ils sont **petits et ciblés**.
 
----
+Au lieu de « suivre tout », préférez quelque chose comme « suivre la tension romantique entre les personnages principaux ».
 
-### 🧠 Contrôle Avancé du Texte avec l'Extension Regex
+### ⌨️ **Syntaxe manuelle de `/sideprompt`**
 
-**Vous voulez un contrôle ultime sur le texte envoyé et reçu de l'IA ?** ST Memory Books s'intègre désormais parfaitement avec l'extension officielle **Regex**, vous permettant de transformer automatiquement le texte à l'aide de règles personnalisées.
+Utilisation :
+`/sideprompt "Name" {{macro}}="value" [X-Y]`
 
-**Support de la Multi-Sélection :** Vous pouvez maintenant sélectionner plusieurs scripts regex dans l'extension Regex. Tous les scripts activés seront appliqués dans l'ordre à chaque étape (Prompt et Réponse), permettant des transformations puissantes et flexibles.
+Exemples :
 
-C'est une fonctionnalité avancée parfaite pour les utilisateurs qui veulent :
-- Nettoyer automatiquement les phrases répétitives ou les artefacts de la réponse d'une IA.
-- Reformater des parties de la transcription du chat avant que l'IA ne la voie.
-- Standardiser la terminologie ou les manies des personnages à la volée.
+- `/sideprompt "Status" 10-20`
+- `/sideprompt "NPC Directory" {{npc name}}="Jane Doe" 40-50`
+- `/sideprompt "Location Notes" {{place name}}="Black Harbor" 100-120`
 
-#### **Comment ça marche : Deux points d'ancrage (Hooks) simples**
+Notes :
 
-L'intégration fonctionne en appliquant vos scripts regex activés à deux points critiques. Vous contrôlez quels scripts s'exécutent en définissant leur **Placement** dans l'éditeur de l'extension Regex :
-
-1.  **Modification du Prompt (Texte Sortant)**
-    * **Placement à utiliser** : `User Input`
-    * **Ce que ça fait** : Intercepte le prompt entièrement assemblé (y compris l'historique du chat, les instructions système, etc.) juste avant qu'il ne soit envoyé à l'IA pour la mémoire ou la génération de prompt secondaire.
-    * **Exemple d'utilisation** : Vous pourriez créer un script pour remplacer automatiquement toutes les instances du surnom d'un personnage par son nom complet, assurant que l'IA a le bon contexte.
-
-2.  **Modification de la Réponse (Texte Entrant)**
-    * **Placement à utiliser** : `AI Output`
-    * **Ce que ça fait** : Intercepte la réponse brute de l'IA *avant* qu'elle ne soit analysée ou enregistrée comme souvenir.
-    * **Exemple d'utilisation** : Si votre modèle d'IA inclut souvent des phrases répétitives comme *"En tant que grand modèle de langage..."* dans ses résumés, vous pouvez créer un script regex pour supprimer automatiquement cette phrase de chaque souvenir généré.
-
-#### **Exemple de démarrage rapide : Nettoyer les réponses de l'IA**
-
-Disons que votre modèle d'IA ajoute constamment `(OOC : J'espère que ce résumé est utile !)` à ses générations de mémoire. Voici comment le supprimer automatiquement :
-
-1.  **Allez dans l'extension Regex** : Ouvrez le menu principal des extensions de SillyTavern et allez dans **Regex**.
-2.  **Créez un nouveau Script** : Cliquez sur "Open Regex Editor" pour créer un nouveau script regex.
-3.  **Configurez le Script** :
-    * **Script Name** : `Clean OOC Notes`
-    * **Find Regex** : `/\\(OOC:.*?\\)/g` (Ceci trouve le texte "(OOC: ...)" et tout ce qu'il contient).
-    * **Replace String** : Laissez vide pour supprimer le texte correspondant.
-    * **Affects (Placement)** : Décochez toutes les cases sauf **AI Output**. C'est l'étape la plus importante !
-    * **Activez le Script** : Assurez-vous que le script n'est pas désactivé.
-4.  **Sauvegardez et c'est fini !**
-
-Maintenant, chaque fois que ST Memory Books reçoit une réponse de l'IA, ce script s'exécutera automatiquement, nettoyant le texte indésirable avant que le souvenir ne soit enregistré dans votre Lorebook.
+- Le nom du Side Prompt doit être entre guillemets
+- Les valeurs des macros runtime doivent être entre guillemets
+- L'autocomplétion des slash commands proposera les macros runtime requises après avoir choisi le Side Prompt
+- Si un modèle contient des macros runtime personnalisées, STMB le garde en mode manuel uniquement et retire les déclencheurs automatiques
+- `X-Y` est optionnel. Si vous l'omettez, STMB utilise les messages depuis la dernière mise à jour de ce Side Prompt
 
 ---
 
-## ⚙️ Les paramètres qui comptent vraiment
+### 🧠 Contrôle avancé du texte avec l'extension Regex
 
-Ne vous inquiétez pas, vous n'avez pas besoin de tout configurer ! Voici les paramètres qui font la plus grande différence :
+**Vous voulez contrôler précisément ce que STMB envoie à l'IA et ce qu'il enregistre ?** STMB peut exécuter des scripts Regex sélectionnés avant la génération et avant la sauvegarde.
 
-### 🎛️ **Fréquence du Résumé Automatique (Auto-Summary)**
-- **20-30 messages** : Idéal pour les chats détaillés et plus lents.
-- **40-60 messages** : Parfait pour les conversations plus rapides et pleines d'action.
-- **80+ messages** : Pour les chats de groupe très rapides ou les conversations décontractées.
+C'est utile si vous voulez :
 
-### 📝 **Aperçus de Mémoire (Memory Previews)**
-- Activez ceci (ON) pour examiner les souvenirs avant qu'ils ne soient enregistrés.
-- Vous pouvez modifier, approuver ou régénérer si l'IA a manqué quelque chose d'important.
-- Recommandé pour les intrigues importantes.
+- nettoyer des répétitions ou des artefacts dans les réponses IA
+- normaliser des noms ou une terminologie avant la génération
+- reformater le texte avant que STMB ne le parse ou l'affiche en aperçu
 
-### 🏷️ **Titres de Mémoire**
-- Personnalisez la façon dont vos souvenirs sont nommés.
-- Utilisez `{{title}}` pour les titres générés par l'IA, `{{scene}}` pour les numéros de message.
-- Exemple : `"Chapitre {{title}} ({{scene}})"` devient `"Chapitre La Grande Évasion (Scène 45-67)"`.
+#### **Comment cela fonctionne maintenant**
 
-### 📚 **Collections de Mémoire** (Lorebooks)
-- **Mode Auto** : Utilise la collection de mémoire par défaut de votre chat (le plus simple).
-- **Mode Manuel** : Choisissez une collection spécifique pour chaque chat (pour l'organisation).
-- **Auto-create** : Crée automatiquement de nouvelles collections (bon pour les nouveaux personnages).
+1. Créez les scripts souhaités dans l'extension **Regex** de SillyTavern
+2. Dans STMB, activez **Utiliser regex (avancé)**
+3. Cliquez sur **📐 Configurer regex…**
+4. Choisissez les scripts que STMB doit exécuter :
+   - avant l'envoi du texte à l'IA
+   - avant l'ajout de la réponse au lorebook
+
+#### **Comportement important**
+
+- La sélection Regex pour STMB se fait **dans STMB**, pas via l'état activé/désactivé du script dans l'extension Regex
+- Un script sélectionné dans STMB peut encore s'exécuter même s'il est désactivé dans l'extension Regex
+- STMB prend en charge la multi-sélection pour le traitement sortant comme entrant
+
+#### **Exemple rapide**
+
+Si votre modèle ajoute souvent `(OOC: I hope this summary is helpful!)`, vous pouvez :
+
+1. Créer un script Regex qui supprime ce texte
+2. Activer **Utiliser regex (avancé)** dans STMB
+3. Ouvrir **📐 Configurer regex…**
+4. Ajouter ce script dans la sélection **entrante**
+
+STMB nettoiera alors la réponse avant l'aperçu ou l'enregistrement.
 
 ---
 
-## 🔧 Dépannage (Quand ça ne marche pas)
+## ⚙️ Les réglages à apprendre en premier
 
-### "Je ne vois pas l'option Memory Books !"
-- Vérifiez que l'extension est installée et activée.
-- Cherchez l'icône de la baguette magique (🪄) à côté de votre saisie de chat.
-- Essayez d'actualiser la page.
+Ce guide n'est pas la référence complète des réglages. Pour la liste détaillée, consultez [readme-FR.md](readme-FR.md).
 
-### "Les boutons fléchés (► ◄) n'apparaissent pas !"
-- Attendez 3-5 secondes après le chargement d'un chat - ils ont besoin de temps pour apparaître.
-- S'ils sont toujours manquants, actualisez la page.
-- Assurez-vous que ST Memory Books est activé dans les extensions.
+Les contrôles que la plupart des utilisateurs devraient comprendre en premier :
 
-### "Le Résumé Automatique ne fonctionne pas !"
-- Vérifiez que "Auto-Summary" est activé dans les paramètres de Memory Books.
-- L'intervalle de messages a-t-il été atteint ? Le résumé automatique attend suffisamment de nouveaux messages.
-- Si vous avez reporté le résumé automatique, il peut attendre un certain nombre de messages.
-- Le résumé automatique ne traite que les nouveaux messages depuis la *dernière* mémoire. Si vous avez supprimé d'anciens souvenirs, il ne revient pas en arrière.
+- **Créer des résumés de mémoire automatiques** : active la création automatique de mémoires
+- **Intervalle d'Auto-Résumé** et **Tampon d'Auto-Résumé** : contrôlent quand l'auto-summary se déclenche
+- **Afficher les aperçus de mémoire** : permet de relire ou modifier la réponse IA avant sauvegarde
+- **Demander une consolidation lorsqu'un niveau est prêt** et **Niveaux d'auto-consolidation** : signalent les opportunités de consolidation sans rien lancer silencieusement
+- **Activer le Mode Manuel du Lorebook** et **Créer le lorebook s'il n'existe pas** : contrôlent l'endroit où les mémoires sont enregistrées
+- **Utiliser regex (avancé)** : ouvre la sélection Regex gérée par STMB pour l'aller et le retour
+- **Paramètres SillyTavern Actuels** : utilise directement votre connexion ST active sans créer de profil fournisseur personnalisé
 
-### "J'ai des erreurs concernant des Lorebooks manquants !"
-- Allez dans les paramètres de Memory Books.
-- Liez un lorebook à votre chat (Mode Automatique) ou activez "Auto-create lorebook if none exists" (Créer automatiquement un lorebook s'il n'en existe pas).
+---
 
-### "Parfois ça échoue sans raison !"
-- Assurez-vous que votre longueur de réponse maximale (Max Response Length) dans les préréglages SillyTavern est réglée sur un nombre assez grand. Aiko recommande au moins 2000 tokens (Aiko en utilise 4000).
-- Les messages d'erreur sont maintenant plus détaillés, mais si vous rencontrez toujours des problèmes, veuillez contacter Aiko sur Github ou Discord.
+## 🔧 Dépannage (quand les choses ne fonctionnent pas)
 
-### "Mes prompts personnalisés ne fonctionnent pas bien !"
-- Vérifiez le "Summary Prompt Manager" dans les paramètres de Memory Books.
-- Assurez-vous que votre prompt demande à l'IA de répondre au **format JSON** (par exemple, `{ "title": "...", "content": "..." }`).
+Ce guide n'est pas la matrice complète de dépannage. Pour la liste détaillée, consultez [readme-FR.md](readme-FR.md).
+
+Vérifications rapides :
+
+- Vérifiez que STMB est bien activé et que l'entrée **Memory Books** apparaît dans le menu des extensions
+- Si l'auto-summary ne se déclenche pas, vérifiez que vous avez d'abord créé une mémoire manuelle et que vos réglages interval/buffer sont cohérents
+- Si les mémoires ne peuvent pas être enregistrées, assurez-vous qu'un lorebook est lié au chat ou que **Créer le lorebook s'il n'existe pas** est activé
+- Si Regex se comporte bizarrement, vérifiez d'abord la sélection dans **📐 Configurer regex…**
+- Si la consolidation ne se propose pas, vérifiez que **Demander une consolidation lorsqu'un niveau est prêt** est activé et que le niveau cible figure dans **Niveaux d'auto-consolidation**
 
 ---
 
 ## 🚫 Ce que ST Memory Books ne fait pas
 
-- **Ce n'est pas un éditeur général de Lorebook :** Ce guide se concentre sur les entrées créées par STMB. Pour l'édition générale de Lorebook, utilisez l'éditeur de Lorebook intégré à SillyTavern.
+- **Ce n'est pas un éditeur de lorebook généraliste** : ce guide se concentre sur les entrées créées par STMB. Pour l'édition générale d'un lorebook, utilisez l'éditeur intégré de SillyTavern.
 
 ---
 
-## 💡 Obtenir de l'aide et plus d'infos
+## 💡 Aide et informations
 
-- **Infos plus détaillées :** [readme.md](readme.md)
-- **Dernières mises à jour :** [changelog.md](changelog.md)
-- **Convertir d'anciens lorebooks :** [lorebookconverter.html](lorebookconverter.html)
-- **Support communautaire :** Rejoignez la communauté SillyTavern sur Discord ! (Cherchez le fil 📕ST Memory Books ou envoyez un MP à @tokyoapple pour une aide directe).
-- **Bugs/Fonctionnalités :** Vous avez trouvé un bug ou avez une idée géniale ? Ouvrez un ticket GitHub dans ce dépôt.
+- **Infos plus détaillées** : [readme-FR.md](readme-FR.md)
+- **Dernières mises à jour** : [../changelog.md](../changelog.md)
+- **Support communautaire** : rejoignez la communauté SillyTavern sur Discord (cherchez le fil 📕 ST Memory Books ou contactez @tokyoapple)
+- **Bugs / idées** : ouvrez une issue GitHub dans ce dépôt
 
 ---
 
-### 📚 Boostez vos possibilités avec Lorebook Ordering (STLO)
+### 📚 Boostez le tout avec STLO
 
-Pour une organisation avancée de la mémoire et une intégration plus profonde de l'histoire, nous recommandons fortement d'utiliser STMB avec [SillyTavern-LorebookOrdering (STLO)](https://github.com/aikohanasaki/SillyTavern-LorebookOrdering/blob/main/guides/STMB%20and%20STLO%20-%20English.md). Consultez le guide pour les meilleures pratiques, les instructions d'installation et des astuces !
+Pour une organisation mémoire plus poussée et une meilleure intégration dans l'histoire, utilisez STMB avec [SillyTavern-LorebookOrdering (STLO)](https://github.com/aikohanasaki/SillyTavern-LorebookOrdering/blob/main/guides/STMB%20and%20STLO%20-%20English.md). Consultez le guide pour les bonnes pratiques, l'installation et les conseils d'usage.

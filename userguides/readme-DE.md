@@ -1,37 +1,74 @@
 # 📕 Memory Books (Eine SillyTavern-Erweiterung)
 
-Eine SillyTavern-Erweiterung der nächsten Generation für automatische, strukturierte und zuverlässige Erstellung von Erinnerungen. Markiere Szenen im Chat, generiere JSON-basierte Zusammenfassungen mit KI und speichere sie als „[vektorisierte](https://www.google.com/search?q=%23vektorisiert)“ Einträge in deinen Lorebooks. Unterstützt Gruppenchats, erweiterte Profilverwaltung und bietet eine robuste API-/Modell-Handhabung.
+Eine SillyTavern-Erweiterung der nächsten Generation für automatische, strukturierte und zuverlässige Erstellung von Erinnerungen. Markiere Szenen im Chat, generiere JSON-basierte Zusammenfassungen mit KI und speichere sie als Einträge in deinen Lorebooks. Unterstützt Gruppenchats, erweiterte Profilverwaltung, Side Prompts/Tracker und mehrstufige Zusammenfassungen.
 
 ### ❓ Vokabular
 
 * Scene (Szene) → Memory (Erinnerung)
-* Many Scenes (Viele Szenen) → Arc Summary (Handlungsbogen-Zusammenfassung)
+* Many Memories (Viele Erinnerungen) → Summary / Consolidation (Zusammenfassung / Konsolidierung)
 * Always-On → Side Prompt (Tracker)
 
 ## ❗ Bitte zuerst lesen!
 
 Starten Sie hier:
 
-* ⚠️‼️ Bitte lesen Sie die [Voraussetzungen](https://www.google.com/search?q=%23-voraussetzungen) für Installationshinweise (besonders wenn Sie eine Text Completion API verwenden).
-* ❓ [Häufig gestellte Fragen (FAQ)](https://www.google.com/search?q=%23faq)
-* 🛠️ [Fehlerbehebung (Troubleshooting)](https://www.google.com/search?q=%23fehlerbehebung-troubleshooting)
+* ⚠️‼️ Bitte lesen Sie die [Voraussetzungen](#voraussetzungen) für Installationshinweise (besonders wenn Sie eine Text Completion API verwenden).
+* ❓ [Häufig gestellte Fragen (FAQ)](#faq-häufig-gestellte-fragen)
+* 🛠️ [Fehlerbehebung (Troubleshooting)](#fehlerbehebung-troubleshooting)
 
 Weitere Links:
 
-* 📘 [Benutzerhandbuch (EN)](https://www.google.com/search?q=USER_GUIDE.md)
-* 📋 [Versionsverlauf & Changelog](changelog.md)
-* 💡 [Verwendung von 📕 Memory Books mit 📚 Lorebook Ordering](https://github.com/aikohanasaki/SillyTavern-LorebookOrdering/blob/main/guides/STMB%20and%20STLO%20-%20English.md)
+* 📘 [Benutzerhandbuch (DE)](USER_GUIDE-DE.md)
+* 💡 [Wie STMB funktioniert (DE)](howSTMBworks-de.md)
+* 📋 [Versionsverlauf & Changelog](../changelog.md)
+* 💡 [Verwendung von 📕 Memory Books mit 📚 Lorebook Ordering](https://github.com/aikohanasaki/SillyTavern-LorebookOrdering/blob/main/guides/STMB%20and%20STLO%20-%20German.md)
+
+> Hinweis: Unterstützt verschiedene Sprachen: siehe Ordner [`/locales`](../locales) für eine Liste. Internationale/lokalisierte Readmes und Benutzerhandbücher finden Sie im Ordner [`/userguides`](./).
+> Lorebook-Konverter und die Vorlagenbibliothek für Side Prompts befinden sich im Ordner [`/resources`](../resources).
 
 ---
 
-### 📚 Mehr Power mit Lorebook Ordering (STLO)
+## 📑 Inhaltsverzeichnis
 
-Für eine fortgeschrittene Organisation von Erinnerungen und eine tiefere Integration in die Geschichte empfehlen wir dringend, STMB zusammen mit [SillyTavern-LorebookOrdering (STLO)](https://github.com/aikohanasaki/SillyTavern-LorebookOrdering/blob/main/guides/STMB%20and%20STLO%20-%20English.md) zu verwenden. Schauen Sie in die Anleitung für Best Practices, Einrichtungsanweisungen und Tipps!
-
-> Hinweis: Unterstützt verschiedene Sprachen: siehe Ordner [`/locales`](https://www.google.com/search?q=locales) für eine Liste. Internationale/lokalisierte Readmes und Benutzerhandbücher finden Sie im Ordner [`/userguides`](https://www.google.com/search?q=userguides).
-> Lorebook-Konverter und die Vorlagenbibliothek für Side Prompts befinden sich im Ordner [`/resources`](https://www.google.com/search?q=resources).
-
----
+- [📋 Voraussetzungen](#-voraussetzungen)
+  - [KoboldCpp-Tipps zur Verwendung von 📕 ST Memory Books](#koboldcpp-tipps-zur-verwendung-von--st-memory-books)
+  - [Llama.cpp-Tipps zur Verwendung von 📕 ST Memory Books](#llamacpp-tipps-zur-verwendung-von--st-memory-books)
+- [💡 Empfohlene Einstellungen für Globales World Info/Lorebook](#-empfohlene-einstellungen-für-globales-world-infolorebook)
+- [🚀 Erste Schritte](#-erste-schritte)
+  - [1. Installieren & Laden](#1-installieren--laden)
+  - [2. Eine Szene markieren](#2-eine-szene-markieren)
+  - [3. Eine Erinnerung erstellen](#3-eine-erinnerung-erstellen)
+- [🆕 Slash-Befehl-Kurzbefehle](#-slash-befehl-kurzbefehle)
+- [👥 Gruppenchat-Unterstützung](#-gruppenchat-unterstützung)
+- [🧭 Betriebsmodi](#-betriebsmodi)
+  - [Automatischer Modus (Standard)](#automatischer-modus-standard)
+  - [Lorebook automatisch erstellen Modus ⭐ *Neu in v4.2.0*](#lorebook-automatisch-erstellen-modus--neu-in-v420)
+  - [Manueller Lorebook-Modus](#manueller-lorebook-modus)
+- [🧩 Erinnerungstypen: Szenen vs. Zusammenfassungen](#-erinnerungstypen-szenen-vs-zusammenfassungen)
+  - [🎬 Szenen-Erinnerungen (Standard)](#-szenen-erinnerungen-standard)
+  - [🌈 Zusammenfassungen](#-zusammenfassungen)
+- [📝 Erinnerungs-Generierung](#-erinnerungs-generierung)
+  - [Nur JSON-Ausgabe](#nur-json-ausgabe)
+  - [Integrierte Vorlagen (Presets)](#integrierte-vorlagen-presets)
+  - [Benutzerdefinierte Prompts](#benutzerdefinierte-prompts)
+- [📚 Lorebook-Integration](#-lorebook-integration)
+  - [🎡 Tracker & Neben-Prompts](#-tracker--neben-prompts)
+  - [🧠 Regex-Integration für fortgeschrittene Anpassung](#-regex-integration-für-fortgeschrittene-anpassung)
+- [👤 Profilverwaltung](#-profilverwaltung)
+- [⚙️ Einstellungen & Konfiguration](#-einstellungen--konfiguration)
+  - [Globale Einstellungen](#globale-einstellungen)
+  - [Profil-Felder](#profil-felder)
+- [🏷️ Titel-Formatierung](#-titel-formatierung)
+- [🧵 Kontext-Erinnerungen](#-kontext-erinnerungen)
+- [🎨 Visuelles Feedback & Barrierefreiheit](#-visuelles-feedback--barrierefreiheit)
+  - [Ich kann Memory Books nicht im Erweiterungsmenü finden!](#ich-kann-memory-books-nicht-im-erweiterungsmenü-finden)
+  - [Warum sieht die KI meine Einträge nicht?](#warum-sieht-die-ki-meine-einträge-nicht)
+  - [Muss ich Vektoren verwenden?](#muss-ich-vektoren-verwenden)
+  - [Sollte ich ein separates Lorebook für Erinnerungen erstellen, oder kann ich dasselbe Lorebook verwenden, das ich bereits für andere Dinge nutze?](#sollte-ich-ein-separates-lorebook-für-erinnerungen-erstellen-oder-kann-ich-dasselbe-lorebook-verwenden-das-ich-bereits-für-andere-dinge-nutze)
+  - [Sollte ich 'Verzögern bis Rekursion' verwenden, wenn Memory Books das einzige Lorebook ist?](#sollte-ich-verzögern-bis-rekursion-verwenden-wenn-memory-books-das-einzige-lorebook-ist)
+- [📚 Mehr Power mit Lorebook Ordering (STLO)](#-mehr-power-mit-lorebook-ordering-stlo)
+- [📝 Zeichen-Richtlinie (v4.5.1+)](#-zeichen-richtlinie-v451)
+- [Siehe Details zur Zeichen-Richtlinie für Beispiele und Migrationshinweise.](#siehe-details-zur-zeichen-richtlinie-für-beispiele-und-migrationshinweise)
 
 ## 📋 Voraussetzungen
 
@@ -127,7 +164,7 @@ llama-server -m <model-path> -c <context-size> --port 8080
 * **Wie es funktioniert:** Erstellt und bindet automatisch ein neues Lorebook, wenn keines existiert, unter Verwendung Ihrer benutzerdefinierten Namensvorlage.
 * **Am besten für:** Neue Benutzer und schnelle Einrichtung. Perfekt für die Lorebook-Erstellung mit einem Klick.
 * **Verwendung:**
-1. Aktivieren Sie "Auto-create lorebook if none exists" in den Einstellungen der Erweiterung.
+1. Aktivieren Sie "Lorebook automatisch erstellen, falls keines existiert" in den Einstellungen der Erweiterung.
 2. Konfigurieren Sie Ihre Namensvorlage (Standard: "LTM - {{char}} - {{chat}}").
 3. Wenn Sie eine Erinnerung ohne gebundenes Lorebook erstellen, wird automatisch eines erstellt und gebunden.
 
@@ -141,7 +178,7 @@ llama-server -m <model-path> -c <context-size> --port 8080
 * **Wie es funktioniert:** Ermöglicht Ihnen die Auswahl eines anderen Lorebooks für Erinnerungen auf Chat-Basis, wobei das an den Hauptchat gebundene Lorebook ignoriert wird.
 * **Am besten für:** Fortgeschrittene Benutzer, die Erinnerungen in ein spezifisches, separates Lorebook leiten möchten.
 * **Verwendung:**
-1. Aktivieren Sie "Enable Manual Lorebook Mode" in den Einstellungen der Erweiterung.
+1. Aktivieren Sie "Manuellen Lorebook-Modus aktivieren" in den Einstellungen der Erweiterung.
 2. Wenn Sie das erste Mal eine Erinnerung in einem Chat erstellen, werden Sie aufgefordert, ein Lorebook auszuwählen.
 3. Diese Wahl wird für diesen spezifischen Chat gespeichert, bis Sie sie löschen oder zum automatischen Modus zurückkehren.
 
@@ -150,9 +187,9 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ---
 
-## 🧩 Erinnerungstypen: Szenen vs. Arcs
+## 🧩 Erinnerungstypen: Szenen vs. Zusammenfassungen
 
-📕 Memory Books unterstützt **zwei Ebenen narrativer Erinnerung**, jede für unterschiedliche Arten von Kontinuität entworfen.
+📕 Memory Books unterstützt **Szenen-Erinnerungen** und **mehrstufige Zusammenfassungen**, jeweils für unterschiedliche Arten von Kontinuität.
 
 ### 🎬 Szenen-Erinnerungen (Standard)
 
@@ -167,40 +204,47 @@ Dies ist der Standard- und am häufigsten verwendete Erinnerungstyp.
 
 ---
 
-### 🧭 Arc-Zusammenfassungen (Handlungsbögen) *(Beta)*
+### 🌈 Zusammenfassungen
 
-Arc-Zusammenfassungen erfassen, **was sich im Laufe der Zeit verändert hat**, über mehrere Szenen hinweg.
+Zusammenfassungen erfassen, **was sich im Laufe der Zeit verändert hat**, und bauen auf vorhandenen STMB-Erinnerungen auf.
 
-Anstatt Ereignisse zusammenzufassen, konzentrieren sich Arc-Zusammenfassungen auf:
+Statt einzelne Szenen zusammenzufassen, konzentrieren sich Zusammenfassungen auf:
 
 * Charakterentwicklung und Beziehungsverschiebungen
 * Langfristige Ziele, Spannungen und Auflösungen
 * Emotionale Entwicklung und narrative Richtung
 * Dauerhafte Zustandsänderungen, die stabil bleiben sollten
 
-Arc-Zusammenfassungen sind **Erinnerungen auf höherer Ebene mit niedrigerer Frequenz**, die verhindern sollen, dass Charaktere abdriften und der narrative Faden in lang laufenden Chats verloren geht.
+Die erste Konsolidierungsstufe ist **Arc**, erstellt aus Szenen-Erinnerungen. Höhere Stufen sind ebenfalls für längere Geschichten verfügbar:
 
-> 💡 Denken Sie bei Arc-Zusammenfassungen an *Staffel-Rückblicke*, nicht an Szenen-Protokolle.
+* Arc
+* Chapter
+* Book
+* Legend
+* Series
+* Epic
 
-#### Wann man Arc-Zusammenfassungen verwendet
+> 💡 Denken Sie bei diesen Zusammenfassungen an *Rückblicke*, nicht an Szenen-Protokolle.
+
+#### Wann man konsolidierte Zusammenfassungen verwendet
 
 * Nach einer großen Verschiebung in einer Beziehung
-* Am Ende eines Story-Kapitels oder Handlungsbogens (Arc)
+* Am Ende eines Story-Kapitels oder Handlungsbogens
 * Wenn sich Motivationen, Vertrauen oder Machtdynamiken ändern
 * Bevor eine neue Phase der Geschichte beginnt
 
-#### Beta-Hinweise
+#### Wie es funktioniert
 
-* Arc-Zusammenfassungen sind prompt-sensitiv und bewusst konservativ gestaltet.
-* Es wird empfohlen, sie vor dem Speichern im Lorebook zu überprüfen.
-* Am besten gepaart mit Lorebook-Einträgen niedrigerer Priorität oder im Meta-Stil.
-
-Arc-Zusammenfassungen werden **aus bestehenden Szenen-Erinnerungen** generiert, nicht direkt aus dem rohen Chat.
+* Zusammenfassungen werden aus bestehenden STMB-Erinnerungen generiert, nicht direkt aus rohem Chat
+* Das Werkzeug **Erinnerungen zusammenfassen** lässt Sie eine Zielstufe wählen und Quell-Einträge auswählen
+* STMB kann optional ausgewählte Stufen überwachen und bei Erreichen des gespeicherten Minimums eine Ja/Später-Bestätigung anzeigen
+* STMB kann Quell-Einträge nach der Konsolidierung deaktivieren, wenn die höhere Zusammenfassung übernehmen soll
+* Fehlgeschlagene KI-Antworten können vor dem erneuten Speichern in der UI geprüft und korrigiert werden
 
 Das bietet Ihnen:
 
 * reduzierten Token-Verbrauch
-* Die KI hat ein besseres Verständnis für den narrativen Fluss
+* bessere narrative Kontinuität über längere Chats hinweg
 
 ---
 
@@ -228,6 +272,9 @@ Alle Prompts und Presets **müssen** die KI anweisen, nur gültiges JSON zurück
 3. **Synopsis:** Umfassendes, strukturiertes Markdown.
 4. **Sum Up:** Prägnante Beat-Zusammenfassung mit Zeitlinie.
 5. **Minimal:** 1-2 Sätze Zusammenfassung.
+6. **Northgate:** Literarischer Zusammenfassungsstil für kreatives Schreiben.
+7. **Aelemar:** Fokus auf Handlungspunkte und Charaktererinnerungen.
+8. **Comprehensive:** Synopsis-artige Zusammenfassung mit verbesserter Schlüsselwortextraktion.
 
 ### **Benutzerdefinierte Prompts**
 
@@ -244,11 +291,11 @@ Alle Prompts und Presets **müssen** die KI anweisen, nur gültiges JSON zurück
 * **Editor-Aktualisierung:** Aktualisiert optional den Lorebook-Editor nach dem Hinzufügen einer Erinnerung.
 
 > **Bestehende Erinnerungen müssen konvertiert werden!**
-> Verwenden Sie den [Lorebook Converter](https://www.google.com/search?q=/resources/lorebookconverter.html), um das `stmemorybooks` Flag und erforderliche Felder hinzuzufügen.
+> Verwenden Sie den [Lorebook Converter](../resources/lorebookconverter.html), um das `stmemorybooks` Flag und erforderliche Felder hinzuzufügen.
 
 ---
 
-### 🎡 Tracker & Neben-Prompts (Side Prompts)
+### 🎡 Tracker & Neben-Prompts
 
 Side Prompts können wie Tracker verwendet werden und erstellen separate Side-Prompt-Einträge in Ihrem Erinnerungs-Lorebook. Side Prompts ermöglichen es Ihnen, **laufende Zustände** zu verfolgen, nicht nur vergangene Ereignisse. Zum Beispiel:
 
@@ -277,7 +324,7 @@ Side Prompts können wie Tracker verwendet werden und erstellen separate Side-Pr
 
 ```
 - Wenn Sie einen neuen Prompt erstellen, können Sie von den integrierten kopieren, um beste Kompatibilität zu gewährleisten.
-- Zusätzliche Side-Prompt-Vorlagenbibliothek [JSON-Datei](resources/SidePromptTemplateLibrary.json) - einfach importieren und verwenden.
+- Zusätzliche Side-Prompt-Vorlagenbibliothek [JSON-Datei](../resources/SidePromptTemplateLibrary.json) - einfach importieren und verwenden.
 - Manuelle Syntax: `/sideprompt "Name" {{macro}}="value" [X-Y]`.
 - Nachdem Sie einen Side Prompt in der Befehls-Autovervollständigung ausgewählt haben, schlägt STMB die noch benötigten Laufzeit-Makros vor.
 - Side Prompts mit eigenen Laufzeit-Makros sind nur manuell nutzbar. STMB entfernt bei solchen Vorlagen `On Interval` und `On After Memory` beim Speichern/Importieren und zeigt eine Warnung an.
@@ -293,8 +340,9 @@ Side Prompts können wie Tracker verwendet werden und erstellen separate Side-Pr
 2. **Antwort-Parsing**: Bereinigen, neu formatieren oder standardisieren Sie die rohe Antwort der KI, bevor sie gespeichert wird, indem Sie auf die Platzierung **AI Output** abzielen.
 
 
-* **Multi-Select-Unterstützung**: Sie können jetzt mehrere Regex-Skripte auswählen. Alle aktivierten Skripte werden nacheinander in jeder Phase (Prompt-Generierung und Antwort-Parsing) angewendet, was fortgeschrittene und flexible Transformationen ermöglicht.
-* **Wie es funktioniert**: Die Integration ist nahtlos. Erstellen und aktivieren (Mehrfachauswahl) Sie einfach Ihre gewünschten Skripte in der Regex-Erweiterung, und Memory Books wendet sie automatisch während der Erstellung von Erinnerungen und Side Prompts an.
+* **Multi-Select-Unterstützung**: Sie können mehrere Regex-Skripte auswählen.
+* **Wie es funktioniert**: Schalten Sie in STMB `Regex verwenden (fortgeschritten)` ein, klicken Sie auf `📐 Regex konfigurieren…` und wählen Sie, welche Skripte STMB vor dem Senden an die KI und vor dem Parsen/Speichern der Antwort ausführen soll.
+* **Wichtig**: Die Auswahl wird von STMB gesteuert. Die dort ausgewählten Skripte laufen **auch dann**, wenn sie in der Regex-Erweiterung selbst deaktiviert sind.
 
 ---
 
@@ -313,24 +361,30 @@ Side Prompts können wie Tracker verwendet werden und erstellen separate Side-Pr
 
 [Kurzer Videoüberblick auf Youtube](https://youtu.be/mG2eRH_EhHs)
 
-* **Manual Lorebook Mode:** Aktivieren, um Lorebooks pro Chat auszuwählen.
-* **Auto-create lorebook if none exists:** ⭐ *Neu in v4.2.0* - Automatisch Lorebooks unter Verwendung Ihrer Namensvorlage erstellen und binden.
+* **Manuellen Lorebook-Modus aktivieren:** Aktivieren, um Lorebooks pro Chat auszuwählen.
+* **Lorebook automatisch erstellen, falls keines existiert:** ⭐ *Neu in v4.2.0* - Automatisch Lorebooks unter Verwendung Ihrer Namensvorlage erstellen und binden.
 * **Lorebook Name Template:** ⭐ *Neu in v4.2.0* - Anpassen der automatisch erstellten Lorebook-Namen mit {{char}}, {{user}}, {{chat}} Platzhaltern.
 * **Allow Scene Overlap:** Überlappende Erinnerungsbereiche zulassen oder verhindern.
-* **Always Use Default Profile:** Bestätigungs-Popups überspringen.
-* **Show memory previews:** Vorschau-Popup aktivieren, um Erinnerungen zu überprüfen und zu bearbeiten, bevor sie zum Lorebook hinzugefügt werden.
-* **Show Notifications:** Toast-Nachrichten umschalten.
-* **Refresh Editor:** Lorebook-Editor nach Erinnerungserstellung automatisch aktualisieren.
+* **Bestätigungs-Popups überspringen:** Bestätigungs-Popups überspringen.
+* **Vorschau der Erinnerungen anzeigen:** Vorschau-Popup aktivieren, um Erinnerungen zu überprüfen und zu bearbeiten, bevor sie zum Lorebook hinzugefügt werden.
+* **Benachrichtigungen anzeigen:** Toast-Nachrichten umschalten.
+* **Lorebook-Editor nach dem Hinzufügen von Erinnerungen aktualisieren:** Lorebook-Editor nach Erinnerungserstellung automatisch aktualisieren.
 * **Token Warning Threshold:** Warnstufe für große Szenen festlegen (Standard: 30.000).
 * **Default Previous Memories:** Anzahl der vorherigen Erinnerungen, die als Kontext einbezogen werden sollen (0-7).
-* **Auto-create memory summaries:** Automatische Erinnerungserstellung in Intervallen aktivieren.
-* **Auto-Summary Interval:** Anzahl der Nachrichten, nach denen automatisch eine Erinnerungszusammenfassung erstellt wird (10-200, Standard: 100).
-* **Memory Title Format:** Wählen oder anpassen (siehe unten).
+* **Automatische Erinnerungs-Zusammenfassungen erstellen:** Automatische Erinnerungserstellung in Intervallen aktivieren.
+* **Intervall für automatische Zusammenfassung:** Anzahl der Nachrichten, nach denen automatisch eine Erinnerungszusammenfassung erstellt wird.
+* **Puffer für automatische Zusammenfassung:** Verzögert die automatische Zusammenfassung um eine konfigurierbare Anzahl von Nachrichten.
+* **Bei erreichter Ebene zur Konsolidierung auffordern:** Zeigt eine Ja/Später-Bestätigung, wenn eine ausgewählte Zusammenfassungsstufe genug geeignete Quell-Einträge hat.
+* **Auto-Konsolidierungsstufen:** Wählen Sie eine oder mehrere Zusammenfassungsstufen aus, die die Bestätigung auslösen sollen. Derzeit Arc bis Series.
+* **Unhide hidden messages before memory generation:** Kann vor der Erinnerungserstellung `/unhide X-Y` ausführen.
+* **Nachrichten nach Erstellung automatisch verstecken:** Kann alle verarbeiteten Nachrichten oder nur den letzten Bereich ausblenden.
+* **Regex verwenden (fortgeschritten):** Aktiviert die STMB-Auswahl für Regex-Skripte bei Outgoing/Incoming-Verarbeitung.
+* **Format des Erinnerungstitels:** Wählen oder anpassen (siehe unten).
 
 ### **Profil-Felder**
 
 * **Name:** Anzeigename.
-* **API/Provider:** openai, claude, custom, etc.
+* **API/Provider:** `Aktuelle SillyTavern Einstellungen`, openai, claude, custom, full manual und andere unterstützte Provider.
 * **Model:** Modellname (z.B. gpt-4, claude-3-opus).
 * **Temperature:** 0.0–2.0.
 * **Prompt or Preset:** Benutzerdefiniert oder eingebaut.
@@ -387,6 +441,10 @@ Passen Sie die Titel Ihrer Lorebook-Einträge mit einem leistungsstarken Vorlage
 
 Die Einstellungen befinden sich im Erweiterungsmenü (der Zauberstab 🪄 links neben Ihrem Eingabefeld). Suchen Sie nach "Memory Books".
 
+### Warum sieht die KI meine Einträge nicht?
+
+Prüfen Sie zuerst, ob die Einträge überhaupt gesendet werden. Ich nutze dafür gern [WorldInfo-Info](https://github.com/aikohanasaki/SillyTavern-WorldInfoInfo). Wenn die Einträge gesendet werden und die KI sie trotzdem ignoriert, müssen Sie sie wahrscheinlich OOC deutlicher darauf hinweisen.
+
 ### Muss ich Vektoren verwenden?
 
 Der 🔗 Eintrag in World Info heißt in der ST-Benutzeroberfläche "vectorized". Deshalb verwende ich das Wort vektorisiert. Wenn Sie die Vektoren-Erweiterung nicht verwenden (ich tue es nicht), funktioniert es über Schlüsselwörter (Keywords). Dies ist alles automatisiert, sodass Sie nicht darüber nachdenken müssen, welche Schlüsselwörter Sie verwenden sollen.
@@ -395,9 +453,9 @@ Der 🔗 Eintrag in World Info heißt in der ST-Benutzeroberfläche "vectorized"
 
 Ich empfehle, dass Ihr Erinnerungs-Lorebook ein separates Buch ist. Dies macht es einfacher, Erinnerungen zu organisieren (im Vergleich zu anderen Einträgen). Zum Beispiel, um es zu einem Gruppenchat hinzuzufügen, es in einem anderen Chat zu verwenden oder ein individuelles Lorebook-Budget festzulegen (mit STLO).
 
-### Sollte ich 'Delay until recursion' verwenden, wenn Memory Books das einzige Lorebook ist?
+### Sollte ich 'Verzögern bis Rekursion' verwenden, wenn Memory Books das einzige Lorebook ist?
 
-Nein. Wenn es keine anderen World Info-Einträge oder Lorebooks gibt, kann die Auswahl von 'Delay until recursion' verhindern, dass die erste Schleife ausgelöst wird, wodurch nichts aktiviert wird. Wenn Memory Books das einzige Lorebook ist, deaktivieren Sie entweder 'Delay until recursion' oder stellen Sie sicher, dass mindestens eine zusätzliche World Info / ein zusätzliches Lorebook konfiguriert ist.
+Nein. Wenn es keine anderen World Info-Einträge oder Lorebooks gibt, kann die Auswahl von 'Verzögern bis Rekursion' verhindern, dass die erste Schleife ausgelöst wird, wodurch nichts aktiviert wird. Wenn Memory Books das einzige Lorebook ist, deaktivieren Sie entweder 'Verzögern bis Rekursion' oder stellen Sie sicher, dass mindestens eine zusätzliche World Info / ein zusätzliches Lorebook konfiguriert ist.
 
 ---
 
@@ -406,11 +464,14 @@ Nein. Wenn es keine anderen World Info-Einträge oder Lorebooks gibt, kann die A
 * **Kein Lorebook verfügbar oder ausgewählt:**
 * Wählen Sie im manuellen Modus ein Lorebook aus, wenn Sie dazu aufgefordert werden.
 * Binden Sie im automatischen Modus ein Lorebook an Ihren Chat.
-* Oder aktivieren Sie "Auto-create lorebook if none exists" für die automatische Erstellung.
+* Oder aktivieren Sie "Lorebook automatisch erstellen, falls keines existiert" für die automatische Erstellung.
 
 
 * **Keine Szene ausgewählt:**
 * Markieren Sie sowohl Start- (►) als auch Endpunkte (◄).
+
+* **Verknüpftes Lorebook fehlt oder wurde gelöscht:**
+* Binden Sie einfach ein neues Lorebook an, auch ein leeres.
 
 
 * **Szene überschneidet sich mit bestehender Erinnerung:**
@@ -433,7 +494,11 @@ Nein. Wenn es keine anderen World Info-Einträge oder Lorebooks gibt, kann die A
 * **Charakterdaten nicht verfügbar:**
 * Warten Sie, bis der Chat/die Gruppe vollständig geladen ist.
 
+---
 
+## 📚 Mehr Power mit Lorebook Ordering (STLO)
+
+Für eine fortgeschrittene Organisation von Erinnerungen und eine tiefere Integration in die Geschichte empfehlen wir dringend, STMB zusammen mit [SillyTavern-LorebookOrdering (STLO)](https://github.com/aikohanasaki/SillyTavern-LorebookOrdering/blob/main/guides/STMB%20and%20STLO%20-%20German.md) zu verwenden. Schauen Sie in die Anleitung für Best Practices, Einrichtungsanweisungen und Tipps!
 
 ---
 
@@ -442,6 +507,6 @@ Nein. Wenn es keine anderen World Info-Einträge oder Lorebooks gibt, kann die A
 * **In Titeln erlaubt:** Alle druckbaren Unicode-Zeichen sind erlaubt, einschließlich akzentuierter Buchstaben, Emojis, CJK und Symbolen.
 * **Blockiert:** Nur Unicode-Steuerzeichen (U+0000–U+001F, U+007F–U+009F) werden blockiert; diese werden automatisch entfernt.
 
-## Siehe [Details zur Zeichen-Richtlinie](https://www.google.com/search?q=charset.md) für Beispiele und Migrationshinweise.
+## Siehe [Details zur Zeichen-Richtlinie](../charset.md) für Beispiele und Migrationshinweise.
 
 *Entwickelt mit Liebe unter Verwendung von VS Code/Cline, umfangreichen Tests und Community-Feedback.* 🤖💕

@@ -4,9 +4,47 @@
 
 Butuh bot untuk mengingat banyak hal, tetapi obrolannya terlalu panjang untuk konteks? Ingin melacak poin plot penting secara otomatis tanpa mencatat secara manual? ST Memory Books melakukan hal itu—ekstensi ini memantau obrolan Anda dan membuat ringkasan cerdas sehingga Anda tidak akan pernah kehilangan jejak cerita Anda lagi.
 
-(Mencari detail teknis di balik layar? Mungkin Anda menginginkan [Cara Kerja STMB](https://www.google.com/search?q=userguides%5ChowSTMBworks-en.md).)
+(Mencari detail teknis di balik layar? Mungkin Anda menginginkan [Cara Kerja STMB](howSTMBworks-id.md).)
 
----
+## 📑 Daftar Isi
+
+- [🚀 Mulai Cepat (5 Menit Menuju Memori Pertama Anda!)](#-mulai-cepat-5-menit-menuju-memori-pertama-anda)
+  - [Langkah 1: Temukan Ekstensinya](#langkah-1-temukan-ekstensinya)
+  - [Langkah 2: Aktifkan "Auto-Magic"](#langkah-2-aktifkan-auto-magic)
+  - [Langkah 3: Mengobrol Seperti Biasa](#langkah-3-mengobrol-seperti-biasa)
+- [💡 Apa yang Sebenarnya Dilakukan ST Memory Books](#-apa-yang-sebenarnya-dilakukan-st-memory-books)
+  - [🤖 Ringkasan Otomatis (Automatic Summaries)](#-ringkasan-otomatis-automatic-summaries)
+  - [✋ Pembuatan Memori Manual](#-pembuatan-memori-manual)
+  - [📊 Prompt Sampingan & Pelacak Cerdas](#-prompt-sampingan--pelacak-cerdas)
+  - [📚 Koleksi Memori (Memory Collections)](#-koleksi-memori-memory-collections)
+- [🎯 Pilih Gaya Anda](#-pilih-gaya-anda)
+- [🙈 Penghematan token: sembunyikan / tampilkan pesan](#-penghematan-token-sembunyikan--tampilkan-pesan)
+  - [Apa arti “sembunyikan”?](#apa-arti-sembunyikan)
+  - [Kapan ini berguna?](#kapan-ini-berguna)
+  - [Auto-hide setelah pembuatan memori](#auto-hide-setelah-pembuatan-memori)
+  - [Tampilkan lagi sebelum pembuatan memori](#tampilkan-lagi-sebelum-pembuatan-memori)
+  - [Pengaturan awal yang disarankan](#pengaturan-awal-yang-disarankan)
+- [🌈 Ringkasan Konsolidasi](#-ringkasan-konsolidasi)
+  - [T: Apa itu Ringkasan Konsolidasi?](#t-apa-itu-ringkasan-konsolidasi)
+  - [T: Mengapa menggunakannya?](#t-mengapa-menggunakannya)
+  - [T: Apakah ini berjalan otomatis?](#t-apakah-ini-berjalan-otomatis)
+  - [T: Bagaimana cara menggunakannya?](#t-bagaimana-cara-menggunakannya)
+  - [Apa yang dikonsolidasi, dan apa yang tidak?](#apa-yang-dikonsolidasi-dan-apa-yang-tidak)
+  - [Mengapa ini penting?](#mengapa-ini-penting)
+  - [Aturan praktis](#aturan-praktis)
+- [🎨 Pelacak, Prompt Sampingan, & Templat (Fitur Lanjutan)](#-pelacak-prompt-sampingan--templat-fitur-lanjutan)
+  - [🚀 Mulai Cepat dengan Templat](#-mulai-cepat-dengan-templat)
+  - [⚙️ Cara Kerja Prompt Sampingan](#-cara-kerja-prompt-sampingan)
+  - [🛠️ Mengelola Prompt Sampingan](#-mengelola-prompt-sampingan)
+  - [💡 Contoh Templat](#-contoh-templat)
+  - [🔧 Membuat Prompt Sampingan Kustom](#-membuat-prompt-sampingan-kustom)
+  - [💬 Tips Pro](#-tips-pro)
+  - [🧠 Kontrol Teks Lanjutan dengan Ekstensi Regex](#-kontrol-teks-lanjutan-dengan-ekstensi-regex)
+- [⚙️ Pengaturan yang Benar-benar Penting](#-pengaturan-yang-benar-benar-penting)
+- [🔧 Pemecahan Masalah (Saat Ada Masalah)](#-pemecahan-masalah-saat-ada-masalah)
+- [🚫 Apa yang Tidak Dilakukan ST Memory Books](#-apa-yang-tidak-dilakukan-st-memory-books)
+- [💡 Bantuan & Info Lebih Lanjut](#-bantuan--info-lebih-lanjut)
+  - [📚 Tingkatkan Kekuatan dengan Pengurutan Lorebook (STLO)](#-tingkatkan-kekuatan-dengan-pengurutan-lorebook-stlo)
 
 ## 🚀 Mulai Cepat (5 Menit Menuju Memori Pertama Anda!)
 
@@ -20,16 +58,18 @@ Butuh bot untuk mengingat banyak hal, tetapi obrolannya terlalu panjang untuk ko
 
 ### Langkah 2: Aktifkan "Auto-Magic"
 
-* Di panel kontrol, cari **"Auto-Summary"**.
+* Di panel kontrol, cari **"Buat ringkasan memori secara otomatis"**.
 * Ubah menjadi **ON** (Hidup).
-* Atur untuk membuat memori setiap **20-30 pesan** (titik awal yang baik).
+* Atur **Interval Ringkasan Otomatis** ke **20-30 pesan** (titik awal yang baik).
+* Biarkan **Penyangga Ringkasan Otomatis** rendah pada awalnya (`0-2` adalah rentang pemula yang bagus).
+* Buat satu memori manual terlebih dahulu agar chat diprime.
 * Selesai! 🎉
 
 ### Langkah 3: Mengobrol Seperti Biasa
 
 * Terus mengobrol seperti biasa.
 * Setelah 20-30 pesan baru, ST Memory Books akan secara otomatis:
-* Memilih batas adegan terbaik.
+  - Menggunakan pesan baru sejak checkpoint terakhir.
 * Meminta AI Anda untuk menulis ringkasan.
 * Menyimpannya ke koleksi memori Anda.
 * Menampilkan notifikasi saat selesai.
@@ -60,7 +100,7 @@ Anggaplah ST Memory Books sebagai **pustakawan AI pribadi** Anda untuk percakapa
 * Buat memori sesuai permintaan untuk momen-momen spesial.
 * Bagus untuk menangkap poin plot utama atau perkembangan karakter.
 
-### 📊 **Side Prompts & Pelacak Cerdas**
+### 📊 **Prompt Sampingan & Pelacak Cerdas**
 
 *"Saya ingin melacak hubungan, alur plot, atau statistik"*
 
@@ -89,9 +129,10 @@ Anggaplah ST Memory Books sebagai **pustakawan AI pribadi** Anda untuk percakapa
 
 **Cara kerjanya:**
 
-1. Aktifkan "Auto-Summary" di pengaturan.
-2. Pilih seberapa sering membuat memori (setiap 20-50 pesan bekerja dengan baik).
-3. Terus mengobrol secara normal - memori terjadi secara otomatis!
+1. Aktifkan `Buat ringkasan memori secara otomatis`.
+2. Atur `Interval Ringkasan Otomatis` sesuai kecepatan chat Anda.
+3. Opsional, gunakan `Penyangga Ringkasan Otomatis` kecil jika Anda ingin generasi tertunda.
+4. Lanjutkan mengobrol secara normal setelah membuat satu memori manual pertama.
 
 **Apa yang Anda dapatkan:**
 
@@ -114,7 +155,7 @@ Anggaplah ST Memory Books sebagai **pustakawan AI pribadi** Anda untuk percakapa
 1. Cari tombol panah kecil (► ◄) pada pesan obrolan Anda.
 2. Klik ► pada pesan pertama dari adegan penting.
 3. Klik ◄ pada pesan terakhir dari adegan itu.
-4. Buka Memory Books (🪄) dan klik "Create Memory".
+4. Buka Memory Books (🪄) dan klik "Buat Memori".
 
 **Apa yang Anda dapatkan:**
 
@@ -136,8 +177,9 @@ Anggaplah ST Memory Books sebagai **pustakawan AI pribadi** Anda untuk percakapa
 * `/scenememory 10-25` - Buat memori dari pesan 10 hingga 25.
 * `/creatememory` - Buat memori dari adegan yang saat ini ditandai.
 * `/nextmemory` - Ringkas semuanya sejak memori terakhir.
-* `/sideprompt "Relationship Tracker" {{macro}}="value"` - Jalankan pelacak kustom.
-* Setelah Side Prompt dipilih, pelengkapan otomatis perintah akan menyarankan makro runtime yang masih diperlukan.
+* `/sideprompt "Relationship Tracker" {{macro}}="value" [X-Y]` - Jalankan side prompt, dengan makro runtime opsional dan rentang pesan opsional.
+* `/sideprompt-on "Name"` atau `/sideprompt-off "Name"` - Mengaktifkan atau menonaktifkan side prompt secara manual.
+* `/stmb-set-highest <N|none>` - Menyesuaikan baseline auto-summary untuk chat saat ini.
 
 **Apa yang Anda dapatkan:**
 
@@ -149,65 +191,137 @@ Anggaplah ST Memory Books sebagai **pustakawan AI pribadi** Anda untuk percakapa
 
 ---
 
-## 🌈 Arc Summaries (Ringkasan Arc)
+## 🙈 Penghematan token: sembunyikan / tampilkan pesan
 
-Arc Summaries dibuat secara manual. Tidak ada yang diringkas atau dihapus kecuali Anda memilih untuk melakukannya.
+Salah satu cara termudah untuk mengurangi kekacauan dan menghemat token di chat panjang adalah menyembunyikan pesan setelah Anda sudah mengubahnya menjadi memori.
 
-### T: Apa itu Arc Summaries?
+### Apa arti “sembunyikan”?
 
-**J:** Arc Summaries membantu menjaga cerita panjang tetap terkelola. Seiring waktu, Anda mungkin mengumpulkan banyak entri memori lama. Beberapa di antaranya menggambarkan bagian cerita yang sama.
-Arc Summary memungkinkan Anda menggabungkan beberapa memori lama menjadi satu ringkasan yang lebih pendek.
+Menyembunyikan pesan **tidak** menghapus apa pun. Pesan tetap ada di chat dan memori tetap ada di lorebook; pesan itu hanya tidak lagi dikirim langsung ke AI.
 
-### T: Apa yang terjadi saat saya membuat Arc Summary?
+### Kapan ini berguna?
 
-**J:** Saat Anda membuat Arc Summary:
+* chat Anda sudah menjadi sangat panjang
+* Anda sudah membuat memori dari pesan-pesan itu
+* Anda ingin tampilan chat lebih rapi
 
-* Memori yang dipilih digabungkan menjadi satu entri baru.
-* Ringkasan baru menggantikan memori lama tersebut
-*(memori lama dapat disembunyikan secara otomatis — tidak dihapus).*
-* Cerita masih diingat, tetapi dengan penggunaan token yang lebih sedikit.
+### Auto-hide setelah pembuatan memori
 
-### T: Mengapa membuat Arc Summaries?
+STMB dapat otomatis menyembunyikan pesan setelah memori dibuat:
 
-**J:** Arc Summaries berguna ketika:
+* **Jangan sembunyikan secara otomatis**: tidak menyembunyikan apa pun secara otomatis
+* **Sembunyikan semua pesan secara otomatis hingga memori terakhir**: menyembunyikan semua yang sudah tercakup
+* **Sembunyikan hanya pesan di memori terakhir secara otomatis**: menyembunyikan hanya rentang terakhir yang diproses
 
-* Daftar memori Anda menjadi sangat panjang.
-* Memori lama tidak lagi diperlukan dalam detail penuh.
-* Anda ingin mengurangi penggunaan token dalam obrolan panjang.
+Anda juga bisa menentukan berapa banyak pesan terbaru yang tetap terlihat dengan **Pesan untuk dibiarkan tidak tersembunyi**.
 
-### T: Bagaimana cara membuat Arc Summary?
+### Tampilkan lagi sebelum pembuatan memori
 
-**J:** Untuk membuat Arc Summary:
+**Tampilkan kembali pesan tersembunyi untuk pembuatan memori (menjalankan /unhide X-Y)** membuat STMB sementara menjalankan `/unhide X-Y` sebelum membuat memori.
 
-1. Klik **🌈 Consolidate Memories into Arcs** di bagian bawah popup utama STMB.
-2. Pilih tipe arc:
-* **Multi-Arc**
-AI mencari jeda alami dan membuat beberapa arc.
-Anda dapat mengatur jumlah minimum memori per arc.
-*Bekerja paling baik dengan model yang kuat (GPT, Gemini, Sonnet). Model lokal mungkin kesulitan.*
-* **Single Arc**
-AI menggabungkan semua memori yang dipilih menjadi satu arc.
-Arc sebelumnya disertakan untuk membantu menjaga konsistensi cerita.
-* **Tiny**
-Opsi yang lebih cepat dan sederhana yang mungkin bekerja lebih baik dengan model lokal,
-tetapi hasilnya mungkin kurang mendetail.
+### Pengaturan awal yang disarankan
 
+* **Sembunyikan hanya pesan di memori terakhir secara otomatis**
+* biarkan **2** pesan tetap terlihat
+* aktifkan **Tampilkan kembali pesan tersembunyi untuk pembuatan memori (menjalankan /unhide X-Y)**
 
-3. Pilih memori yang ingin Anda sertakan.
-4. Klik **Run** dan tunggu analisis arc selesai.
+## 🌈 Ringkasan Konsolidasi
+
+Ringkasan konsolidasi membantu menjaga cerita panjang tetap terkelola dengan memadatkan memori STMB yang lama menjadi ringkasan tingkat lebih tinggi.
+
+### T: Apa itu Ringkasan Konsolidasi?
+
+**J:** Alih-alih hanya membuat memori tingkat adegan terus-menerus, STMB dapat menggabungkan memori atau ringkasan yang sudah ada menjadi rekap yang lebih ringkas. Tier pertama adalah **Arc**, dan tier rekap yang lebih tinggi juga tersedia untuk cerita yang lebih panjang:
+
+* Arc
+* Chapter
+* Book
+* Legend
+* Series
+
+### T: Mengapa menggunakannya?
+
+**J:** Konsolidasi berguna ketika:
+
+* Daftar memori Anda menjadi panjang
+* Entri lama tidak lagi memerlukan detail adegan demi adegan
+* Anda ingin mengurangi penggunaan token tanpa kehilangan kesinambungan
+* Anda ingin rekap naratif yang lebih bersih dan lebih tinggi tingkatnya
+
+### T: Apakah ini berjalan otomatis?
+
+**J:** Tidak. Konsolidasi tetap memerlukan konfirmasi.
+
+* Anda selalu bisa membuka **Gabungkan Ingatan** secara manual dari popup utama
+* Anda juga bisa mengaktifkan **Tampilkan prompt konsolidasi saat tier siap**
+* Saat tier target yang dipilih mencapai minimum entri sumber yang memenuhi syarat, STMB menampilkan konfirmasi **yes/later**
+* Memilih **Yes** membuka popup konsolidasi dengan tier itu sudah dipilih; ini tidak berjalan sendiri secara diam-diam
+
+### T: Bagaimana cara menggunakannya?
+
+**J:** Untuk membuat ringkasan konsolidasi:
+
+1. Klik **Gabungkan Ingatan** di popup utama STMB
+2. Pilih tier ringkasan tujuan
+3. Pilih entri sumber yang ingin disertakan
+4. Opsional, nonaktifkan entri sumber setelah ringkasan baru dibuat
+5. Klik **Run**
+
+Jika AI memberikan respons konsolidasi yang buruk, STMB dapat menampilkan alur perbaikan/tinjau sebelum Anda mencoba menyimpan lagi.
+
+### Apa yang dikonsolidasi, dan apa yang tidak?
+
+Konsolidasi bekerja pada **memori STMB dan ringkasan STMB**.
+
+Artinya:
+
+* memori biasa dapat dikonsolidasi menjadi ringkasan tingkat lebih tinggi
+* ringkasan tingkat lebih tinggi kemudian dapat dikonsolidasi lagi menjadi rekap yang lebih besar
+
+Side prompt berbeda.
+
+**Side prompt adalah entri pelacak**, bukan entri ringkasan memori. Side prompt dimaksudkan untuk menjaga informasi berkelanjutan tetap mutakhir, seperti:
+
+* status hubungan
+* tujuan saat ini
+* papan skor
+* keadaan dunia
+* pelacak alur cerita
+
+Dengan kata lain:
+
+* **Memori** = "apa yang terjadi di adegan ini?"
+* **Side Prompt** = "apa keadaan saat ini dari hal ini?"
+* **Konsolidasi** = "ringkas banyak memori menjadi rekap yang lebih besar"
+
+### Mengapa ini penting?
+
+Ini penting karena pengguna kadang mengira entri pelacak akan ikut naik ke ringkasan Arc atau Chapter.
+
+Itu **tidak** terjadi.
+
+Jika Anda ingin sesuatu menjadi bagian dari Konsolidasi, item itu harus ada sebagai entri memori/ringkasan STMB biasa, bukan hanya sebagai side prompt.
+
+### Aturan praktis
+
+Gunakan:
+
+* **Memori** untuk rekap adegan
+* **Side Prompt** untuk pelacak yang terus berjalan
+* **Konsolidasi** untuk memadatkan memori lama menjadi rekap yang lebih besar
 
 ---
 
-## 🎨 Pelacak, Side Prompts, & Templat (Fitur Lanjutan)
+## 🎨 Pelacak, Prompt Sampingan, & Templat (Fitur Lanjutan)
 
-**Side Prompts** adalah pelacak latar belakang yang membantu memelihara informasi cerita yang sedang berlangsung.
+**Prompt Sampingan** adalah pelacak latar belakang yang membantu memelihara informasi cerita yang sedang berlangsung.
 Mereka mencipta entri Side Prompt yang berasingan di lorebook dan berjalan bersamaan dengan pembuatan memori. Anggap saja sebagai **asisten yang mengawasi cerita Anda dan menjaga detail tertentu tetap mutakhir**.
 Makro ST standard seperti `{{user}}` dan `{{char}}` dikembangkan di `Prompt` dan `Response Format`. Makro bukan standard `{{...}}` menjadi input wajib untuk dijalankan secara manual.
 
 ### 🚀 **Mulai Cepat dengan Templat**
 
 1. Buka pengaturan Memory Books.
-2. Klik **Side Prompts**.
+2. Klik **Prompt Sampingan**.
 3. Jelajahi **pustaka templat** dan pilih yang sesuai dengan cerita Anda:
 * **Character Development Tracker** – Melacak perubahan kepribadian dan pertumbuhan.
 * **Relationship Dynamics** – Melacak hubungan antar karakter.
@@ -219,7 +333,7 @@ Makro ST standard seperti `{{user}}` dan `{{char}}` dikembangkan di `Prompt` dan
 4. Aktifkan templat yang Anda inginkan (Anda dapat menyesuaikannya nanti).
 5. Jika templat mengandungi makro runtime tersuai, ia tidak akan berjalan secara automatik dan mesti dimulakan secara manual dengan `/sideprompt`.
 
-### ⚙️ **Cara Kerja Side Prompts**
+### ⚙️ **Cara Kerja Prompt Sampingan**
 
 * **Pelacak Latar Belakang**: Mereka berjalan dengan tenang dan memperbarui informasi dari waktu ke waktu.
 * **Tidak Mengganggu**: Mereka tidak mengubah pengaturan AI utama atau prompt karakter Anda.
@@ -231,9 +345,9 @@ Makro ST standard seperti `{{user}}` dan `{{char}}` dikembangkan di `Prompt` dan
 
 Ini membuat perilaku pemicu dapat dimengerti tanpa istilah teknis.
 
-### 🛠️ **Mengelola Side Prompts**
+### 🛠️ **Mengelola Prompt Sampingan**
 
-* **Side Prompts Manager**: Buat, edit, duplikasi, dan atur pelacak.
+* **Pengelola Prompt Sampingan**: Buat, edit, duplikasi, dan atur pelacak.
 * **Enable / Disable**: Aktifkan atau nonaktifkan pelacak kapan saja.
 * **Import / Export**: Bagikan templat atau cadangkan.
 * **Status View**: Lihat pelacak mana yang aktif dalam obrolan saat ini.
@@ -243,7 +357,7 @@ Ini membuat perilaku pemicu dapat dimengerti tanpa istilah teknis.
 ### 💡 **Contoh Templat**
 
 * Pustaka Templat Side Prompt (impor JSON ini):
-[SidePromptTemplateLibrary.json](https://www.google.com/search?q=/resources/SidePromptTemplateLibrary.json)
+[SidePromptTemplateLibrary.json](../resources/SidePromptTemplateLibrary.json)
 
 Ide prompt contoh:
 
@@ -252,10 +366,10 @@ Ide prompt contoh:
 * "Catat detail pembangunan dunia (world-building) baru saat muncul"
 * "Lacak hubungan antara Karakter A dan Karakter B"
 
-### 🔧 **Membuat Side Prompts Kustom**
+### 🔧 **Membuat Prompt Sampingan Kustom**
 
-1. Buka Side Prompts Manager.
-2. Klik **Create New**.
+1. Buka Pengelola Prompt Sampingan.
+2. Klik **Buat Baru**.
 3. Tulis instruksi yang singkat dan jelas
 *(contoh: "Selalu catat bagaimana cuaca di setiap adegan")*
 4. Tambahkan jika perlu makro ST standard atau makro runtime dalam format `{{macro}}="value"`.
@@ -264,125 +378,48 @@ Ide prompt contoh:
 
 ### 💬 **Tips Pro**
 
-Side Prompts bekerja paling baik jika **kecil dan terfokus**.
+Prompt Sampingan bekerja paling baik jika **kecil dan terfokus**.
 Daripada "lacak segalanya," cobalah "lacak ketegangan romantis antara karakter utama."
 
 ---
 
 ### 🧠 Kontrol Teks Lanjutan dengan Ekstensi Regex
 
-**Ingin kontrol penuh atas teks yang dikirim ke dan diterima dari AI?** ST Memory Books sekarang terintegrasi secara mulus dengan ekstensi resmi **Regex**, memungkinkan Anda mengubah teks secara otomatis menggunakan aturan kustom.
+ST Memory Books dapat menjalankan skrip Regex yang dipilih sebelum generasi dan sebelum penyimpanan.
 
-**Dukungan Multi-Pilih:** Anda sekarang dapat memilih banyak skrip regex di ekstensi Regex. Semua skrip yang diaktifkan akan diterapkan secara berurutan pada setiap tahap (Prompt dan Respons), memungkinkan transformasi yang kuat dan fleksibel.
-
-Ini adalah fitur lanjutan yang sempurna bagi pengguna yang ingin:
-
-* Membersihkan frasa berulang atau artefak secara otomatis dari respons AI.
-* Memformat ulang bagian dari transkrip obrolan sebelum AI melihatnya.
-* Menstandarisasi terminologi atau gaya bicara karakter dengan cepat.
-
-#### **Cara Kerjanya: Dua Hook Sederhana**
-
-Integrasi ini bekerja dengan menerapkan skrip regex aktif Anda pada dua titik kritis. Anda mengontrol skrip mana yang berjalan dengan mengatur **Placement** di editor ekstensi Regex:
-
-1. **Memodifikasi Prompt (Teks Keluar)**
-* **Placement yang digunakan**: `User Input`
-* **Apa yang dilakukannya**: Mencegat prompt yang telah dirakit sepenuhnya (termasuk riwayat obrolan, instruksi sistem, dll.) tepat sebelum dikirim ke AI untuk memori atau pembuatan side prompt.
-* **Contoh Kasus Penggunaan**: Anda dapat membuat skrip untuk secara otomatis mengganti semua contoh nama panggilan karakter dengan nama lengkap mereka, memastikan AI memiliki konteks yang tepat.
-
-
-2. **Memodifikasi Respons (Teks Masuk)**
-* **Placement yang digunakan**: `AI Output`
-* **Apa yang dilakukannya**: Mencegat respons teks mentah dari AI *sebelum* diuraikan atau disimpan sebagai memori.
-* **Contoh Kasus Penggunaan**: Jika model AI Anda sering menyertakan frasa berulang seperti *"As a large language model..."* dalam ringkasannya, Anda dapat membuat skrip regex untuk menghapus frasa ini secara otomatis dari setiap memori yang dihasilkannya.
-
-
-
-#### **Contoh Mulai Cepat: Membersihkan Respons AI**
-
-Katakanlah model AI Anda secara konsisten menambahkan `(OOC: I hope this summary is helpful!)` ke generasi memorinya. Berikut cara menghapusnya secara otomatis:
-
-1. **Buka Ekstensi Regex**: Buka menu ekstensi utama SillyTavern dan buka **Regex**.
-2. **Buat Skrip Baru**: Klik "Open Regex Editor" untuk membuat skrip regex baru.
-3. **Konfigurasi Skrip**:
-* **Script Name**: `Clean OOC Notes`
-* **Find Regex**: `/\\(OOC:.*?\\)/g` (Ini menemukan teks "(OOC: ...)" dan semua yang ada di dalamnya).
-* **Replace String**: Biarkan kosong untuk menghapus teks yang cocok.
-* **Affects (Placement)**: Hapus centang semua kotak kecuali untuk **AI Output**. Ini adalah langkah paling penting!
-* **Aktifkan Skrip**: Pastikan skrip tidak dinonaktifkan (disabled).
-
-
-4. **Simpan dan Anda Selesai!**
-
-Sekarang, setiap kali ST Memory Books mendapatkan respons dari AI, skrip ini akan berjalan secara otomatis, membersihkan teks yang tidak diinginkan sebelum memori disimpan ke lorebook Anda.
+* Aktifkan **Gunakan ekspresi reguler (lanjutan)** di STMB
+* Klik **📐 Konfigurasi ekspresi reguler…**
+* Pilih secara terpisah skrip mana yang harus berjalan sebelum mengirim teks ke AI dan sebelum menyimpan
+* Pilihan di dalam STMB tetap berlaku meskipun skrip itu dinonaktifkan di ekstensi Regex
 
 ---
 
 ## ⚙️ Pengaturan yang Benar-benar Penting
 
-Jangan khawatir - Anda tidak perlu mengonfigurasi semuanya! Berikut adalah pengaturan yang membuat perbedaan terbesar:
+Untuk referensi lengkap, lihat [readme.md](readme.md).
 
-### 🎛️ **Frekuensi Auto-Summary**
+Kontrol dasar yang paling penting:
 
-* **20-30 pesan**: Bagus untuk obrolan mendetail dan lebih lambat.
-* **40-60 pesan**: Sempurna untuk percakapan yang lebih cepat dan penuh aksi.
-* **80+ pesan**: Untuk obrolan grup yang sangat cepat atau percakapan santai.
-
-### 📝 **Pratinjau Memori (Memory Previews)**
-
-* Aktifkan ini (**ON**) untuk meninjau memori sebelum disimpan.
-* Anda dapat mengedit, menyetujui, atau membuat ulang jika AI melewatkan sesuatu yang penting.
-* Direkomendasikan untuk alur cerita penting.
-
-### 🏷️ **Judul Memori**
-
-* Sesuaikan bagaimana memori Anda dinamai.
-* Gunakan `{{title}}` untuk judul yang dibuat AI, `{{scene}}` untuk nomor pesan.
-* Contoh: `"Chapter {{title}} ({{scene}})"` menjadi `"Chapter Pelarian Besar (Scene 45-67)"`.
-
-### 📚 **Koleksi Memori** (Lorebooks)
-
-* **Auto mode**: Menggunakan koleksi memori default obrolan Anda (paling mudah).
-* **Manual mode**: Pilih koleksi tertentu untuk setiap obrolan (untuk organisasi).
-* **Auto-create**: Membuat koleksi baru secara otomatis (bagus untuk karakter baru).
+* **Pengaturan SillyTavern Saat Ini** memakai koneksi ST aktif Anda secara langsung
+* **Buat ringkasan memori secara otomatis** menyalakan pembuatan memori otomatis
+* **Interval Ringkasan Otomatis** dan **Penyangga Ringkasan Otomatis** mengatur kapan proses otomatis berjalan
+* **Auto-hide/unhide memories** membantu penghematan token
+* **Aktifkan Mode Buku Latar Manual** dan **Buat buku latar secara otomatis jika tidak ada** mengatur tempat penyimpanan memori
+* **Tampilkan prompt konsolidasi saat tier siap** hanya menampilkan konfirmasi konsolidasi
 
 ---
 
 ## 🔧 Pemecahan Masalah (Saat Ada Masalah)
 
-### "Saya tidak melihat opsi Memory Books!"
+Untuk daftar lengkap, lihat [readme.md](readme.md).
 
-* Periksa apakah ekstensi sudah diinstal dan diaktifkan.
-* Cari ikon tongkat ajaib (🪄) di sebelah input obrolan Anda.
-* Coba refresh halaman.
+Pemeriksaan cepat:
 
-### "Tombol panah (► ◄) tidak muncul!"
-
-* Tunggu 3-5 detik setelah memuat obrolan - mereka butuh waktu untuk muncul.
-* Jika masih hilang, refresh halaman.
-* Pastikan ST Memory Books diaktifkan di ekstensi.
-
-### "Auto Summary tidak bekerja!"
-
-* Periksa kembali apakah "Auto-Summary" diaktifkan di pengaturan Memory Books.
-* Apakah interval pesan sudah tercapai? Auto-summary menunggu cukup pesan baru.
-* Jika Anda menunda auto-summary, mungkin ia menunggu hingga jumlah pesan tertentu.
-* Auto-summary hanya memproses pesan baru sejak memori *terakhir*. Jika Anda menghapus memori lama, ia tidak akan kembali ke belakang.
-
-### "Saya mendapat pesan kesalahan tentang lorebook yang hilang!"
-
-* Buka pengaturan Memory Books.
-* Ikat (bind) lorebook ke obrolan Anda (Automatic Mode) atau aktifkan "Auto-create lorebook if none exists".
-
-### "Terkadang gagal tanpa alasan!"
-
-* Pastikan Max Response Length (dalam preset SillyTavern) diatur pada angka yang cukup besar. Aiko merekomendasikan setidaknya 2000 token (Aiko menjalankan 4000).
-* Pesan kesalahan sekarang lebih mendetail, tetapi jika Anda masih mengalami masalah, silakan hubungi Aiko di Github atau Discord.
-
-### "Prompt kustom saya tidak bekerja dengan benar!"
-
-* Periksa "Summary Prompt Manager" di pengaturan Memory Books.
-* Pastikan prompt Anda menginstruksikan AI untuk merespons dalam **format JSON** (contoh: `{ "title": "...", "content": "..." }`).
+* Pastikan STMB aktif dan menu **Memory Books** muncul di menu ekstensi
+* Jika auto-summary tidak berjalan, pastikan Anda membuat satu memori manual terlebih dahulu dan interval/buffer masuk akal
+* Jika memori tidak bisa disimpan, pastikan lorebook terikat ke chat atau **Buat buku latar secara otomatis jika tidak ada** aktif
+* Jika perilaku Regex terasa salah, periksa pilihan di **📐 Konfigurasi ekspresi reguler…**
+* Jika konsolidasi tidak muncul, periksa tier target dan opsi konfirmasi konsolidasi
 
 ---
 
@@ -396,7 +433,7 @@ Jangan khawatir - Anda tidak perlu mengonfigurasi semuanya! Berikut adalah penga
 
 * **Info lebih mendetail:** [readme.md](readme.md)
 * **Pembaruan terbaru:** [changelog.md](changelog.md)
-* **Konversi lorebook lama:** [lorebookconverter.html](https://www.google.com/search?q=lorebookconverter.html)
+* **Konversi lorebook lama:** [lorebookconverter.html](../resources/lorebookconverter.html)
 * **Dukungan komunitas:** Bergabunglah dengan komunitas SillyTavern di Discord! (Cari thread 📕ST Memory Books atau DM @tokyoapple untuk bantuan langsung.)
 * **Bug/fitur:** Menemukan bug atau punya ide bagus? Buka GitHub issue di repositori ini.
 

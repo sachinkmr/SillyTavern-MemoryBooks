@@ -2,6 +2,7 @@ import { chat, chat_metadata } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { getRegexedString, regex_placement } from '../../../extensions/regex/engine.js';
 import { METADATA_KEY, world_names, loadWorldInfo } from '../../../world-info.js';
+import { executeSlashCommands } from '../../../slash-commands.js';
 import { getSceneMarkers } from './sceneManager.js';
 import { createSceneRequest, compileScene, toReadableText } from './chatcompile.js';
 import { getCurrentApiInfo, getUIModelSettings, normalizeCompletionSource, resolveEffectiveConnectionFromProfile, resolveManualLorebookNames, clampInt, createStmbInFlightTask, isStmbStopError, getStmbStopEpoch, throwIfStmbStopped } from './utils.js';
@@ -12,6 +13,7 @@ import { fetchPreviousSummaries, showMemoryPreviewPopup } from './confirmationPo
 import { t as __st_t_tag, translate } from '../../../i18n.js';
 import { oai_settings } from '../../../openai.js';
 import { applySidePromptMacros, collectTemplateRuntimeMacros, extractMacroTokens, parseSidePromptCommandInput } from './sidePromptMacros.js';
+import { tr } from './i18nHelpers.js';
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
@@ -127,11 +129,68 @@ function countVisibleMessagesSince(exclusiveStart, inclusiveEnd) {
 }
 
 /**
- * Compile a scene safely for [start, end], skipping system messages (handled by compileScene)
+ * Capture contiguous hidden ranges so a temporary /unhide can be restored.
  */
-function compileRange(start, end) {
-    const req = createSceneRequest(start, end);
-    return compileScene(req);
+function collectHiddenRanges(start, end) {
+    const ranges = [];
+    let rangeStart = null;
+
+    for (let i = start; i <= end && i < chat.length; i++) {
+        const isHidden = !!chat[i]?.is_system;
+        if (isHidden) {
+            if (rangeStart === null) rangeStart = i;
+            continue;
+        }
+        if (rangeStart !== null) {
+            ranges.push({ start: rangeStart, end: i - 1 });
+            rangeStart = null;
+        }
+    }
+
+    if (rangeStart !== null) {
+        ranges.push({ start: rangeStart, end: end });
+    }
+
+    return ranges;
+}
+
+/**
+ * Restore previously hidden ranges after a temporary /unhide.
+ */
+async function restoreHiddenRanges(hiddenRanges) {
+    for (const range of hiddenRanges) {
+        try {
+            await executeSlashCommands(`/hide ${range.start}-${range.end}`);
+        } catch (err) {
+            console.warn(`${MODULE_NAME}: /hide command failed while restoring hidden range ${range.start}-${range.end}:`, err);
+        }
+    }
+}
+
+/**
+ * Compile a scene safely for [start, end], optionally unhiding the range first
+ * when the global unhide-before-memory setting is enabled.
+ */
+async function compileRange(start, end) {
+    const shouldTemporarilyUnhide = !!extension_settings?.STMemoryBooks?.moduleSettings?.unhideBeforeMemory;
+    const hiddenRanges = shouldTemporarilyUnhide ? collectHiddenRanges(start, end) : [];
+
+    if (shouldTemporarilyUnhide && hiddenRanges.length > 0) {
+        try {
+            await executeSlashCommands(`/unhide ${start}-${end}`);
+        } catch (err) {
+            console.warn(`${MODULE_NAME}: /unhide command failed or unavailable:`, err);
+        }
+    }
+
+    try {
+        const req = createSceneRequest(start, end);
+        return compileScene(req);
+    } finally {
+        if (hiddenRanges.length > 0) {
+            await restoreHiddenRanges(hiddenRanges);
+        }
+    }
 }
 
 /**
@@ -487,6 +546,26 @@ async function runSidePromptAttempt({ taskLabel, finalPrompt, conn, runEpoch }) 
     }
 }
 
+function ensureSidePromptTextNotBlank(text, tpl, trigger) {
+    if (String(text ?? '').trim()) return true;
+
+    const name = String(tpl?.name || 'Unknown');
+    console.error(`${MODULE_NAME}: SidePrompt returned blank content; skipping save`, {
+        trigger,
+        name,
+        key: tpl?.key || null,
+    });
+    toastr.error(
+        tr(
+            'STMemoryBooks_Toast_SidePromptBlankNotSaved',
+            'SidePrompt "{{name}}" returned blank content. No changes were saved.',
+            { name },
+        ),
+        'STMemoryBooks',
+    );
+    return false;
+}
+
 function buildSidePromptPreviewSceneData(compiledScene) {
     return {
         sceneStart: compiledScene?.metadata?.sceneStart ?? 0,
@@ -565,19 +644,18 @@ export async function evaluateTrackers() {
 
         // Ensure lorebook exists up-front
         const lore = await requireLorebookStrict();
+        const defaultOverrides = resolveSidePromptConnection(null);
 
         const currentLast = chat.length - 1;
         if (currentLast < 0) return;
 
         for (const tpl of enabledInterval) {
-            const unifiedTitle = `${tpl.name} (STMB SidePrompt)`;
-            const legacyTitle = `${tpl.name} (STMB Tracker)`;
-
             // Per-template lorebook resolution (supports lorebookOverride; falls back to default)
             const tplLores = await resolveLorebooksForTemplate(tpl, lore);
 
-            // Read existing entry to get last checkpoint (generic first, then legacy)
-            const existing = getEntryByTitle(tplLores[0].data, unifiedTitle) || getEntryByTitle(tplLores[0].data, legacyTitle);
+            // Read existing entry to get last checkpoint
+            const lookupTitles = getSidePromptLookupTitles(tpl, {}, ['tracker']);
+            const existing = findFirstLoreEntryByTitle(tplLores[0].data, lookupTitles);
             const lastMsgId = Number(
                 (existing && existing[`STMB_sp_${tpl.key}_lastMsgId`]) ??
                 (existing && existing.STMB_tracker_lastMsgId) ??
@@ -613,49 +691,40 @@ export async function evaluateTrackers() {
 
             let compiled = null;
             try {
-                compiled = compileRange(boundedStart, currentLast);
+                compiled = await compileRange(boundedStart, currentLast);
             } catch (err) {
                 console.warn(`${MODULE_NAME}: Interval compile failed:`, err);
                 continue;
             }
 
-            // Build prompt with prior content and optional previous memories
-            const prior = existing?.content || '';
-            let prevSummaries = [];
-            const pmCountRaw = Number(tpl?.settings?.previousMemoriesCount ?? 0);
-            const pmCount = Math.max(0, Math.min(7, pmCountRaw));
-            if (pmCount > 0) {
-                try {
-                    const res = await fetchPreviousSummaries(pmCount, extension_settings, chat_metadata);
-                    prevSummaries = res?.summaries || [];
-                } catch {}
-            }
-            const finalPrompt = buildPrompt(tpl.prompt, prior, compiled, tpl.responseFormat, prevSummaries);
+            const prepared = await prepareSidePromptRun({
+                tpl,
+                loreData: lore.data,
+                compiledScene: compiled,
+                defaultOverrides,
+                fallbackKinds: ['tracker'],
+            });
 
             // Call LLM
             let resultText = '';
             const runEpoch = getStmbStopEpoch();
             try {
-            const idx = Number(tpl?.settings?.overrideProfileIndex);
-            const useOverride = !!tpl?.settings?.overrideProfileEnabled && Number.isFinite(idx);
-            const overrides = useOverride ? resolveSidePromptConnection(null, { overrideProfileIndex: idx }) : resolveSidePromptConnection(null);
-            console.log(`${MODULE_NAME}: SidePrompt attempt`, {
-                trigger: 'onInterval',
-                name: tpl.name,
-                key: tpl.key,
-                range: `${boundedStart}-${currentLast}`,
-                visibleSince,
-                threshold,
-                api: overrides.api,
-                model: overrides.model,
-            });
-            const task = createStmbInFlightTask(`SidePrompt:onInterval:${tpl?.key || tpl?.name || 'unknown'}`);
-            try {
-                resultText = await runLLM(finalPrompt, overrides, { signal: task.signal });
-                task.throwIfStopped();
-            } finally {
-                task.finish();
-            }
+                console.log(`${MODULE_NAME}: SidePrompt attempt`, {
+                    trigger: 'onInterval',
+                    name: tpl.name,
+                    key: tpl.key,
+                    range: `${boundedStart}-${currentLast}`,
+                    visibleSince,
+                    threshold,
+                    api: prepared.conn.api,
+                    model: prepared.conn.model,
+                });
+                resultText = await runSidePromptAttempt({
+                    taskLabel: `SidePrompt:onInterval:${tpl?.key || tpl?.name || 'unknown'}`,
+                    finalPrompt: prepared.finalPrompt,
+                    conn: prepared.conn,
+                    runEpoch,
+                });
             } catch (err) {
                 if (isStmbStopError(err)) return;
                 console.error(`${MODULE_NAME}: Interval sideprompt LLM failed:`, err);
@@ -664,13 +733,14 @@ export async function evaluateTrackers() {
             }
 
             throwIfStmbStopped(runEpoch);
+            if (!ensureSidePromptTextNotBlank(resultText, tpl, 'onInterval')) continue;
 
             // Preview gating if enabled
             try {
                 const settings = extension_settings?.STMemoryBooks;
                 if (settings?.moduleSettings?.showMemoryPreviews) {
                     const memoryResult = {
-                        extractedTitle: unifiedTitle,
+                        extractedTitle: prepared.unifiedTitle,
                         content: resultText,
                         suggestedKeys: [],
                     };
@@ -716,7 +786,7 @@ export async function evaluateTrackers() {
                         console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
                         continue;
                     }
-                    await upsertLorebookEntryByTitle(tplLore.name, targetData, unifiedTitle, resultText, {
+                    await upsertLorebookEntryByTitle(tplLore.name, targetData, prepared.unifiedTitle, resultText, {
                         defaults,
                         entryOverrides,
                         metadataUpdates,
@@ -836,6 +906,11 @@ export async function runAfterMemory(compiledScene, profile = null) {
                 let textToSave = r.text;
                 let approved = true;
 
+                if (!ensureSidePromptTextNotBlank(textToSave, r.tpl, 'onAfterMemory')) {
+                    results.push({ name: r.tpl.name, ok: false, error: new Error('Blank side prompt response') });
+                    continue;
+                }
+
                 try {
                     throwIfStmbStopped(runEpoch);
                     const previewResult = await resolveSidePromptPreview({
@@ -856,6 +931,10 @@ export async function runAfterMemory(compiledScene, profile = null) {
                 }
 
                 if (approved) {
+                    if (!ensureSidePromptTextNotBlank(textToSave, r.tpl, 'onAfterMemory')) {
+                        results.push({ name: r.tpl.name, ok: false, error: new Error('Blank side prompt response') });
+                        continue;
+                    }
                     throwIfStmbStopped(runEpoch);
                     const tpl = r.tpl;
                     const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
@@ -1026,7 +1105,7 @@ export async function runSidePrompt(args) {
                 return '';
             }
             try {
-                compiled = compileRange(start, end);
+                compiled = await compileRange(start, end);
             } catch (err) {
                 console.error(`${MODULE_NAME}: compileRange(${start}, ${end}) failed:`, err);
                 toastr.error(translate('Failed to compile the specified range', 'STMemoryBooks_Toast_FailedToCompileRange'), 'STMemoryBooks');
@@ -1045,7 +1124,7 @@ export async function runSidePrompt(args) {
             console.log(`${MODULE_NAME}: Manual run — no range given, using last ${defaultN} messages (${autoStart}→${currentLast})`);
 
             try {
-                compiled = compileRange(autoStart, currentLast);
+                compiled = await compileRange(autoStart, currentLast);
             } catch (err) {
                 console.error(`${MODULE_NAME}: compileRange(${autoStart}, ${currentLast}) failed:`, err);
                 toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
@@ -1080,6 +1159,7 @@ export async function runSidePrompt(args) {
                 runEpoch,
             });
             throwIfStmbStopped(runEpoch);
+            if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) return '';
 
             // Preview gating if enabled
             try {
@@ -1102,6 +1182,7 @@ export async function runSidePrompt(args) {
                 console.warn(`${MODULE_NAME}: Preview step failed; proceeding without preview`, previewErr);
             }
             throwIfStmbStopped(runEpoch);
+            if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) return '';
             const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
             const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runtimeMacros);
             const endId = compiled?.metadata?.sceneEnd ?? currentLast;
