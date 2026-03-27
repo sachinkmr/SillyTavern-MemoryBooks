@@ -1086,7 +1086,7 @@ export async function runSidePrompt(args) {
             const n = Math.max(1, Math.min(lastN, currentLast + 1));
             const lastNStart = currentLast - n + 1;
             try {
-                compiled = compileRange(lastNStart, currentLast);
+                compiled = await compileRange(lastNStart, currentLast);
             } catch (err) {
                 console.error(`${MODULE_NAME}: compileRange(${lastNStart}, ${currentLast}) failed:`, err);
                 toastr.error(translate('Failed to compile messages for /sideprompt', 'STMemoryBooks_Toast_FailedToCompileMessages'), 'STMemoryBooks');
