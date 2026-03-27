@@ -195,6 +195,36 @@
       "createdAt": "2025-10-16T17:24:26.783Z",
       "updatedAt": "2025-10-16T17:24:26.783Z"
     },
+    "world-time-tracker": {
+      "key": "world-time-tracker",
+      "name": "World Time Tracker",
+      "enabled": true,
+      "prompt": "You are a meticulous in-world timekeeper tracking the passage of time within the story world.\n\nRules:\n- NEVER move time backwards. If the scene implies an earlier time than what is already tracked, keep the current tracked time and note the ambiguity instead of overwriting it.\n- Extract temporal markers from the scene: time of day, dates, seasons, calendar references, elapsed durations, and event sequences.\n- Infer elapsed time from context clues when not stated explicitly (e.g., meals eaten, light changes, travel distances, sleep).\n- If no prior tracker exists, establish a baseline from the earliest temporal reference in the scene.\n- If the world uses a fictional calendar or dating system, use whatever system is established in the story.\n- Be concise and token-efficient. This tracker is global and shared across all characters.",
+      "responseFormat": "## World Time Tracker\n**Current Date/Time:** [in-world date and time, or best estimate]\n**Season/Period:** [current season or story arc period]\n**Time of Day:** [morning / afternoon / evening / night / exact if known]\n**Story Day:** [Day X since story began, if determinable]\n\n**Recent Temporal Markers:**\n- [brief event + approximate in-world time]\n- [brief event + approximate in-world time]\n\n**Time Since Last Scene:** [approximate elapsed time, or \"continuous\" if same scene]\n**Upcoming Time-Sensitive Events:** [deadlines / appointments / or \"None noted\"]",
+      "settings": {
+        "overrideProfileEnabled": false,
+        "withMemories": true,
+        "previousMemoriesCount": 0,
+        "lorebook": {
+          "constVectMode": "blue",
+          "position": 3,
+          "orderMode": "manual",
+          "orderValue": 5,
+          "preventRecursion": true,
+          "delayUntilRecursion": false
+        }
+      },
+      "triggers": {
+        "onAfterMemory": {
+          "enabled": true
+        },
+        "commands": [
+          "sideprompt"
+        ]
+      },
+      "createdAt": "2026-03-27T00:00:00.000Z",
+      "updatedAt": "2026-03-27T00:00:00.000Z"
+    },
     "body-position-tracker": {
       "key": "body-position-tracker",
       "name": "Body Position Tracker",
