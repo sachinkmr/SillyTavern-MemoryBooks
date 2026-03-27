@@ -1201,7 +1201,7 @@ export async function runSidePrompt(args) {
                     console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
                     continue;
                 }
-                await upsertLorebookEntryByTitle(tplLore.name, targetData, unifiedTitle, resultText, {
+                await upsertLorebookEntryByTitle(tplLore.name, targetData, prepared.unifiedTitle, resultText, {
                     defaults,
                     entryOverrides,
                     metadataUpdates,
