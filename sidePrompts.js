@@ -795,9 +795,10 @@ function findFirstLoreEntryByTitle(loreData, titles = []) {
     return null;
 }
 
-async function prepareSidePromptRun({ tpl, loreData, compiledScene, defaultOverrides = null, fallbackKinds = [], runtimeMacros = {} }) {
+async function prepareSidePromptRun({ tpl, loreData, compiledScene, defaultOverrides = null, fallbackKinds = [], runtimeMacros = {}, additionalTitles = [] }) {
     const unifiedTitle = getUnifiedSidePromptTitle(tpl, runtimeMacros);
-    const existing = findFirstLoreEntryByTitle(loreData, getSidePromptLookupTitles(tpl, runtimeMacros, fallbackKinds));
+    const lookupTitles = [...additionalTitles, ...getSidePromptLookupTitles(tpl, runtimeMacros, fallbackKinds)];
+    const existing = findFirstLoreEntryByTitle(loreData, lookupTitles);
     const prior = existing?.content || '';
 
     let prevSummaries = [];
@@ -1001,19 +1002,21 @@ export async function evaluateTrackers() {
             for (const { charTarget, lore: charLore } of charWorkItems) {
                 const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
 
+                const perCharTitleHint = charTarget
+                    ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
+                    : null;
+
                 const prepared = await prepareSidePromptRun({
                     tpl,
-                    loreData: lore.data,
+                    loreData: (charLore?.data) || lore.data,
                     compiledScene: compiled,
                     defaultOverrides,
                     fallbackKinds: ['tracker'],
                     runtimeMacros,
+                    additionalTitles: perCharTitleHint ? [perCharTitleHint] : [],
                 });
 
-                // For per-character mode, override the title to include character name
-                const effectiveTitle = charTarget
-                    ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
-                    : prepared.unifiedTitle;
+                const effectiveTitle = perCharTitleHint || prepared.unifiedTitle;
 
                 // Call LLM
                 let resultText = '';
@@ -1209,17 +1212,19 @@ export async function runAfterMemory(compiledScene, profile = null) {
                 try {
                     const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
                     const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+                    const perCharTitleHint = charTarget
+                        ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
+                        : null;
                     const prepared = await prepareSidePromptRun({
                         tpl,
-                        loreData: tplLores[0].data,
+                        loreData: (charLore?.data) || tplLores[0].data,
                         compiledScene,
                         defaultOverrides,
                         fallbackKinds: ['plotpoints', 'scoreboard'],
                         runtimeMacros,
+                        additionalTitles: perCharTitleHint ? [perCharTitleHint] : [],
                     });
-                    const effectiveTitle = charTarget
-                        ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
-                        : prepared.unifiedTitle;
+                    const effectiveTitle = perCharTitleHint || prepared.unifiedTitle;
                     console.log(`${MODULE_NAME}: SidePrompt attempt`, {
                         trigger: 'onAfterMemory',
                         name: tpl.name,
@@ -1571,18 +1576,22 @@ export async function runSidePrompt(args, options = {}) {
                 dbg(`--- Processing: ${displayName} ---`);
                 dbg('Runtime macros:', effectiveMacros);
 
+                // For per-character: compute title upfront and search character's lorebook for prior
+                const perCharTitleHint = charTarget
+                    ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, effectiveMacros), charTarget.name)
+                    : null;
+
                 const prepared = await prepareSidePromptRun({
                     tpl,
-                    loreData: tplLores[0].data,
+                    loreData: (charLore?.data) || tplLores[0].data,
                     compiledScene: compiled,
                     defaultOverrides,
                     fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
                     runtimeMacros: effectiveMacros,
+                    additionalTitles: perCharTitleHint ? [perCharTitleHint] : [],
                 });
 
-                const effectiveTitle = charTarget
-                    ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
-                    : prepared.unifiedTitle;
+                const effectiveTitle = perCharTitleHint || prepared.unifiedTitle;
                 dbg('Entry title:', effectiveTitle);
                 dbg('Prior entry found:', !!prepared.prior, prepared.prior ? `(${prepared.prior.length} chars)` : '');
                 dbg('Connection:', { api: prepared.conn.api, model: prepared.conn.model, temp: prepared.conn.temperature });
