@@ -105,15 +105,19 @@ function discoverChatCharacters() {
 }
 
 /**
- * Fallback: find a lorebook whose name contains the character's name.
- * Used when the character doesn't have an explicitly attached lorebook.
+ * Fallback: find a lorebook whose name starts with or closely matches the character's name.
+ * Excludes the STMB chat-bound lorebook to avoid false positives on shared names.
  * @param {string} charName
  * @returns {string|null}
  */
 function findCharacterLorebookByName(charName) {
     if (!charName || !Array.isArray(world_names)) return null;
     const lower = charName.toLowerCase();
-    return world_names.find(n => n.toLowerCase().includes(lower)) || null;
+    // Exclude the STMB chat-bound lorebook — it often contains character names
+    const chatBoundLb = chat_metadata?.[METADATA_KEY] || null;
+    const candidates = world_names.filter(n => n !== chatBoundLb);
+    // Prefer exact "starts with" match (e.g., "Shilpa Lorebook" for "Shilpa")
+    return candidates.find(n => n.toLowerCase().startsWith(lower)) || null;
 }
 
 /**
