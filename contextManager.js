@@ -8,11 +8,11 @@
  * Lives in new files to avoid upstream merge conflicts.
  */
 
-import { chat, chat_metadata, characters, name2, this_chid, saveSettingsDebounced } from '../../../../script.js';
+import { chat, chat_metadata, characters, name2, this_chid, saveSettingsDebounced, getRequestHeaders } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { selected_group, groups } from '../../../group-chats.js';
 import { eventSource, event_types } from '../../../../script.js';
-import { world_names, loadWorldInfo, saveWorldInfo } from '../../../world-info.js';
+import { world_names, loadWorldInfo, saveWorldInfo, createNewWorldInfo, updateWorldInfoList, METADATA_KEY } from '../../../world-info.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
@@ -195,6 +195,9 @@ function getChatDisabledKeys() {
 // ─── Character Lorebook Discovery ──────────────────────────────────────
 
 export function discoverCharacterLorebooks() {
+    // Fallback: chat-bound lorebook from STMB memory module
+    const chatBoundLorebook = chat_metadata?.[METADATA_KEY] || null;
+
     if (selected_group) {
         const group = groups?.find(x => x.id === selected_group);
         if (!group?.members) return [];
@@ -203,7 +206,7 @@ export function discoverCharacterLorebooks() {
             .filter(Boolean)
             .map(char => ({
                 characterName: char.name,
-                lorebookName: char?.data?.extensions?.world || null,
+                lorebookName: char?.data?.extensions?.world || chatBoundLorebook,
                 avatar: char.avatar,
             }));
     } else {
@@ -211,10 +214,46 @@ export function discoverCharacterLorebooks() {
         if (!char) return [];
         return [{
             characterName: char.name || name2,
-            lorebookName: char?.data?.extensions?.world || null,
+            lorebookName: char?.data?.extensions?.world || chatBoundLorebook,
             avatar: char.avatar,
         }];
     }
+}
+
+// ─── Attach Lorebook to Character ─────────────────────────────────────
+
+/**
+ * Persist a lorebook attachment to a character via merge-attributes API.
+ * Updates both in-memory characters array and the character card on disk.
+ * @param {string} avatar - Character avatar filename (e.g. "CharName.png")
+ * @param {string} lorebookName - Name of the lorebook to attach
+ */
+async function attachLorebookToCharacter(avatar, lorebookName) {
+    // Update in-memory character data
+    const char = characters.find(c => c.avatar === avatar);
+    if (char) {
+        if (!char.data) char.data = {};
+        if (!char.data.extensions) char.data.extensions = {};
+        char.data.extensions.world = lorebookName;
+    }
+
+    // Persist to character card on disk
+    const resp = await fetch('/api/characters/merge-attributes', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            avatar: avatar,
+            data: {
+                extensions: {
+                    world: lorebookName,
+                },
+            },
+        }),
+    });
+    if (!resp.ok) {
+        throw new Error(`merge-attributes returned ${resp.status}`);
+    }
+    console.log(`${MODULE_NAME}: Attached lorebook "${lorebookName}" to character "${avatar}"`);
 }
 
 // ─── Missing Lorebook Popup ────────────────────────────────────────────
@@ -597,16 +636,11 @@ async function runCMTemplate(tpl, compiledScene, defaultOverrides, runEpoch) {
             }
             lorebookName = result.lorebookName;
 
-            // If user chose to create, we need to create the world info
+            // If user chose to create, use SillyTavern's proper createNewWorldInfo
             if (result.action === 'created') {
                 try {
-                    // SillyTavern's createNewWorldInfo creates a new lorebook
-                    const resp = await fetch('/api/worldinfo/create', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', ...Object.fromEntries(new Headers(/** @type {HeadersInit} */({})).entries()) },
-                        body: JSON.stringify({ name: lorebookName }),
-                    });
-                    if (!resp.ok) {
+                    const created = await createNewWorldInfo(lorebookName);
+                    if (!created) {
                         console.error(`${MODULE_NAME}: Failed to create lorebook "${lorebookName}"`);
                         toastr.error(`Failed to create lorebook for ${characterName}`, 'STMemoryBooks');
                         results.push({ characterName, ok: false, error: 'create_failed' });
@@ -619,6 +653,13 @@ async function runCMTemplate(tpl, compiledScene, defaultOverrides, runEpoch) {
                     continue;
                 }
             }
+
+            // Persist lorebook attachment to the character
+            try {
+                await attachLorebookToCharacter(charInfo.avatar, lorebookName);
+            } catch (err) {
+                console.warn(`${MODULE_NAME}: Could not persist lorebook attachment for ${characterName}:`, err);
+            }
         }
 
         // Load lorebook data
@@ -628,6 +669,7 @@ async function runCMTemplate(tpl, compiledScene, defaultOverrides, runEpoch) {
             if (!loreData) throw new Error('null data');
         } catch (err) {
             console.warn(`${MODULE_NAME}: Failed to load lorebook "${lorebookName}" for ${characterName}; skipping.`, err);
+            toastr.error(`Failed to load lorebook "${lorebookName}" for ${characterName}`, 'STMemoryBooks');
             results.push({ characterName, lorebookName, ok: false, error: err });
             continue;
         }
@@ -678,6 +720,7 @@ async function runCMTemplate(tpl, compiledScene, defaultOverrides, runEpoch) {
         // Validate response
         if (!String(resultText ?? '').trim()) {
             console.warn(`${MODULE_NAME}: Blank response for ${characterName}; skipping.`);
+            toastr.warning(`Context Manager got blank LLM response for ${characterName}; skipping.`, 'STMemoryBooks');
             results.push({ characterName, lorebookName, ok: false, error: 'blank_response' });
             continue;
         }
