@@ -46,9 +46,11 @@ function isPerCharacterTemplate(tpl) {
 function getCharacterLorebookName(char) {
     // Primary: ST stores the character's attached lorebook in data.extensions.world
     const worldName = char?.data?.extensions?.world;
+    console.debug(`${MODULE_NAME}: getCharacterLorebookName for "${char?.name}": data.extensions.world = "${worldName || '(not set)'}"`);
     if (worldName && typeof worldName === 'string' && worldName.trim()) {
         const name = worldName.trim();
         if (world_names?.includes(name)) return name;
+        console.debug(`${MODULE_NAME}: Lorebook "${name}" from character data not found in world_names`);
     }
     return null;
 }
@@ -98,6 +100,7 @@ function discoverChatCharacters() {
         }
     }
 
+    console.debug(`${MODULE_NAME}: discoverChatCharacters result:`, result.map(c => ({ name: c.name, lorebook: c.lorebook || '(none)' })));
     return result;
 }
 
@@ -253,6 +256,7 @@ function buildPerCharacterMacros(charName, baseMacros = {}) {
     return {
         ...baseMacros,
         '{{charname}}': charName,
+        '{{char}}': charName, // Override {{char}} so per-character templates resolve to this character
     };
 }
 

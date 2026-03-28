@@ -1,4 +1,4 @@
-import { substituteParamsExtended, substituteParams, name1, name2 } from '../../../../script.js';
+import { substituteParamsExtended } from '../../../../script.js';
 
 const MACRO_TOKEN_REGEX = /{{[^{}]+}}/g;
 
@@ -53,10 +53,17 @@ export function extractMacroTokens(text) {
 }
 
 export function applySidePromptMacros(text, runtimeMacros = {}) {
-    // First resolve standard ST macros ({{char}}, {{user}}, etc.) via substituteParams
-    const withStandardMacros = substituteParams(String(text || ''), name1, name2);
-    // Then resolve custom runtime macros ({{charname}}, etc.) via substituteParamsExtended
-    return substituteParamsExtended(withStandardMacros, toRuntimeMacroEnv(runtimeMacros));
+    let result = String(text || '');
+    // First: direct replacement for runtime macros (per-character {{char}} override, {{charname}}, etc.)
+    // This runs before substituteParamsExtended so per-character overrides take priority
+    for (const [token, value] of Object.entries(runtimeMacros || {})) {
+        if (typeof token === 'string' && token.startsWith('{{') && token.endsWith('}}') && value != null) {
+            result = result.replaceAll(token, String(value));
+        }
+    }
+    // Then: substituteParamsExtended resolves standard ST macros ({{user}}, {{time}}, etc.)
+    // and any remaining custom macros from the env
+    return substituteParamsExtended(result, toRuntimeMacroEnv(runtimeMacros));
 }
 
 export function collectTemplateRuntimeMacros(templateLike, runtimeMacros = {}) {
