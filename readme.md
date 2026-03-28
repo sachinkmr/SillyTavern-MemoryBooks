@@ -54,7 +54,6 @@ Other links:
   - [Global Settings](#global-settings)
   - [Profile Fields](#profile-fields)
 - [Title Formatting](#-title-formatting)
-- [Context Memories](#-context-memories)
 - [Visual Feedback & Accessibility](#-visual-feedback--accessibility)
 - [FAQ](#faq)
   - [Should I make a separate lorebook for memories, or can I use the same lorebook I'm already using for other things?](#should-i-make-a-separate-lorebook-for-memories-or-can-i-use-the-same-lorebook-im-already-using-for-other-things)
@@ -234,7 +233,7 @@ All prompts and presets **must** instruct the AI to return only valid JSON, e.g.
 - `/creatememory` - Create memory from marked scene.
 - `/scenememory X-Y` - Set scene range and create memory (e.g., `/scenememory 10-15`).
 - `/nextmemory` - Create memory from end of last memory to current message.
-- `/sideprompt "Name" {{macro}}="value" [X-Y]` - Run side prompt (`{{macro}}`s are optional).
+- `/sideprompt "Name" {{macro}}="value" [X-Y]` - Run side prompt (`{{macro}}`s are optional). Add `-debug` for detailed console logs.
 - `/sideprompt-on "Name" | all` - Enable a Side Prompt by name or all.
 - `/sideprompt-off "Name" | all` - Disable a Side Prompt by name or all.
 - `/stmb-highest` - Return the highest message id for processed memories in this chat.
@@ -298,11 +297,23 @@ Side Prompts can be used like trackers and create separate side-prompt entries i
 - Run them manually or automatically, depending on the template.
 - Use standard SillyTavern macros/placeholders like `{{user}}` and `{{char}}` in side prompt `Prompt`, `Response Format`, `Title`, and `{{keyword}}` fields.
 - Use custom macros/placeholders like `{{npc name}}` (you must supply them when you run `/sideprompt`).
+#### **Per-Character Mode:**
+Side prompts support a **per-character mode** that runs a separate LLM call for each character in the chat. When enabled:
+- Each character gets their own lorebook entry (e.g., `Context Tracker [Alice] (STMB SidePrompt)`)
+- `{{charname}}` is automatically resolved to each character's name in prompts and response formats
+- Character names are auto-added to entry keywords
+- In group chats, all group members are processed; in single chats, the one character is processed
+- Entries are written to each character's **own lorebook** (from `character.data.extensions.world`). If none is found, STMB prompts you to select or create one. The choice is persisted so you're only asked once per character.
+
+To enable: Edit a side prompt template and check **"Per-character mode"** at the bottom of the dialog.
+
+A ready-to-use per-character context tracker template is available at [`resources/context-tracker-template.md`](resources/context-tracker-template.md).
+
 #### **Usage Tips:**
 - When creating a new prompt, you can copy from built-ins for best compatibility.
 - Side prompts do not have to return JSON! They can return plain text.
-- Side prompts are updated/overwritten. This differentiates them from memories, which are saved sequentially. 
-- Manual syntax is `/sideprompt "Name" {{macro}}="value" [X-Y]`.
+- Side prompts are updated/overwritten. This differentiates them from memories, which are saved sequentially.
+- Manual syntax is `/sideprompt "Name" {{macro}}="value" [X-Y]`. Add `-debug` for detailed browser console logs.
 - Once you choose a side prompt in slash-command autocomplete, STMB will suggest any required runtime macros for that template.
 - Side prompts with custom runtime macros (not ST default) are manual-only. STMB disables `On Interval` and `On After Memory` from those templates on save/import and warns you when that happens.
 - Additional Side Prompts Template Library [JSON file](resources/SidePromptTemplateLibrary.json) - just import to use.
@@ -387,16 +398,6 @@ Customize the titles of your lorebook entries using a powerful template system.
   - Current date/time placeholders in various formats (e.g., `August 13, 2025` for date, `11:08 PM` for time).
 - **Auto-numbering:** Use `[0]`, `[00]`, `(0)`, `{0}`, `#0`, and now also the wrapped forms like `#[000]`, `([000])`, `{[000]}` for sequential, zero-padded numbering.
 - **Custom Formats:** You can create your own formats. As of v4.5.1, all printable Unicode characters (including emoji, CJK, accented, symbols, etc.) are allowed in titles; only Unicode control characters are blocked.
-
----
-
-## 🧵 Context Memories
-
-- **Include up to 7 previous memories** as context for better continuity.
-- **Token estimation** includes context memories for accuracy.
-- **Advanced options** let you temporarily override prompt/profile behavior for a single memory run.
-
-![Memory generation with context](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/context.png)
 
 ---
 

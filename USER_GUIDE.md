@@ -135,7 +135,7 @@ Think of ST Memory Books as your **personal AI librarian** for chat conversation
 - `/scenememory 10-25` - Create memory from messages 10 to 25
 - `/creatememory` - Make memory from currently marked scene
 - `/nextmemory` - Summarize everything since the last memory
-- `/sideprompt "Relationship Tracker" {{macro}}="value" [X-Y]` - Run a side prompt, optionally supplying required runtime macros and an optional message range
+- `/sideprompt "Relationship Tracker" {{macro}}="value" [X-Y] [-debug]` - Run a side prompt, optionally supplying required runtime macros, an optional message range, and `-debug` for console logs
 - `/sideprompt-on "Name"` or `/sideprompt-off "Name"` - Toggle a side prompt manually
 - `/stmb-set-highest <N|none>` - Adjust the auto-summary baseline for the current chat
 
@@ -284,6 +284,41 @@ Example prompt ideas:
 * “Note new world-building details when they appear”
 * “Track the relationship between Character A and Character B”
 
+### 🧑‍🤝‍🧑 **Per-Character Mode**
+
+Per-character mode runs a **separate LLM call for each character** in the chat and writes the result to each character's own lorebook. This is ideal for trackers that maintain character-specific state like relationship assessments, character knowledge, or personality tracking.
+
+**How to enable:**
+
+1. Open the **Side Prompts Manager**
+2. Click **Edit** on a side prompt (or create a new one)
+3. Check **"Per-character mode"** at the bottom of the dialog
+4. Save
+
+**What happens when it runs:**
+
+- STMB discovers all characters in the chat (all group members, or the single character)
+- For each character, it runs the template with `{{charname}}` resolved to that character's name
+- Each character gets a separate lorebook entry titled `[Template] [CharName] (STMB SidePrompt)`
+- The character's name is automatically added to entry keywords
+- Entries are written to **each character's own lorebook** (the lorebook attached to the character card via `character.data.extensions.world`)
+- If a character has no lorebook, STMB prompts you to select an existing one or create a new one. This choice is saved permanently in extension settings — you'll only be asked once per character.
+
+**Using `{{charname}}` in prompts:**
+
+When per-character mode is enabled, `{{charname}}` is automatically available in the prompt, response format, and entry title fields. Use it to make the LLM write from a specific character's perspective:
+
+```
+Assess the interaction between {{charname}} and {{user}} to date.
+List all the information {{charname}} has learned about {{user}}.
+```
+
+> **Note:** `{{char}}` resolves to the card's primary character (as always in SillyTavern). `{{charname}}` resolves to whichever character is currently being processed in the per-character loop. In single chats they are the same; in group chats they differ.
+
+**Ready-to-use template:** A comprehensive per-character context tracker template with emotional scoring, character growth tracking, and relationship milestones is available at [`resources/context-tracker-template.md`](resources/context-tracker-template.md).
+
+---
+
 ### 📚 **Override Write Lorebook(s) per Side Prompt**
 
 By default, every side prompt writes its entry into the same lorebook that is bound to the current chat. You can override this on a **per-side-prompt basis** to send the output to one or more different lorebooks instead.
@@ -331,11 +366,12 @@ Instead of “track everything,” try “track romantic tension between the mai
 ### ⌨️ **Manual /sideprompt Syntax**
 
 Use:
-`/sideprompt "Name" {{macro}}="value" [X-Y]`
+`/sideprompt "Name" {{macro}}="value" [X-Y] [-debug]`
 
 Examples:
 - `/sideprompt "Status" 10-20`
 - `/sideprompt "NPC Directory" {{npc name}}="Jane Doe" 40-50`
+- `/sideprompt "Context Tracker" -debug`
 - `/sideprompt "Location Notes" {{place name}}="Black Harbor" 100-120`
 
 Notes:
@@ -346,6 +382,7 @@ Notes:
 - If a template contains custom runtime macros, STMB keeps it manual-only and strips automatic triggers.
 - `X-Y` is optional. If you omit it, STMB uses messages since the last time that side prompt was updated.
 - If you run side prompts manually and separately, remember to turn on `unhide before generation`!
+- Add `-debug` to dump detailed logs to the browser console (F12). Logs include: template resolution, per-character iteration, full LLM prompts/responses, upsert params, and lorebook write confirmations. Look for orange `[STMB-DEBUG]` entries.
 
 ---
 
