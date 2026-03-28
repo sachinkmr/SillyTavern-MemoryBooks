@@ -874,18 +874,23 @@ async function handleStmbStopCommand(namedArgs, unnamedArgs) {
  * If no args, open a picker for discoverability.
  */
 async function handleSidePromptCommand(namedArgs, unnamedArgs) {
-  const raw = String(unnamedArgs || "").trim();
+  let raw = String(unnamedArgs || "").trim();
   if (!raw) {
     toastr.info(
       translate(
-        'SidePrompt guide: Choose a quoted template name, then fill any prompted macros. Usage: /sideprompt "Name" {{macro}}="value" [X-Y].',
+        'SidePrompt guide: Choose a quoted template name, then fill any prompted macros. Usage: /sideprompt "Name" {{macro}}="value" [X-Y]. Add -debug for detailed console logs.',
         "STMemoryBooks_SidePromptGuide",
       ),
       translate("STMemoryBooks", "index.toast.title"),
     );
     return "";
   }
-  return runSidePrompt(raw);
+  // Extract -debug flag before passing to parser
+  const debug = /\s-debug\b/i.test(raw);
+  if (debug) {
+    raw = raw.replace(/\s-debug\b/i, '').trim();
+  }
+  return runSidePrompt(raw, { debug });
 }
 
 /**

@@ -1202,13 +1202,24 @@ export async function runAfterMemory(compiledScene, profile = null) {
  * Unified manual side prompt runner
  * Usage: /sideprompt "Name" {{macro}}="value" [X-Y]
  */
-export async function runSidePrompt(args) {
+export async function runSidePrompt(args, options = {}) {
+    const debug = !!options.debug;
+    const dbg = debug
+        ? (...a) => console.log(`%c[STMB-DEBUG]`, 'color: #ff9800; font-weight: bold;', ...a)
+        : () => {};
+
     const parentTask = createStmbInFlightTask('SidePrompts:manual');
     const runEpoch = parentTask.epoch;
     try {
+        dbg('=== Side Prompt Manual Run Start ===');
+        dbg('Raw args:', args);
+        dbg('Options:', options);
+
         const lore = await requireLorebookStrict();
+        dbg('Lorebook resolved:', { name: lore.name, entryCount: Object.keys(lore.data?.entries || {}).length });
 
         const parsed = parseSidePromptCommandInput(args);
+        dbg('Parsed input:', parsed);
         if (parsed.error || !parsed.name) {
             toastr.error(translate('SidePrompt name not provided. Usage: /sideprompt "Name" {{macro}}="value" [X-Y or last:N]', 'STMemoryBooks_Toast_SidePromptNameNotProvided'), 'STMemoryBooks');
             return '';
@@ -1217,9 +1228,12 @@ export async function runSidePrompt(args) {
 
         const tpl = await findTemplateByName(name);
         if (!tpl) {
+            dbg('Template not found for name:', name);
             toastr.error(translate('SidePrompt template not found. Check name.', 'STMemoryBooks_Toast_SidePromptNotFound'), 'STMemoryBooks');
             return '';
         }
+        dbg('Template found:', { key: tpl.key, name: tpl.name, enabled: tpl.enabled, perCharacter: !!tpl.settings?.perCharacter, triggers: tpl.triggers });
+
         // Enforce manual gating: only allow /sideprompt if template has the sideprompt command enabled
         const manualEnabled = Array.isArray(tpl?.triggers?.commands) && tpl.triggers.commands.some(c => String(c).toLowerCase() === 'sideprompt');
         if (!manualEnabled) {
@@ -1228,6 +1242,7 @@ export async function runSidePrompt(args) {
         }
 
         const requiredRuntimeMacros = collectTemplateRuntimeMacros(tpl);
+        dbg('Required runtime macros:', requiredRuntimeMacros);
         const missingRuntimeMacros = requiredRuntimeMacros.filter(token => !Object.hasOwn(runtimeMacros, token));
         if (missingRuntimeMacros.length > 0) {
             const usageMacros = requiredRuntimeMacros.map(token => `${token}="value"`).join(' ');
@@ -1239,6 +1254,7 @@ export async function runSidePrompt(args) {
         }
 
         const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+        dbg('Target lorebooks:', tplLores.map(l => l.name));
         const currentLast = chat.length - 1;
         if (currentLast < 0) {
             toastr.error(translate('No messages available.', 'STMemoryBooks_Toast_NoMessagesAvailable'), 'STMemoryBooks');
@@ -1302,6 +1318,7 @@ export async function runSidePrompt(args) {
         // Per-character mode: iterate over characters; standard mode: single run
         const perChar = isPerCharacterTemplate(tpl);
         const charTargets = perChar ? discoverChatCharacters() : [null];
+        dbg('Per-character mode:', perChar, 'Characters:', charTargets?.map(c => c?.name) || ['(single run)']);
         if (perChar && charTargets.length === 0) {
             toastr.error(translate('No characters found for per-character side prompt.', 'STMemoryBooks_Toast_NoCharactersFound'), 'STMemoryBooks');
             return '';
@@ -1313,6 +1330,8 @@ export async function runSidePrompt(args) {
                     ? buildPerCharacterMacros(charTarget.name, runtimeMacros)
                     : runtimeMacros;
                 const displayName = charTarget ? `${tpl.name} (${charTarget.name})` : tpl.name;
+                dbg(`--- Processing: ${displayName} ---`);
+                dbg('Runtime macros:', effectiveMacros);
 
                 const prepared = await prepareSidePromptRun({
                     tpl,
@@ -1326,6 +1345,12 @@ export async function runSidePrompt(args) {
                 const effectiveTitle = charTarget
                     ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
                     : prepared.unifiedTitle;
+                dbg('Entry title:', effectiveTitle);
+                dbg('Prior entry found:', !!prepared.prior, prepared.prior ? `(${prepared.prior.length} chars)` : '');
+                dbg('Connection:', { api: prepared.conn.api, model: prepared.conn.model, temp: prepared.conn.temperature });
+                if (debug) {
+                    dbg('Full prompt being sent to LLM:\n', prepared.finalPrompt);
+                }
 
                 // Call LLM
                 let resultText = '';
@@ -1345,6 +1370,10 @@ export async function runSidePrompt(args) {
                     runEpoch,
                 });
                 throwIfStmbStopped(runEpoch);
+                dbg('LLM response received:', resultText.length, 'chars');
+                if (debug) {
+                    dbg('LLM response content:\n', resultText);
+                }
                 if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) continue;
 
                 // Preview gating if enabled
@@ -1392,6 +1421,7 @@ export async function runSidePrompt(args) {
                 if (charTarget) {
                     metadataUpdates.STMB_character = charTarget.name;
                 }
+                dbg('Upsert params:', { title: effectiveTitle, defaults, entryOverrides, metadataUpdates });
                 const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
                 for (const tplLore of tplLores) {
                     const targetData = tplLore.name === tplLores[0].name
@@ -1401,12 +1431,14 @@ export async function runSidePrompt(args) {
                         console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
                         continue;
                     }
+                    dbg(`Writing to lorebook: "${tplLore.name}", title: "${effectiveTitle}", content: ${resultText.length} chars`);
                     await upsertLorebookEntryByTitle(tplLore.name, targetData, effectiveTitle, resultText, {
                         defaults,
                         entryOverrides,
                         metadataUpdates,
                         refreshEditor,
                     });
+                    dbg(`Upsert complete for lorebook: "${tplLore.name}"`);
                 }
                 console.log(`${MODULE_NAME}: SidePrompt success`, {
                     trigger: 'manual',
@@ -1416,11 +1448,14 @@ export async function runSidePrompt(args) {
                     saved: true,
                     contentChars: resultText.length,
                 });
+                dbg(`Done: "${displayName}" saved successfully`);
                 toastr.success(__st_t_tag`SidePrompt "${displayName}" updated.`, 'STMemoryBooks');
             }
+            dbg('=== Side Prompt Manual Run Complete ===');
         } catch (err) {
             if (isStmbStopError(err)) return '';
             console.error(`${MODULE_NAME}: /sideprompt failed:`, err);
+            if (debug) dbg('Error:', err);
             toastr.error(__st_t_tag`SidePrompt "${tpl.name}" failed: ${err.message}`, 'STMemoryBooks');
             return '';
         }
