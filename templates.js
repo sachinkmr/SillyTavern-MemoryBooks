@@ -307,14 +307,6 @@ export const settingsTemplate = Handlebars.compile(`
             <!-- extra function buttons will be dynamically inserted here -->
         </div>
 
-        <h4 class="stmb-section-title" data-i18n="STMemoryBooks_ChatSidePromptOverrides">Chat Side Prompt Overrides</h4>
-        <div class="info-block">
-            <small class="opacity50p" data-i18n="STMemoryBooks_ChatSidePromptOverridesDesc">Disable specific side prompts for this chat only. Auto-triggers (interval &amp; after-memory) will skip disabled ones. Manual /sideprompt runs are unaffected.</small>
-            <div id="stmb-chat-sideprompt-overrides" class="marginTop5">
-                <!-- populated dynamically -->
-            </div>
-        </div>
-
         <h4 class="stmb-section-title" data-i18n="STMemoryBooks_promptManagerButtons">Prompt Managers</h4>
 
         <div class="info-block">
