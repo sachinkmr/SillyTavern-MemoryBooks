@@ -29,6 +29,37 @@ function _dbg(...args) {
 }
 
 /**
+ * Get current chat ID for chat-change guards.
+ * @returns {string|null}
+ */
+function _getChatId() {
+    try {
+        const ctx = getContext();
+        return ctx?.chatId || (typeof window.getCurrentChatId === 'function' ? window.getCurrentChatId() : null);
+    } catch { return null; }
+}
+
+/**
+ * Throw if the chat changed since the run started.
+ * @param {string|null} startChatId
+ */
+function throwIfChatChanged(startChatId) {
+    if (startChatId && _getChatId() !== startChatId) {
+        console.warn(`${MODULE_NAME}: Chat changed during side prompt run (was: ${startChatId}, now: ${_getChatId()}). Aborting.`);
+        throw new StmbChatChangedError();
+    }
+}
+
+class StmbChatChangedError extends Error {
+    constructor() { super('Chat changed during side prompt execution'); this.name = 'StmbChatChangedError'; }
+}
+
+/** Check if error is a stop or chat-change error (both should abort silently) */
+function isSidePromptAbortError(err) {
+    return isStmbStopError(err) || err instanceof StmbChatChangedError;
+}
+
+/**
  * Returns the set of template keys disabled for the current chat via per-chat overrides.
  * @returns {string[]}
  */
@@ -1448,10 +1479,12 @@ export async function runSidePrompt(args, options = {}) {
 
     const parentTask = createStmbInFlightTask('SidePrompts:manual');
     const runEpoch = parentTask.epoch;
+    const startChatId = _getChatId();
     try {
         dbg('=== Side Prompt Manual Run Start ===');
         dbg('Raw args:', args);
         dbg('Options:', options);
+        dbg('Chat ID:', startChatId);
 
         const lore = await requireLorebookStrict();
         dbg('Lorebook resolved:', { name: lore.name, entryCount: Object.keys(lore.data?.entries || {}).length });
@@ -1624,6 +1657,7 @@ export async function runSidePrompt(args, options = {}) {
                     runEpoch,
                 });
                 throwIfStmbStopped(runEpoch);
+                throwIfChatChanged(startChatId);
                 dbg('LLM response received:', resultText.length, 'chars');
                 if (debug) {
                     dbg('LLM response content:\n', resultText);
@@ -1651,6 +1685,7 @@ export async function runSidePrompt(args, options = {}) {
                     console.warn(`${MODULE_NAME}: Preview step failed; proceeding without preview`, previewErr);
                 }
                 throwIfStmbStopped(runEpoch);
+                throwIfChatChanged(startChatId);
                 if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) continue;
                 const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
                 const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, effectiveMacros);
@@ -1722,7 +1757,7 @@ export async function runSidePrompt(args, options = {}) {
             }
             dbg('=== Side Prompt Manual Run Complete ===');
         } catch (err) {
-            if (isStmbStopError(err)) return '';
+            if (isSidePromptAbortError(err)) return '';
             console.error(`${MODULE_NAME}: /sideprompt failed:`, err);
             if (debug) dbg('Error:', err);
             toastr.error(__st_t_tag`SidePrompt "${tpl.name}" failed: ${err.message}`, 'STMemoryBooks');
@@ -1730,7 +1765,7 @@ export async function runSidePrompt(args, options = {}) {
         }
         return '';
     } catch (outer) {
-        if (isStmbStopError(outer)) return '';
+        if (isSidePromptAbortError(outer)) return '';
         console.error(`${MODULE_NAME}: runSidePrompt fatal error:`, outer);
         return '';
     } finally {
