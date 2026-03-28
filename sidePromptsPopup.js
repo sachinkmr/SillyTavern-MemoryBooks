@@ -163,11 +163,21 @@ function validateKeywordsMacroConfig({ prompt, responseFormat, keywordsTemplate 
  * @returns {string}
  */
 function renderTemplatesTable(templates) {
-    const items = (templates || []).map(t => ({
-        key: String(t.key || ''),
-        name: String(t.name || ''),
-        badges: getTriggersSummary(t),
-    }));
+    const stmbData = getSceneMarkers() || {};
+    const chatDisabled = Array.isArray(stmbData.disabledSidePrompts) ? stmbData.disabledSidePrompts : [];
+
+    const items = (templates || []).map(t => {
+        const hasAutoTrigger = (t.triggers?.onInterval && Number(t.triggers.onInterval.visibleMessages) >= 1)
+            || !!t.triggers?.onAfterMemory?.enabled;
+        return {
+            key: String(t.key || ''),
+            name: String(t.name || ''),
+            enabled: !!t.enabled,
+            hasAutoTrigger,
+            chatEnabled: !chatDisabled.includes(t.key),
+            badges: getTriggersSummary(t),
+        };
+    });
     return sidePromptsTableTemplate({ items });
 }
 
@@ -996,64 +1006,6 @@ async function importTemplates(event, parentPopup) {
 /**
  * Show the Side Prompts popup (list view with Edit/Copy/Trash and New/Export/Import)
  */
-/**
- * Render per-chat enable/disable toggles for auto-triggered side prompts.
- * @param {HTMLElement} dlg
- */
-async function renderChatOverrides(dlg) {
-    const container = dlg.querySelector('#stmb-sp-chat-overrides');
-    if (!container) return;
-    container.innerHTML = '';
-
-    const allTemplates = await listTemplates();
-    const autoTriggered = allTemplates.filter(tpl =>
-        tpl.enabled && (
-            (tpl.triggers?.onInterval && Number(tpl.triggers.onInterval.visibleMessages) >= 1) ||
-            tpl.triggers?.onAfterMemory?.enabled
-        )
-    );
-
-    if (autoTriggered.length === 0) {
-        const msg = document.createElement('small');
-        msg.className = 'opacity50p';
-        msg.textContent = translate('No auto-triggered side prompts are currently enabled.', 'STMemoryBooks_NoChatSidePromptOverrides');
-        container.appendChild(msg);
-        return;
-    }
-
-    const stmbData = getSceneMarkers() || {};
-    const disabled = Array.isArray(stmbData.disabledSidePrompts) ? stmbData.disabledSidePrompts : [];
-
-    for (const tpl of autoTriggered) {
-        const row = document.createElement('label');
-        row.className = 'checkbox_label';
-        row.style.cssText = 'display:flex; align-items:center; gap:8px; margin-top:4px;';
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = !disabled.includes(tpl.key);
-        checkbox.addEventListener('change', () => {
-            const current = getSceneMarkers() || {};
-            const currentDisabled = Array.isArray(current.disabledSidePrompts) ? [...current.disabledSidePrompts] : [];
-            if (checkbox.checked) {
-                const idx = currentDisabled.indexOf(tpl.key);
-                if (idx !== -1) currentDisabled.splice(idx, 1);
-            } else {
-                if (!currentDisabled.includes(tpl.key)) currentDisabled.push(tpl.key);
-            }
-            current.disabledSidePrompts = currentDisabled;
-            saveMetadataForCurrentContext();
-        });
-
-        const label = document.createElement('span');
-        label.textContent = tpl.name;
-
-        row.appendChild(checkbox);
-        row.appendChild(label);
-        container.appendChild(row);
-    }
-}
-
 export async function showSidePromptsPopup() {
     try {
         let content = '<h3 data-i18n="STMemoryBooks_SidePrompts_Title">🎡 Trackers & Side Prompts</h3>';
@@ -1075,13 +1027,6 @@ export async function showSidePromptsPopup() {
 
         // List container
         content += '<div id="stmb-sp-list" class="padding10 marginBot10" style="max-height: 400px; overflow-y: auto;"></div>';
-
-        // Per-chat overrides
-        content += `<h4 class="stmb-section-title">${escapeHtml(translate('Chat Overrides', 'STMemoryBooks_ChatSidePromptOverrides'))}</h4>`;
-        content += '<div class="world_entry_form_control">';
-        content += `<small class="opacity70p">${escapeHtml(translate('Disable specific side prompts for this chat only. Auto-triggers (interval & after-memory) will skip disabled ones. Manual /sideprompt runs are unaffected.', 'STMemoryBooks_ChatSidePromptOverridesDesc'))}</small>`;
-        content += '<div id="stmb-sp-chat-overrides" class="marginTop5"></div>';
-        content += '</div>';
 
         // Action buttons
         content += '<div class="buttons_block justifyCenter gap10px whitespacenowrap">';
@@ -1167,8 +1112,40 @@ export async function showSidePromptsPopup() {
                 }
             });
 
-            // Per-chat side prompt overrides
-            renderChatOverrides(dlg);
+            // Global enable/disable toggle (delegated)
+            dlg.addEventListener('change', async (e) => {
+                const toggle = e.target.closest('.stmb-sp-toggle-enabled');
+                if (!toggle) return;
+                e.stopPropagation();
+                const key = toggle.dataset.key;
+                if (!key) return;
+                try {
+                    await upsertTemplate({ key, enabled: toggle.checked });
+                    window.dispatchEvent(new CustomEvent('stmb-sideprompts-updated'));
+                    await refreshList(popup, key);
+                } catch (err) {
+                    console.error('STMemoryBooks: Error toggling side prompt:', err);
+                }
+            });
+
+            // Per-chat enable/disable toggle (delegated)
+            dlg.addEventListener('change', (e) => {
+                const toggle = e.target.closest('.stmb-sp-toggle-chat');
+                if (!toggle) return;
+                e.stopPropagation();
+                const key = toggle.dataset.key;
+                if (!key) return;
+                const stmbData = getSceneMarkers() || {};
+                const disabled = Array.isArray(stmbData.disabledSidePrompts) ? [...stmbData.disabledSidePrompts] : [];
+                if (toggle.checked) {
+                    const idx = disabled.indexOf(key);
+                    if (idx !== -1) disabled.splice(idx, 1);
+                } else {
+                    if (!disabled.includes(key)) disabled.push(key);
+                }
+                stmbData.disabledSidePrompts = disabled;
+                saveMetadataForCurrentContext();
+            });
 
             // Row selection and inline actions
             dlg.addEventListener('click', async (e) => {

@@ -4,6 +4,8 @@ export const sidePromptsTableTemplate = Handlebars.compile(`
 <table style="width: 100%; border-collapse: collapse;">
   <thead>
     <tr>
+      <th style="width: 40px; text-align:center;" data-i18n="STMemoryBooks_Enabled">On</th>
+      <th style="width: 40px; text-align:center;" title="Enable/disable for this chat only" data-i18n="[title]STMemoryBooks_ChatOverrideTitle">Chat</th>
       <th style="text-align:left;" data-i18n="STMemoryBooks_Name">Name</th>
       <th style="width: 240px; text-align:left;" data-i18n="STMemoryBooks_Triggers">Triggers</th>
       <th style="width: 120px; text-align:right;" data-i18n="STMemoryBooks_Actions">Actions</th>
@@ -13,6 +15,16 @@ export const sidePromptsTableTemplate = Handlebars.compile(`
     {{#if items}}
       {{#each items}}
         <tr data-tpl-key="{{key}}" style="cursor: pointer; border-bottom: 1px solid var(--SmartThemeBorderColor);">
+          <td style="padding: 8px; text-align:center;">
+            <input type="checkbox" class="stmb-sp-toggle-enabled" data-key="{{key}}" {{#if enabled}}checked{{/if}} title="Global enable/disable">
+          </td>
+          <td style="padding: 8px; text-align:center;">
+            {{#if hasAutoTrigger}}
+              <input type="checkbox" class="stmb-sp-toggle-chat" data-key="{{key}}" {{#if chatEnabled}}checked{{/if}} {{#unless enabled}}disabled{{/unless}} title="Enable/disable for this chat only">
+            {{else}}
+              <span class="opacity30p">—</span>
+            {{/if}}
+          </td>
           <td style="padding: 8px;">{{name}}</td>
           <td style="padding: 8px;">
               {{#if badges}}
@@ -40,7 +52,7 @@ export const sidePromptsTableTemplate = Handlebars.compile(`
       {{/each}}
     {{else}}
       <tr>
-        <td colspan="3">
+        <td colspan="5">
           <div class="opacity50p" data-i18n="STMemoryBooks_NoSidePromptsAvailable">No side prompts available</div>
         </td>
       </tr>
