@@ -109,6 +109,8 @@ import {
   runSidePrompt,
 } from "./sidePrompts.js";
 import { showSidePromptsPopup } from "./sidePromptsPopup.js";
+import { initContextManager } from "./contextManager.js";
+import { showContextManagerPopup } from "./contextManagerPopup.js";
 import { listTemplates } from "./sidePromptsManager.js";
 import {
   runSummaryAnalysisSequential,
@@ -1937,6 +1939,8 @@ async function executeMemoryGeneration(
     } catch (e) {
       console.warn("STMemoryBooks: runAfterMemory failed:", e);
     }
+    // Notify Context Manager that memory was created
+    window.dispatchEvent(new CustomEvent('stmb-memory-created', { detail: { compiledScene, profile: profileSettings } }));
     throwIfStmbStopped(runEpoch);
 
     // Update auto-summary baseline so the next trigger starts after this scene
@@ -2679,6 +2683,24 @@ function populateInlineButtons() {
             translate(
               "Failed to open Trackers & Side Prompts Manager",
               "STMemoryBooks_FailedToOpenSidePrompts",
+            ),
+            "STMemoryBooks",
+          );
+        }
+      },
+    },
+    {
+      text: "🧠 " + translate("Context Manager", "STMemoryBooks_ContextManager"),
+      id: "stmb-context-manager",
+      action: async () => {
+        try {
+          await showContextManagerPopup();
+        } catch (error) {
+          console.error(`${MODULE_NAME}: Error opening Context Manager:`, error);
+          toastr.error(
+            translate(
+              "Failed to open Context Manager",
+              "STMemoryBooks_FailedToOpenContextManager",
             ),
             "STMemoryBooks",
           );
@@ -7096,6 +7118,9 @@ async function init() {
 
   // Register slash commands
   registerSlashCommands();
+
+  // Initialize Context Manager (per-character lorebook writer)
+  await initContextManager();
 
   // Process any messages that are already on the screen at initialization time
   // This handles cases where a chat is already loaded when the extension initializes
