@@ -22,6 +22,12 @@ import { tr } from './i18nHelpers.js';
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
 let hasShownSidePromptRangeTip = false;
 
+// Module-level debug flag — set to true by /sideprompt -debug, reset after run
+let _moduleDebug = false;
+function _dbg(...args) {
+    if (_moduleDebug) console.log(`%c[STMB-DEBUG]`, 'color: #ff9800; font-weight: bold;', ...args);
+}
+
 /**
  * Returns the set of template keys disabled for the current chat via per-chat overrides.
  * @returns {string[]}
@@ -44,12 +50,10 @@ function isPerCharacterTemplate(tpl) {
  * @returns {string|null}
  */
 function getCharacterLorebookName(char) {
-    // Debug: dump character keys to discover available lorebook paths
-    console.debug(`${MODULE_NAME}: getCharacterLorebookName for "${char?.name}":`, {
+    _dbg(`getCharacterLorebookName for "${char?.name}":`, {
         'data.extensions.world': char?.data?.extensions?.world || '(not set)',
         'data.character_book': char?.data?.character_book ? '(present)' : '(not set)',
         'data.extensions': char?.data?.extensions ? Object.keys(char.data.extensions) : '(no extensions)',
-        'top-level keys': char ? Object.keys(char) : [],
     });
 
     // Primary: ST stores the character's attached lorebook in data.extensions.world
@@ -57,7 +61,7 @@ function getCharacterLorebookName(char) {
     if (worldName && typeof worldName === 'string' && worldName.trim()) {
         const name = worldName.trim();
         if (world_names?.includes(name)) return name;
-        console.debug(`${MODULE_NAME}: Lorebook "${name}" from character data not found in world_names`);
+        _dbg(`Lorebook "${name}" from character data not found in world_names`);
     }
     return null;
 }
@@ -107,7 +111,7 @@ function discoverChatCharacters() {
         }
     }
 
-    console.debug(`${MODULE_NAME}: discoverChatCharacters result:`, result.map(c => ({ name: c.name, lorebook: c.lorebook || '(none)' })));
+    _dbg('discoverChatCharacters result:', result.map(c => ({ name: c.name, lorebook: c.lorebook || '(none)' })));
     return result;
 }
 
@@ -804,12 +808,12 @@ async function prepareSidePromptRun({ tpl, loreData, compiledScene, defaultOverr
     let prevSummaries = [];
     const pmCountRaw = Number(tpl?.settings?.previousMemoriesCount ?? 0);
     const pmCount = Math.max(0, Math.min(7, pmCountRaw));
-    console.debug(`${MODULE_NAME}: prepareSidePromptRun previousMemoriesCount: raw=${pmCountRaw}, clamped=${pmCount}`);
+    _dbg(`prepareSidePromptRun previousMemoriesCount: raw=${pmCountRaw}, clamped=${pmCount}`);
     if (pmCount > 0) {
         try {
             const res = await fetchPreviousSummaries(pmCount, extension_settings, chat_metadata);
             prevSummaries = res?.summaries || [];
-            console.debug(`${MODULE_NAME}: fetchPreviousSummaries returned ${prevSummaries.length} of ${pmCount} requested`, prevSummaries.map(s => s.title));
+            _dbg(`fetchPreviousSummaries returned ${prevSummaries.length} of ${pmCount} requested`, prevSummaries.map(s => s.title));
         } catch (err) {
             console.warn(`${MODULE_NAME}: fetchPreviousSummaries failed:`, err);
         }
@@ -1439,9 +1443,8 @@ export async function runAfterMemory(compiledScene, profile = null) {
  */
 export async function runSidePrompt(args, options = {}) {
     const debug = !!options.debug;
-    const dbg = debug
-        ? (...a) => console.log(`%c[STMB-DEBUG]`, 'color: #ff9800; font-weight: bold;', ...a)
-        : () => {};
+    _moduleDebug = debug;
+    const dbg = _dbg;
 
     const parentTask = createStmbInFlightTask('SidePrompts:manual');
     const runEpoch = parentTask.epoch;
@@ -1731,6 +1734,7 @@ export async function runSidePrompt(args, options = {}) {
         console.error(`${MODULE_NAME}: runSidePrompt fatal error:`, outer);
         return '';
     } finally {
+        _moduleDebug = false;
         parentTask.finish();
     }
 }
