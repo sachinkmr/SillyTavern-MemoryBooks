@@ -168,8 +168,30 @@ async function resolvePerCharacterLorebook(charTarget, defaultLore) {
         return result;
     }
 
-    // User dismissed — fall back to default
-    return defaultLore;
+    // User dismissed — return null to signal skip
+    return null;
+}
+
+/**
+ * Resolve lorebooks for all per-character targets upfront (before LLM calls).
+ * Prompts the user for any character missing a lorebook.
+ * Returns only characters with a resolved lorebook; skipped characters are excluded.
+ * @param {Array<{ name: string, avatar: string, lorebook: string|null }>} charTargets
+ * @param {{ name: string, data: any }} defaultLore
+ * @returns {Promise<Array<{ charTarget: object, lore: { name: string, data: any } }>>}
+ */
+async function resolveAllPerCharacterLorebooks(charTargets, defaultLore) {
+    const resolved = [];
+    for (const charTarget of charTargets) {
+        const lore = await resolvePerCharacterLorebook(charTarget, defaultLore);
+        if (lore) {
+            resolved.push({ charTarget, lore });
+        } else {
+            console.log(`${MODULE_NAME}: Skipping character "${charTarget.name}" — no lorebook selected.`);
+            toastr.warning(`Skipping "${charTarget.name}" — no lorebook selected.`, 'STMemoryBooks');
+        }
+    }
+    return resolved;
 }
 
 /**
@@ -961,15 +983,22 @@ export async function evaluateTrackers() {
                 continue;
             }
 
-            // Per-character mode: iterate over characters; standard mode: single run
+            // Per-character mode: resolve lorebooks upfront; standard mode: single run
             const perChar = isPerCharacterTemplate(tpl);
-            const charTargets = perChar ? discoverChatCharacters() : [null];
-            if (perChar && charTargets.length === 0) {
-                console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
-                continue;
+            let charWorkItems;
+            if (perChar) {
+                const rawChars = discoverChatCharacters();
+                if (rawChars.length === 0) {
+                    console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
+                    continue;
+                }
+                charWorkItems = await resolveAllPerCharacterLorebooks(rawChars, tplLores[0]);
+                if (charWorkItems.length === 0) continue;
+            } else {
+                charWorkItems = [{ charTarget: null, lore: null }];
             }
 
-            for (const charTarget of charTargets) {
+            for (const { charTarget, lore: charLore } of charWorkItems) {
                 const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
 
                 const prepared = await prepareSidePromptRun({
@@ -1073,10 +1102,10 @@ export async function evaluateTrackers() {
                     }
                     const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
 
-                    // Per-character: write to the character's own lorebook; standard: use template lorebooks
-                    if (charTarget) {
-                        const charLore = await resolvePerCharacterLorebook(charTarget, tplLores[0]);
-                        await upsertLorebookEntryByTitle(charLore.name, charLore.data, effectiveTitle, resultText, {
+                    // Per-character: use pre-resolved lorebook; standard: use template lorebooks
+                    if (charTarget && charLore) {
+                        const freshData = await loadWorldInfo(charLore.name).catch(() => charLore.data);
+                        await upsertLorebookEntryByTitle(charLore.name, freshData || charLore.data, effectiveTitle, resultText, {
                             defaults,
                             entryOverrides,
                             metadataUpdates,
@@ -1147,6 +1176,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
         const maxConcurrent = clampInt(Number(settings?.moduleSettings?.sidePromptsMaxConcurrent ?? 2),1,5);
 
         // Expand per-character templates into individual work items
+        // Resolve lorebooks upfront so missing-lorebook prompts happen before LLM calls
         const workItems = [];
         for (const tpl of enabledAfter) {
             if (isPerCharacterTemplate(tpl)) {
@@ -1155,11 +1185,13 @@ export async function runAfterMemory(compiledScene, profile = null) {
                     console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
                     continue;
                 }
-                for (const charTarget of chars) {
-                    workItems.push({ tpl, charTarget });
+                const tplLoresForChar = await resolveLorebooksForTemplate(tpl, lore);
+                const resolved = await resolveAllPerCharacterLorebooks(chars, tplLoresForChar[0]);
+                for (const { charTarget, lore: charLore } of resolved) {
+                    workItems.push({ tpl, charTarget, charLore });
                 }
             } else {
-                workItems.push({ tpl, charTarget: null });
+                workItems.push({ tpl, charTarget: null, charLore: null });
             }
         }
 
@@ -1172,7 +1204,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
         for (const wave of waves) {
             throwIfStmbStopped(runEpoch);
             // Run LLMs concurrently for this wave (scene-only prompts)
-            const llmPromises = wave.map(async ({ tpl, charTarget }) => {
+            const llmPromises = wave.map(async ({ tpl, charTarget, charLore }) => {
                 const displayName = charTarget ? `${tpl.name} (${charTarget.name})` : tpl.name;
                 try {
                     const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
@@ -1206,6 +1238,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         ok: true,
                         tpl,
                         charTarget,
+                        charLore,
                         text,
                         unifiedTitle: effectiveTitle,
                         finalPrompt: prepared.finalPrompt,
@@ -1299,6 +1332,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         metadataUpdates,
                         _tplLores: r.tplLores,
                         _charTarget: r.charTarget,
+                        _charLore: r.charLore,
                     });
                     succeededNames.push(r.displayName);
                 } else {
@@ -1313,8 +1347,8 @@ export async function runAfterMemory(compiledScene, profile = null) {
                 // standard items use the template's lorebook overrides or the default.
                 const lorebookGroups = new Map();
                 for (const item of items) {
-                    if (item._charTarget?.lorebook) {
-                        const charLbName = item._charTarget.lorebook;
+                    if (item._charLore) {
+                        const charLbName = item._charLore.name;
                         if (!lorebookGroups.has(charLbName)) lorebookGroups.set(charLbName, []);
                         lorebookGroups.get(charLbName).push(item);
                     } else {
@@ -1507,17 +1541,29 @@ export async function runSidePrompt(args, options = {}) {
         }
         const defaultOverrides = resolveSidePromptConnection(null);
 
-        // Per-character mode: iterate over characters; standard mode: single run
+        // Per-character mode: resolve lorebooks upfront BEFORE any LLM calls
         const perChar = isPerCharacterTemplate(tpl);
-        const charTargets = perChar ? discoverChatCharacters() : [null];
-        dbg('Per-character mode:', perChar, 'Characters:', charTargets?.map(c => c?.name) || ['(single run)']);
-        if (perChar && charTargets.length === 0) {
-            toastr.error(translate('No characters found for per-character side prompt.', 'STMemoryBooks_Toast_NoCharactersFound'), 'STMemoryBooks');
-            return '';
+        let charWorkItems; // Array of { charTarget, lore } or [{ charTarget: null, lore: null }]
+        if (perChar) {
+            const rawChars = discoverChatCharacters();
+            dbg('Per-character mode: true, Characters:', rawChars.map(c => ({ name: c.name, lorebook: c.lorebook || '(none)' })));
+            if (rawChars.length === 0) {
+                toastr.error(translate('No characters found for per-character side prompt.', 'STMemoryBooks_Toast_NoCharactersFound'), 'STMemoryBooks');
+                return '';
+            }
+            charWorkItems = await resolveAllPerCharacterLorebooks(rawChars, tplLores[0]);
+            dbg('Characters with resolved lorebooks:', charWorkItems.map(w => ({ name: w.charTarget.name, lorebook: w.lore.name })));
+            if (charWorkItems.length === 0) {
+                toastr.warning(translate('All characters skipped — no lorebooks selected.', 'STMemoryBooks_Toast_AllCharactersSkipped'), 'STMemoryBooks');
+                return '';
+            }
+        } else {
+            charWorkItems = [{ charTarget: null, lore: null }];
+            dbg('Per-character mode: false (single run)');
         }
 
         try {
-            for (const charTarget of charTargets) {
+            for (const { charTarget, lore: charLore } of charWorkItems) {
                 const effectiveMacros = charTarget
                     ? buildPerCharacterMacros(charTarget.name, runtimeMacros)
                     : runtimeMacros;
@@ -1616,12 +1662,12 @@ export async function runSidePrompt(args, options = {}) {
                 dbg('Upsert params:', { title: effectiveTitle, defaults, entryOverrides, metadataUpdates });
                 const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
 
-                // Per-character: write to the character's own lorebook; standard: use template lorebooks
-                if (charTarget) {
-                    const charLore = await resolvePerCharacterLorebook(charTarget, tplLores[0]);
-                    dbg(`Per-character lorebook for "${charTarget.name}": "${charLore.name}"${charTarget.lorebook ? '' : ' (fallback to default)'}`);
+                // Per-character: use pre-resolved lorebook; standard: use template lorebooks
+                if (charTarget && charLore) {
                     dbg(`Writing to lorebook: "${charLore.name}", title: "${effectiveTitle}", content: ${resultText.length} chars`);
-                    await upsertLorebookEntryByTitle(charLore.name, charLore.data, effectiveTitle, resultText, {
+                    // Reload fresh data in case another character's upsert modified it
+                    const freshData = await loadWorldInfo(charLore.name).catch(() => charLore.data);
+                    await upsertLorebookEntryByTitle(charLore.name, freshData || charLore.data, effectiveTitle, resultText, {
                         defaults,
                         entryOverrides,
                         metadataUpdates,
