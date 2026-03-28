@@ -886,11 +886,30 @@ async function runContextManagerManual(args) {
             }
         }
 
-        await runCMTemplate(tpl, compiled, null, runEpoch);
+        toastr.info(`Context Manager "${tpl.name}" starting...`, 'STMemoryBooks');
+        const results = await runCMTemplate(tpl, compiled, null, runEpoch);
+
+        // Summary toast
+        const okCount = results.filter(r => r.ok).length;
+        const failCount = results.filter(r => !r.ok && !r.skipped).length;
+        const skipCount = results.filter(r => r.skipped).length;
+        const parts = [`${okCount} updated`];
+        if (failCount > 0) parts.push(`${failCount} failed`);
+        if (skipCount > 0) parts.push(`${skipCount} skipped`);
+        const summary = parts.join(', ');
+        if (failCount > 0) {
+            toastr.warning(`Context Manager "${tpl.name}" done: ${summary}`, 'STMemoryBooks');
+        } else {
+            toastr.success(`Context Manager "${tpl.name}" done: ${summary}`, 'STMemoryBooks');
+        }
         return '';
     } catch (outer) {
-        if (isStmbStopError(outer)) return '';
+        if (isStmbStopError(outer)) {
+            toastr.info('Context Manager stopped by user.', 'STMemoryBooks');
+            return '';
+        }
         console.error(`${MODULE_NAME}: runContextManagerManual fatal:`, outer);
+        toastr.error(`Context Manager failed: ${outer.message}`, 'STMemoryBooks');
         return '';
     } finally {
         parentTask.finish();
