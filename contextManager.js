@@ -941,6 +941,7 @@ export async function initContextManager() {
     const cmCmd = SlashCommand.fromProps({
         name: 'contextmanager',
         callback: (namedArgs, unnamedArgs) => runContextManagerManual(String(unnamedArgs || '')),
+        rawQuotes: true,
         helpString: 'Run a Context Manager template. Usage: /contextmanager "Name" [X-Y or last:N]',
         unnamedArgumentList: [
             SlashCommandArgument.fromProps({
