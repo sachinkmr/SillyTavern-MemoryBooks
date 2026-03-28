@@ -231,6 +231,11 @@ async function openEditTemplate(parentPopup, key) {
         const s = tpl.settings || {};
         const trig = tpl.triggers || {};
 
+        // Per-chat override state
+        const hasAutoTrigger = (trig.onInterval && Number(trig.onInterval?.visibleMessages) >= 1) || !!trig.onAfterMemory?.enabled;
+        const chatDisabled = (getSceneMarkers()?.disabledSidePrompts ?? []);
+        const chatEnabled = !chatDisabled.includes(tpl.key);
+
         const intervalEnabled = !!(trig.onInterval && Number(trig.onInterval.visibleMessages) >= 1);
         const intervalVal = intervalEnabled ? Math.max(1, Number(trig.onInterval.visibleMessages)) : 50;
         const afterEnabled = !!(trig.onAfterMemory && trig.onAfterMemory.enabled);
@@ -319,6 +324,13 @@ async function openEditTemplate(parentPopup, key) {
                     <span>${escapeHtml(translate('Enabled', 'STMemoryBooks_Enabled'))}</span>
                 </label>
             </div>
+            ${hasAutoTrigger ? `<div class="world_entry_form_control">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-sp-edit-chat-enabled" ${chatEnabled ? 'checked' : ''} ${!currentEnabled ? 'disabled' : ''}>
+                    <span>${escapeHtml(translate('Enabled in this chat', 'STMemoryBooks_EnabledInThisChat'))}</span>
+                </label>
+                <small class="opacity50p">${escapeHtml(translate('Disabling only affects auto-triggers for the current chat. Manual /sideprompt runs are unaffected.', 'STMemoryBooks_EnabledInThisChatDesc'))}</small>
+            </div>` : ''}
             <div class="world_entry_form_control">
                 <h4>${escapeHtml(translate('Triggers:', 'STMemoryBooks_Triggers'))}</h4>
                 <label class="checkbox_label">
@@ -463,6 +475,28 @@ async function openEditTemplate(parentPopup, key) {
         const attachHandlers = () => {
             const dlg = editPopup.dlg;
             if (!dlg) return;
+
+            // Chat-enabled toggle: save immediately to chat metadata
+            const cbEnabled = dlg.querySelector('#stmb-sp-edit-enabled');
+            const cbChatEnabled = dlg.querySelector('#stmb-sp-edit-chat-enabled');
+            if (cbChatEnabled) {
+                cbChatEnabled.addEventListener('change', () => {
+                    const stmbData = getSceneMarkers() || {};
+                    const disabled = Array.isArray(stmbData.disabledSidePrompts) ? [...stmbData.disabledSidePrompts] : [];
+                    if (cbChatEnabled.checked) {
+                        const idx = disabled.indexOf(key);
+                        if (idx !== -1) disabled.splice(idx, 1);
+                    } else {
+                        if (!disabled.includes(key)) disabled.push(key);
+                    }
+                    stmbData.disabledSidePrompts = disabled;
+                    saveMetadataForCurrentContext();
+                });
+                // Disable chat toggle when global is off
+                cbEnabled?.addEventListener('change', () => {
+                    cbChatEnabled.disabled = !cbEnabled.checked;
+                });
+            }
 
             const cbInterval = dlg.querySelector('#stmb-sp-edit-trg-interval');
             const intervalCont = dlg.querySelector('#stmb-sp-edit-interval-container');

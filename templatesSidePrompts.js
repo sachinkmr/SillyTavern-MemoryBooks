@@ -6,9 +6,9 @@ export const sidePromptsTableTemplate = Handlebars.compile(`
     <tr>
       <th style="width: 40px; text-align:center;" data-i18n="STMemoryBooks_Enabled">On</th>
       <th style="width: 40px; text-align:center;" title="Enable/disable for this chat only" data-i18n="[title]STMemoryBooks_ChatOverrideTitle">Chat</th>
-      <th style="text-align:left;" data-i18n="STMemoryBooks_Name">Name</th>
-      <th style="width: 240px; text-align:left;" data-i18n="STMemoryBooks_Triggers">Triggers</th>
-      <th style="width: 120px; text-align:right;" data-i18n="STMemoryBooks_Actions">Actions</th>
+      <th style="text-align:center;" data-i18n="STMemoryBooks_Name">Name</th>
+      <th style="width: 240px; text-align:center;" data-i18n="STMemoryBooks_Triggers">Triggers</th>
+      <th style="width: 120px; text-align:center;" data-i18n="STMemoryBooks_Actions">Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -25,8 +25,8 @@ export const sidePromptsTableTemplate = Handlebars.compile(`
               <span class="opacity30p">—</span>
             {{/if}}
           </td>
-          <td style="padding: 8px;">{{name}}</td>
-          <td style="padding: 8px;">
+          <td style="padding: 8px; text-align:left;">{{name}}</td>
+          <td style="padding: 8px; text-align:left;">
               {{#if badges}}
                 {{#each badges}}
                   <span class="badge" style="margin-right:6px;">{{this}}</span>
@@ -35,7 +35,7 @@ export const sidePromptsTableTemplate = Handlebars.compile(`
                 <span class="opacity50p" data-i18n="STMemoryBooks_None">None</span>
               {{/if}}
           </td>
-          <td style="padding: 8px; text-align:right;">
+          <td style="padding: 8px; text-align:center;">
             <span class="stmb-sp-inline-actions" style="display: inline-flex; gap: 10px;">
               <button class="stmb-sp-action stmb-sp-action-edit" title="Edit" aria-label="Edit" data-i18n="[title]STMemoryBooks_Edit;[aria-label]STMemoryBooks_Edit" style="background:none;border:none;cursor:pointer;">
                 <i class="fa-solid fa-pen"></i>
