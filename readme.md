@@ -309,6 +309,9 @@ To enable: Edit a side prompt template and check **"Per-character mode"** at the
 
 A ready-to-use per-character context tracker template is available at [`resources/context-tracker-template.md`](resources/context-tracker-template.md).
 
+#### **Character Lorebook Mappings:**
+At the bottom of the Trackers & Side Prompts dialog, the **Character Lorebook Mappings** section shows which lorebook each character is mapped to. These mappings are created automatically when you first run a per-character side prompt for a character without an attached lorebook. You can edit or clear them at any time.
+
 #### **Usage Tips:**
 - When creating a new prompt, you can copy from built-ins for best compatibility.
 - Side prompts do not have to return JSON! They can return plain text.

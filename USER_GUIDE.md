@@ -317,6 +317,14 @@ List all the information {{charname}} has learned about {{user}}.
 
 **Ready-to-use template:** A comprehensive per-character context tracker template with emotional scoring, character growth tracking, and relationship milestones is available at [`resources/context-tracker-template.md`](resources/context-tracker-template.md).
 
+**Managing Character Lorebook Mappings:**
+
+At the bottom of the **Trackers & Side Prompts** dialog, expand **Character Lorebook Mappings** to see which lorebook each character is mapped to. From here you can:
+- **Change** a character's lorebook by selecting a different one from the dropdown
+- **Remove** a mapping by clicking the ✕ button (STMB will ask again next time you run a per-character template for that character)
+
+These mappings are created automatically the first time you run a per-character side prompt for a character without an attached lorebook. They persist across sessions in extension settings.
+
 ---
 
 ### 📚 **Override Write Lorebook(s) per Side Prompt**

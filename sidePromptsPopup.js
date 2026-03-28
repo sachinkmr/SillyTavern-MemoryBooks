@@ -1100,6 +1100,14 @@ export async function showSidePromptsPopup() {
         // Hidden file input for import
         content += '<input type="file" id="stmb-sp-import-file" accept=".json" style="display: none;" />';
 
+        // Character Lorebook Mappings section
+        content += '<hr style="margin: 16px 0;">';
+        content += `<details id="stmb-sp-char-lorebook-section">`;
+        content += `<summary style="cursor: pointer; font-weight: bold;">${escapeHtml(translate('Character Lorebook Mappings', 'STMemoryBooks_CharLorebookMappings'))}</summary>`;
+        content += `<small class="opacity50p">${escapeHtml(translate('Per-character mode writes entries to each character\'s own lorebook. These mappings are set when you first run a per-character side prompt and a character has no attached lorebook. You can edit or clear them here.', 'STMemoryBooks_CharLorebookMappingsDesc'))}</small>`;
+        content += '<div id="stmb-sp-char-lorebook-list" style="margin-top: 8px;"></div>';
+        content += '</details>';
+
         const popup = new Popup(DOMPurify.sanitize(content), POPUP_TYPE.TEXT, '', {
             wide: true,
             large: true,
@@ -1107,6 +1115,33 @@ export async function showSidePromptsPopup() {
             okButton: false,
             cancelButton: translate('Close', 'STMemoryBooks_Close')
         });
+
+        // Render character lorebook mappings table
+        function renderCharLorebookMappings(dlg) {
+            const container = dlg.querySelector('#stmb-sp-char-lorebook-list');
+            if (!container) return;
+            const map = extension_settings?.STMemoryBooks?.characterLorebookMap || {};
+            const entries = Object.entries(map).filter(([, v]) => v);
+            if (entries.length === 0) {
+                container.innerHTML = `<p class="opacity50p" style="margin: 4px 0;">${escapeHtml(translate('No character lorebook mappings yet. They are created automatically when you run a per-character side prompt.', 'STMemoryBooks_NoCharLorebookMappings'))}</p>`;
+                return;
+            }
+            const availableLorebooks = Array.isArray(world_names) ? world_names : [];
+            let html = '<table style="width: 100%; border-collapse: collapse;">';
+            html += `<thead><tr><th style="text-align:left; padding: 4px 8px;">${escapeHtml(translate('Character', 'STMemoryBooks_Character'))}</th><th style="text-align:left; padding: 4px 8px;">${escapeHtml(translate('Lorebook', 'STMemoryBooks_Lorebook'))}</th><th style="padding: 4px 8px;"></th></tr></thead><tbody>`;
+            for (const [charName, lbName] of entries) {
+                const opts = availableLorebooks.map(n =>
+                    `<option value="${escapeHtml(n)}" ${n === lbName ? 'selected' : ''}>${escapeHtml(n)}</option>`
+                ).join('');
+                html += `<tr data-char="${escapeHtml(charName)}">`;
+                html += `<td style="padding: 4px 8px; white-space: nowrap;">${escapeHtml(charName)}</td>`;
+                html += `<td style="padding: 4px 8px;"><select class="stmb-char-lb-select text_pole" style="width: 100%;">${opts}</select></td>`;
+                html += `<td style="padding: 4px 8px; text-align: center;"><button class="stmb-char-lb-remove menu_button" title="${escapeHtml(translate('Remove', 'STMemoryBooks_Remove'))}" style="padding: 2px 8px;">✕</button></td>`;
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
 
         // Attach handlers before show
         const attachHandlers = () => {
@@ -1261,6 +1296,38 @@ export async function showSidePromptsPopup() {
                     return;
                 }
             });
+
+            // Character lorebook mappings: change select and remove
+            const charLbSection = dlg.querySelector('#stmb-sp-char-lorebook-section');
+            if (charLbSection) {
+                renderCharLorebookMappings(dlg);
+                charLbSection.addEventListener('change', (e) => {
+                    const select = e.target.closest('.stmb-char-lb-select');
+                    if (!select) return;
+                    const row = select.closest('tr[data-char]');
+                    const charName = row?.dataset?.char;
+                    if (!charName) return;
+                    const settings = extension_settings?.STMemoryBooks;
+                    if (!settings.characterLorebookMap) settings.characterLorebookMap = {};
+                    settings.characterLorebookMap[charName] = select.value;
+                    saveSettingsDebounced();
+                    toastr.success(`Updated lorebook for "${charName}" to "${select.value}"`, 'STMemoryBooks');
+                });
+                charLbSection.addEventListener('click', (e) => {
+                    const btn = e.target.closest('.stmb-char-lb-remove');
+                    if (!btn) return;
+                    const row = btn.closest('tr[data-char]');
+                    const charName = row?.dataset?.char;
+                    if (!charName) return;
+                    const settings = extension_settings?.STMemoryBooks;
+                    if (settings?.characterLorebookMap) {
+                        delete settings.characterLorebookMap[charName];
+                        saveSettingsDebounced();
+                    }
+                    renderCharLorebookMappings(dlg);
+                    toastr.info(`Removed lorebook mapping for "${charName}"`, 'STMemoryBooks');
+                });
+            }
         };
 
         // Prepare and show popup
