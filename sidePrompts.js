@@ -19,6 +19,14 @@ import { tr } from './i18nHelpers.js';
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
 let hasShownSidePromptRangeTip = false;
 
+/**
+ * Returns the set of template keys disabled for the current chat via per-chat overrides.
+ * @returns {string[]}
+ */
+function getChatDisabledKeys() {
+    return getSceneMarkers()?.disabledSidePrompts ?? [];
+}
+
 // Serialize preview popups to avoid overlap; enqueue in order of receipt
 let previewQueue = Promise.resolve();
 function enqueuePreview(task) {
@@ -639,7 +647,7 @@ export async function evaluateTrackers() {
     const evalEpoch = parentTask.epoch;
     try {
         throwIfStmbStopped(evalEpoch);
-        const enabledInterval = await listByTrigger('onInterval');
+        const enabledInterval = (await listByTrigger('onInterval')).filter(tpl => !getChatDisabledKeys().includes(tpl.key));
         if (!enabledInterval || enabledInterval.length === 0) return;
 
         // Ensure lorebook exists up-front
@@ -823,7 +831,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
     const runEpoch = parentTask.epoch;
     try {
         const lore = await requireLorebookStrict();
-        const enabledAfter = await listByTrigger('onAfterMemory');
+        const enabledAfter = (await listByTrigger('onAfterMemory')).filter(tpl => !getChatDisabledKeys().includes(tpl.key));
 
         if (!enabledAfter || enabledAfter.length === 0) return;
 

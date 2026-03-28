@@ -2721,6 +2721,71 @@ function populateInlineButtons() {
     button.addEventListener("click", buttonConfig.action);
     promptButtonsContainer.appendChild(button);
   });
+
+  // Populate per-chat side prompt overrides
+  populateChatSidePromptOverrides();
+}
+
+/**
+ * Render per-chat side prompt enable/disable toggles.
+ * Only shows templates that have auto-triggers (onInterval or onAfterMemory).
+ */
+async function populateChatSidePromptOverrides() {
+  const container = currentPopupInstance?.content?.querySelector('#stmb-chat-sideprompt-overrides');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  const allTemplates = await listTemplates();
+  const autoTriggered = allTemplates.filter(tpl =>
+    tpl.enabled && (
+      (tpl.triggers?.onInterval && Number(tpl.triggers.onInterval.visibleMessages) >= 1) ||
+      tpl.triggers?.onAfterMemory?.enabled
+    )
+  );
+
+  if (autoTriggered.length === 0) {
+    const msg = document.createElement('small');
+    msg.className = 'opacity50p';
+    msg.textContent = translate('No auto-triggered side prompts are currently enabled.', 'STMemoryBooks_NoChatSidePromptOverrides');
+    container.appendChild(msg);
+    return;
+  }
+
+  const stmbData = getSceneMarkers() || {};
+  const disabled = Array.isArray(stmbData.disabledSidePrompts) ? stmbData.disabledSidePrompts : [];
+
+  for (const tpl of autoTriggered) {
+    const row = document.createElement('label');
+    row.className = 'checkbox_label';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.style.marginTop = '4px';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !disabled.includes(tpl.key);
+    checkbox.addEventListener('change', () => {
+      const current = getSceneMarkers() || {};
+      const currentDisabled = Array.isArray(current.disabledSidePrompts) ? [...current.disabledSidePrompts] : [];
+      if (checkbox.checked) {
+        const idx = currentDisabled.indexOf(tpl.key);
+        if (idx !== -1) currentDisabled.splice(idx, 1);
+      } else {
+        if (!currentDisabled.includes(tpl.key)) currentDisabled.push(tpl.key);
+      }
+      current.disabledSidePrompts = currentDisabled;
+      saveMetadataForCurrentContext();
+    });
+
+    const label = document.createElement('span');
+    label.textContent = tpl.name;
+
+    row.appendChild(checkbox);
+    row.appendChild(label);
+    container.appendChild(row);
+  }
 }
 
 /**
