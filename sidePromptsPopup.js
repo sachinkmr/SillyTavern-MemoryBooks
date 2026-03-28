@@ -306,6 +306,17 @@ async function openEditTemplate(parentPopup, key) {
         const lbIgnoreBudget = !!lb.ignoreBudget;
         const lbEntryTitleOverride = String(lb.entryTitleOverride || '');
         const lbEntryKeywords = String(lb.entryKeywords || '');
+        const perCharacterEnabled = !!s.perCharacter;
+
+        const perCharacterHtml = `
+            <div class="world_entry_form_control">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-sp-edit-per-character" ${perCharacterEnabled ? 'checked' : ''}>
+                    <span>${escapeHtml(translate('Per-character mode', 'STMemoryBooks_PerCharacterMode'))}</span>
+                </label>
+                <small class="opacity50p">${escapeHtml(translate('Runs a separate LLM call for each character in the chat. Each character gets its own lorebook entry with {{charname}} resolved to their name. In group chats, all group members are processed.', 'STMemoryBooks_PerCharacterModeDesc'))}</small>
+            </div>
+        `;
 
         const content = `
             <h3>${escapeHtml(translate('Edit Side Prompt', 'STMemoryBooks_EditSidePrompt'))}</h3>
@@ -461,6 +472,8 @@ async function openEditTemplate(parentPopup, key) {
                 ${overrideHtml}
                 ${lorebookOverrideHtml}
             </div>
+
+            ${perCharacterHtml}
         `;
 
         const editPopup = new Popup(DOMPurify.sanitize(content), POPUP_TYPE.TEXT, '', {
@@ -630,6 +643,9 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
             const lbOverrideEnabled2 = !!dlg.querySelector('#stmb-sp-edit-lb-override-enabled')?.checked;
             const checkedBooks = [...(dlg.querySelectorAll('#stmb-sp-edit-lb-override-list input[name="stmb-sp-edit-lb-override-book"]:checked') || [])].map(el => el.value);
             settings.lorebookOverride = { enabled: lbOverrideEnabled2, lorebookNames: lbOverrideEnabled2 ? checkedBooks : [] };
+
+            // Per-character mode
+            settings.perCharacter = !!dlg.querySelector('#stmb-sp-edit-per-character')?.checked;
 
             await upsertTemplate({
                 key: tpl.key,
@@ -835,6 +851,14 @@ async function openNewTemplate(parentPopup) {
             </div>
             ${lorebookOverrideHtmlNew}
         </div>
+
+        <div class="world_entry_form_control">
+            <label class="checkbox_label">
+                <input type="checkbox" id="stmb-sp-new-per-character">
+                <span>${escapeHtml(translate('Per-character mode', 'STMemoryBooks_PerCharacterMode'))}</span>
+            </label>
+            <small class="opacity50p">${escapeHtml(translate('Runs a separate LLM call for each character in the chat. Each character gets its own lorebook entry with {{charname}} resolved to their name. In group chats, all group members are processed.', 'STMemoryBooks_PerCharacterModeDesc'))}</small>
+        </div>
     `;
 
     const newPopup = new Popup(DOMPurify.sanitize(content), POPUP_TYPE.TEXT, '', {
@@ -978,6 +1002,9 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
         const lbOverrideEnabledNew = !!dlg.querySelector('#stmb-sp-new-lb-override-enabled')?.checked;
         const checkedBooksNew = [...(dlg.querySelectorAll('#stmb-sp-new-lb-override-list input[name="stmb-sp-new-lb-override-book"]:checked') || [])].map(el => el.value);
         settings.lorebookOverride = { enabled: lbOverrideEnabledNew, lorebookNames: lbOverrideEnabledNew ? checkedBooksNew : [] };
+
+        // Per-character mode
+        settings.perCharacter = !!dlg.querySelector('#stmb-sp-new-per-character')?.checked;
 
         try {
             await upsertTemplate({ name, enabled, prompt, responseFormat, settings, triggers });

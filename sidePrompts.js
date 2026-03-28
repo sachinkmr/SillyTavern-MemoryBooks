@@ -1,8 +1,9 @@
-import { chat, chat_metadata } from '../../../../script.js';
-import { extension_settings } from '../../../extensions.js';
+import { chat, chat_metadata, characters, name2, this_chid } from '../../../../script.js';
+import { extension_settings, getContext } from '../../../extensions.js';
 import { getRegexedString, regex_placement } from '../../../extensions/regex/engine.js';
-import { METADATA_KEY, world_names, loadWorldInfo } from '../../../world-info.js';
+import { METADATA_KEY, world_names, loadWorldInfo, saveWorldInfo } from '../../../world-info.js';
 import { executeSlashCommands } from '../../../slash-commands.js';
+import { selected_group, groups } from '../../../group-chats.js';
 import { getSceneMarkers } from './sceneManager.js';
 import { createSceneRequest, compileScene, toReadableText } from './chatcompile.js';
 import { getCurrentApiInfo, getUIModelSettings, normalizeCompletionSource, resolveEffectiveConnectionFromProfile, resolveManualLorebookNames, clampInt, createStmbInFlightTask, isStmbStopError, getStmbStopEpoch, throwIfStmbStopped } from './utils.js';
@@ -25,6 +26,90 @@ let hasShownSidePromptRangeTip = false;
  */
 function getChatDisabledKeys() {
     return getSceneMarkers()?.disabledSidePrompts ?? [];
+}
+
+/**
+ * Check whether a template has per-character mode enabled.
+ */
+function isPerCharacterTemplate(tpl) {
+    return !!tpl?.settings?.perCharacter;
+}
+
+/**
+ * Discover all characters in the current chat.
+ * For group chats: returns all group members.
+ * For single chats: returns the single character.
+ * @returns {Array<{ name: string, avatar: string }>}
+ */
+function discoverChatCharacters() {
+    const result = [];
+    const isGroupChat = !!selected_group;
+
+    if (isGroupChat) {
+        const group = groups?.find(x => x.id === selected_group);
+        if (group?.members?.length) {
+            for (const memberAvatar of group.members) {
+                const char = characters?.find(c => c.avatar === memberAvatar);
+                if (char?.name) {
+                    result.push({ name: char.name, avatar: memberAvatar });
+                }
+            }
+        }
+    } else {
+        // Single character chat
+        let charName = null;
+        let charAvatar = null;
+        if (name2 && String(name2).trim()) {
+            charName = String(name2).trim();
+        } else if (this_chid !== undefined && characters?.[this_chid]) {
+            charName = characters[this_chid].name;
+        }
+        if (this_chid !== undefined && characters?.[this_chid]) {
+            charAvatar = characters[this_chid].avatar;
+        }
+        if (charName) {
+            result.push({ name: charName, avatar: charAvatar || '' });
+        }
+    }
+
+    return result;
+}
+
+/**
+ * For a given character, find lorebooks whose name contains the character's name.
+ * Returns the first matching lorebook name, or null.
+ * @param {string} charName
+ * @returns {string|null}
+ */
+function findCharacterLorebook(charName) {
+    if (!charName || !Array.isArray(world_names)) return null;
+    const lower = charName.toLowerCase();
+    return world_names.find(n => n.toLowerCase().includes(lower)) || null;
+}
+
+/**
+ * Build per-character runtime macros by injecting {{charname}} into existing macros.
+ * @param {string} charName
+ * @param {Record<string,string>} baseMacros
+ * @returns {Record<string,string>}
+ */
+function buildPerCharacterMacros(charName, baseMacros = {}) {
+    return {
+        ...baseMacros,
+        '{{charname}}': charName,
+    };
+}
+
+/**
+ * Get a per-character entry title by appending character name to the unified title.
+ * @param {string} baseTitle - The unified side prompt title
+ * @param {string} charName
+ * @returns {string}
+ */
+function getPerCharacterTitle(baseTitle, charName) {
+    const suffix = getSidePromptTitleSuffix();
+    const stripped = baseTitle.endsWith(suffix) ? baseTitle.slice(0, -suffix.length) : baseTitle;
+    return `${stripped} [${charName}]${suffix}`;
 }
 
 // Serialize preview popups to avoid overlap; enqueue in order of receipt
@@ -705,113 +790,145 @@ export async function evaluateTrackers() {
                 continue;
             }
 
-            const prepared = await prepareSidePromptRun({
-                tpl,
-                loreData: lore.data,
-                compiledScene: compiled,
-                defaultOverrides,
-                fallbackKinds: ['tracker'],
-            });
-
-            // Call LLM
-            let resultText = '';
-            const runEpoch = getStmbStopEpoch();
-            try {
-                console.log(`${MODULE_NAME}: SidePrompt attempt`, {
-                    trigger: 'onInterval',
-                    name: tpl.name,
-                    key: tpl.key,
-                    range: `${boundedStart}-${currentLast}`,
-                    visibleSince,
-                    threshold,
-                    api: prepared.conn.api,
-                    model: prepared.conn.model,
-                });
-                resultText = await runSidePromptAttempt({
-                    taskLabel: `SidePrompt:onInterval:${tpl?.key || tpl?.name || 'unknown'}`,
-                    finalPrompt: prepared.finalPrompt,
-                    conn: prepared.conn,
-                    runEpoch,
-                });
-            } catch (err) {
-                if (isStmbStopError(err)) return;
-                console.error(`${MODULE_NAME}: Interval sideprompt LLM failed:`, err);
-                toastr.error(__st_t_tag`SidePrompt "${tpl.name}" failed: ${err.message}`, 'STMemoryBooks');
+            // Per-character mode: iterate over characters; standard mode: single run
+            const perChar = isPerCharacterTemplate(tpl);
+            const charTargets = perChar ? discoverChatCharacters() : [null];
+            if (perChar && charTargets.length === 0) {
+                console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
                 continue;
             }
 
-            throwIfStmbStopped(runEpoch);
-            if (!ensureSidePromptTextNotBlank(resultText, tpl, 'onInterval')) continue;
+            for (const charTarget of charTargets) {
+                const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
 
-            // Preview gating if enabled
-            try {
-                const settings = extension_settings?.STMemoryBooks;
-                if (settings?.moduleSettings?.showMemoryPreviews) {
-                    const memoryResult = {
-                        extractedTitle: prepared.unifiedTitle,
-                        content: resultText,
-                        suggestedKeys: [],
-                    };
-                    const sceneDataForPreview = {
-                        sceneStart: compiled?.metadata?.sceneStart ?? boundedStart,
-                        sceneEnd: compiled?.metadata?.sceneEnd ?? currentLast,
-                        messageCount: compiled?.metadata?.messageCount ?? (compiled?.messages?.length ?? 0),
-                    };
-                    const profileSettingsForPreview = { name: 'SidePrompt' };
-                    let previewResult;
-                    await enqueuePreview(async () => {
-                        previewResult = await showMemoryPreviewPopup(memoryResult, sceneDataForPreview, profileSettingsForPreview, { lockTitle: true });
+                const prepared = await prepareSidePromptRun({
+                    tpl,
+                    loreData: lore.data,
+                    compiledScene: compiled,
+                    defaultOverrides,
+                    fallbackKinds: ['tracker'],
+                    runtimeMacros,
+                });
+
+                // For per-character mode, override the title to include character name
+                const effectiveTitle = charTarget
+                    ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
+                    : prepared.unifiedTitle;
+
+                // Call LLM
+                let resultText = '';
+                const runEpoch = getStmbStopEpoch();
+                try {
+                    console.log(`${MODULE_NAME}: SidePrompt attempt`, {
+                        trigger: 'onInterval',
+                        name: tpl.name,
+                        key: tpl.key,
+                        character: charTarget?.name || null,
+                        range: `${boundedStart}-${currentLast}`,
+                        visibleSince,
+                        threshold,
+                        api: prepared.conn.api,
+                        model: prepared.conn.model,
                     });
-                    if (previewResult?.action === 'cancel' || previewResult?.action === 'retry') {
-                        console.log(`${MODULE_NAME}: SidePrompt "${tpl.name}" canceled or retry requested in preview; skipping save`);
-                        continue;
-                    } else if (previewResult?.action === 'edit' && previewResult.memoryData) {
-                        resultText = previewResult.memoryData.content ?? resultText;
-                    }
+                    resultText = await runSidePromptAttempt({
+                        taskLabel: `SidePrompt:onInterval:${tpl?.key || tpl?.name || 'unknown'}${charTarget ? `:${charTarget.name}` : ''}`,
+                        finalPrompt: prepared.finalPrompt,
+                        conn: prepared.conn,
+                        runEpoch,
+                    });
+                } catch (err) {
+                    if (isStmbStopError(err)) return;
+                    console.error(`${MODULE_NAME}: Interval sideprompt LLM failed${charTarget ? ` for ${charTarget.name}` : ''}:`, err);
+                    toastr.error(__st_t_tag`SidePrompt "${tpl.name}"${charTarget ? ` (${charTarget.name})` : ''} failed: ${err.message}`, 'STMemoryBooks');
+                    continue;
                 }
-            } catch (previewErr) {
-                console.warn(`${MODULE_NAME}: Preview step failed; proceeding without preview`, previewErr);
-            }
 
-            // Upsert entry into all target lorebooks; write checkpoint metadata on each
-            try {
                 throwIfStmbStopped(runEpoch);
-                const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
-                const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs);
-                const endId = compiled?.metadata?.sceneEnd ?? currentLast;
-                const metadataUpdates = {
-                    [`STMB_sp_${tpl.key}_lastMsgId`]: endId,
-                    [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
-                    STMB_tracker_lastMsgId: endId,
-                    STMB_tracker_lastRunAt: new Date().toISOString(),
-                };
-                const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
-                for (const tplLore of tplLores) {
-                    const targetData = tplLore.name === tplLores[0].name
-                        ? tplLore.data
-                        : (await loadWorldInfo(tplLore.name).catch(() => null));
-                    if (!targetData) {
-                        console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
-                        continue;
+                if (!ensureSidePromptTextNotBlank(resultText, tpl, 'onInterval')) continue;
+
+                // Preview gating if enabled
+                try {
+                    const settings = extension_settings?.STMemoryBooks;
+                    if (settings?.moduleSettings?.showMemoryPreviews) {
+                        const memoryResult = {
+                            extractedTitle: effectiveTitle,
+                            content: resultText,
+                            suggestedKeys: [],
+                        };
+                        const sceneDataForPreview = {
+                            sceneStart: compiled?.metadata?.sceneStart ?? boundedStart,
+                            sceneEnd: compiled?.metadata?.sceneEnd ?? currentLast,
+                            messageCount: compiled?.metadata?.messageCount ?? (compiled?.messages?.length ?? 0),
+                        };
+                        const profileSettingsForPreview = { name: 'SidePrompt' };
+                        let previewResult;
+                        await enqueuePreview(async () => {
+                            previewResult = await showMemoryPreviewPopup(memoryResult, sceneDataForPreview, profileSettingsForPreview, { lockTitle: true });
+                        });
+                        if (previewResult?.action === 'cancel' || previewResult?.action === 'retry') {
+                            console.log(`${MODULE_NAME}: SidePrompt "${tpl.name}"${charTarget ? ` (${charTarget.name})` : ''} canceled or retry requested in preview; skipping save`);
+                            continue;
+                        } else if (previewResult?.action === 'edit' && previewResult.memoryData) {
+                            resultText = previewResult.memoryData.content ?? resultText;
+                        }
                     }
-                    await upsertLorebookEntryByTitle(tplLore.name, targetData, prepared.unifiedTitle, resultText, {
-                        defaults,
-                        entryOverrides,
-                        metadataUpdates,
-                        refreshEditor,
-                    });
+                } catch (previewErr) {
+                    console.warn(`${MODULE_NAME}: Preview step failed; proceeding without preview`, previewErr);
                 }
-                console.log(`${MODULE_NAME}: SidePrompt success`, {
-                    trigger: 'onInterval',
-                    name: tpl.name,
-                    key: tpl.key,
-                    saved: true,
-                    contentChars: resultText.length,
-                });
-            } catch (err) {
-                console.error(`${MODULE_NAME}: Interval sideprompt upsert failed:`, err);
-                toastr.error(__st_t_tag`Failed to update sideprompt entry "${tpl.name}"`, 'STMemoryBooks');
-                continue;
+
+                // Upsert entry into all target lorebooks; write checkpoint metadata on each
+                try {
+                    throwIfStmbStopped(runEpoch);
+                    const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
+                    const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runtimeMacros);
+                    // Add character name to keywords for per-character entries
+                    if (charTarget && entryOverrides.key) {
+                        if (!entryOverrides.key.some(k => k.toLowerCase() === charTarget.name.toLowerCase())) {
+                            entryOverrides.key.push(charTarget.name);
+                        }
+                    } else if (charTarget) {
+                        entryOverrides.key = [charTarget.name];
+                    }
+                    const endId = compiled?.metadata?.sceneEnd ?? currentLast;
+                    const checkpointSuffix = charTarget ? `_${charTarget.name}` : '';
+                    const metadataUpdates = {
+                        [`STMB_sp_${tpl.key}${checkpointSuffix}_lastMsgId`]: endId,
+                        [`STMB_sp_${tpl.key}${checkpointSuffix}_lastRunAt`]: new Date().toISOString(),
+                        STMB_tracker_lastMsgId: endId,
+                        STMB_tracker_lastRunAt: new Date().toISOString(),
+                    };
+                    if (charTarget) {
+                        metadataUpdates.STMB_character = charTarget.name;
+                    }
+                    const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
+                    for (const tplLore of tplLores) {
+                        const targetData = tplLore.name === tplLores[0].name
+                            ? tplLore.data
+                            : (await loadWorldInfo(tplLore.name).catch(() => null));
+                        if (!targetData) {
+                            console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
+                            continue;
+                        }
+                        await upsertLorebookEntryByTitle(tplLore.name, targetData, effectiveTitle, resultText, {
+                            defaults,
+                            entryOverrides,
+                            metadataUpdates,
+                            refreshEditor,
+                        });
+                    }
+                    console.log(`${MODULE_NAME}: SidePrompt success`, {
+                        trigger: 'onInterval',
+                        name: tpl.name,
+                        key: tpl.key,
+                        character: charTarget?.name || null,
+                        saved: true,
+                        contentChars: resultText.length,
+                    });
+                } catch (err) {
+                    console.error(`${MODULE_NAME}: Interval sideprompt upsert failed${charTarget ? ` for ${charTarget.name}` : ''}:`, err);
+                    toastr.error(__st_t_tag`Failed to update sideprompt entry "${tpl.name}"${charTarget ? ` (${charTarget.name})` : ''}`, 'STMemoryBooks');
+                    continue;
+                }
             }
         }
     } catch (outer) {
@@ -846,17 +963,36 @@ export async function runAfterMemory(compiledScene, profile = null) {
 
         const maxConcurrent = clampInt(Number(settings?.moduleSettings?.sidePromptsMaxConcurrent ?? 2),1,5);
 
+        // Expand per-character templates into individual work items
+        const workItems = [];
+        for (const tpl of enabledAfter) {
+            if (isPerCharacterTemplate(tpl)) {
+                const chars = discoverChatCharacters();
+                if (chars.length === 0) {
+                    console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
+                    continue;
+                }
+                for (const charTarget of chars) {
+                    workItems.push({ tpl, charTarget });
+                }
+            } else {
+                workItems.push({ tpl, charTarget: null });
+            }
+        }
+
         // Partition into waves of size maxConcurrent
         const waves = [];
-        for (let i = 0; i < enabledAfter.length; i += maxConcurrent) {
-            waves.push(enabledAfter.slice(i, i + maxConcurrent));
+        for (let i = 0; i < workItems.length; i += maxConcurrent) {
+            waves.push(workItems.slice(i, i + maxConcurrent));
         }
 
         for (const wave of waves) {
             throwIfStmbStopped(runEpoch);
             // Run LLMs concurrently for this wave (scene-only prompts)
-            const llmPromises = wave.map(async (tpl) => {
+            const llmPromises = wave.map(async ({ tpl, charTarget }) => {
+                const displayName = charTarget ? `${tpl.name} (${charTarget.name})` : tpl.name;
                 try {
+                    const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
                     const tplLores = await resolveLorebooksForTemplate(tpl, lore);
                     const prepared = await prepareSidePromptRun({
                         tpl,
@@ -864,16 +1000,21 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         compiledScene,
                         defaultOverrides,
                         fallbackKinds: ['plotpoints', 'scoreboard'],
+                        runtimeMacros,
                     });
+                    const effectiveTitle = charTarget
+                        ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
+                        : prepared.unifiedTitle;
                     console.log(`${MODULE_NAME}: SidePrompt attempt`, {
                         trigger: 'onAfterMemory',
                         name: tpl.name,
                         key: tpl.key,
+                        character: charTarget?.name || null,
                         api: prepared.conn.api,
                         model: prepared.conn.model,
                     });
                     const text = await runSidePromptAttempt({
-                        taskLabel: `SidePrompt:onAfterMemory:${tpl?.key || tpl?.name || 'unknown'}`,
+                        taskLabel: `SidePrompt:onAfterMemory:${tpl?.key || tpl?.name || 'unknown'}${charTarget ? `:${charTarget.name}` : ''}`,
                         finalPrompt: prepared.finalPrompt,
                         conn: prepared.conn,
                         runEpoch,
@@ -881,17 +1022,20 @@ export async function runAfterMemory(compiledScene, profile = null) {
                     return {
                         ok: true,
                         tpl,
+                        charTarget,
                         text,
-                        unifiedTitle: prepared.unifiedTitle,
+                        unifiedTitle: effectiveTitle,
                         finalPrompt: prepared.finalPrompt,
                         conn: prepared.conn,
                         tplLores,
+                        displayName,
+                        runtimeMacros,
                     };
                 } catch (e) {
                     if (!isStmbStopError(e)) {
-                        console.error(`${MODULE_NAME}: Wave LLM failed for "${tpl.name}":`, e);
+                        console.error(`${MODULE_NAME}: Wave LLM failed for "${displayName}":`, e);
                     }
-                    return { ok: false, tpl, error: e, cancelled: isStmbStopError(e) };
+                    return { ok: false, tpl, charTarget, error: e, cancelled: isStmbStopError(e), displayName };
                 }
             });
 
@@ -907,7 +1051,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
             for (const r of llmResults) {
                 if (!r.ok) {
                     if (r.cancelled) continue;
-                    results.push({ name: r.tpl?.name || 'unknown', ok: false, error: r.error });
+                    results.push({ name: r.displayName || 'unknown', ok: false, error: r.error });
                     continue;
                 }
 
@@ -915,7 +1059,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                 let approved = true;
 
                 if (!ensureSidePromptTextNotBlank(textToSave, r.tpl, 'onAfterMemory')) {
-                    results.push({ name: r.tpl.name, ok: false, error: new Error('Blank side prompt response') });
+                    results.push({ name: r.displayName, ok: false, error: new Error('Blank side prompt response') });
                     continue;
                 }
 
@@ -929,7 +1073,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         compiledScene,
                         runEpoch,
                         queuePreview: true,
-                        retryTaskLabel: `SidePrompt:onAfterMemory:retry:${r.tpl?.key || r.tpl?.name || 'unknown'}`,
+                        retryTaskLabel: `SidePrompt:onAfterMemory:retry:${r.tpl?.key || r.tpl?.name || 'unknown'}${r.charTarget ? `:${r.charTarget.name}` : ''}`,
                     });
                     approved = previewResult.approved;
                     textToSave = previewResult.text;
@@ -940,27 +1084,41 @@ export async function runAfterMemory(compiledScene, profile = null) {
 
                 if (approved) {
                     if (!ensureSidePromptTextNotBlank(textToSave, r.tpl, 'onAfterMemory')) {
-                        results.push({ name: r.tpl.name, ok: false, error: new Error('Blank side prompt response') });
+                        results.push({ name: r.displayName, ok: false, error: new Error('Blank side prompt response') });
                         continue;
                     }
                     throwIfStmbStopped(runEpoch);
                     const tpl = r.tpl;
                     const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
-                    const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs);
+                    const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, r.runtimeMacros || {});
+                    // Add character name to keywords for per-character entries
+                    if (r.charTarget) {
+                        if (entryOverrides.key) {
+                            if (!entryOverrides.key.some(k => k.toLowerCase() === r.charTarget.name.toLowerCase())) {
+                                entryOverrides.key.push(r.charTarget.name);
+                            }
+                        } else {
+                            entryOverrides.key = [r.charTarget.name];
+                        }
+                    }
+                    const metadataUpdates = {
+                        [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
+                    };
+                    if (r.charTarget) {
+                        metadataUpdates.STMB_character = r.charTarget.name;
+                    }
                     items.push({
-                        name: tpl.name,
+                        name: r.displayName,
                         title: r.unifiedTitle,
                         content: textToSave,
                         defaults,
                         entryOverrides,
-                        metadataUpdates: {
-                            [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
-                        },
+                        metadataUpdates,
                         _tplLores: r.tplLores,
                     });
-                    succeededNames.push(tpl.name);
+                    succeededNames.push(r.displayName);
                 } else {
-                    results.push({ name: r.tpl.name, ok: false, error: new Error('User canceled or retry in preview') });
+                    results.push({ name: r.displayName, ok: false, error: new Error('User canceled or retry in preview') });
                 }
             }
 
@@ -1140,97 +1298,132 @@ export async function runSidePrompt(args) {
             }
         }
         const defaultOverrides = resolveSidePromptConnection(null);
-        const prepared = await prepareSidePromptRun({
-            tpl,
-            loreData: tplLores[0].data,
-            compiledScene: compiled,
-            defaultOverrides,
-            fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
-            runtimeMacros,
-        });
 
-        // Call LLM
-        let resultText = '';
+        // Per-character mode: iterate over characters; standard mode: single run
+        const perChar = isPerCharacterTemplate(tpl);
+        const charTargets = perChar ? discoverChatCharacters() : [null];
+        if (perChar && charTargets.length === 0) {
+            toastr.error(translate('No characters found for per-character side prompt.', 'STMemoryBooks_Toast_NoCharactersFound'), 'STMemoryBooks');
+            return '';
+        }
+
         try {
-            console.log(`${MODULE_NAME}: SidePrompt attempt`, {
-                trigger: 'manual',
-                name: tpl.name,
-                key: tpl.key,
-                rangeProvided: !!range,
-                api: prepared.conn.api,
-                model: prepared.conn.model,
-            });
-            resultText = await runSidePromptAttempt({
-                taskLabel: `SidePrompt:manual:${tpl?.key || tpl?.name || 'unknown'}`,
-                finalPrompt: prepared.finalPrompt,
-                conn: prepared.conn,
-                runEpoch,
-            });
-            throwIfStmbStopped(runEpoch);
-            if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) return '';
+            for (const charTarget of charTargets) {
+                const effectiveMacros = charTarget
+                    ? buildPerCharacterMacros(charTarget.name, runtimeMacros)
+                    : runtimeMacros;
+                const displayName = charTarget ? `${tpl.name} (${charTarget.name})` : tpl.name;
 
-            // Preview gating if enabled
-            try {
-                throwIfStmbStopped(runEpoch);
-                const previewResult = await resolveSidePromptPreview({
+                const prepared = await prepareSidePromptRun({
                     tpl,
-                    initialText: resultText,
+                    loreData: tplLores[0].data,
+                    compiledScene: compiled,
+                    defaultOverrides,
+                    fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
+                    runtimeMacros: effectiveMacros,
+                });
+
+                const effectiveTitle = charTarget
+                    ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
+                    : prepared.unifiedTitle;
+
+                // Call LLM
+                let resultText = '';
+                console.log(`${MODULE_NAME}: SidePrompt attempt`, {
+                    trigger: 'manual',
+                    name: tpl.name,
+                    key: tpl.key,
+                    character: charTarget?.name || null,
+                    rangeProvided: !!range,
+                    api: prepared.conn.api,
+                    model: prepared.conn.model,
+                });
+                resultText = await runSidePromptAttempt({
+                    taskLabel: `SidePrompt:manual:${tpl?.key || tpl?.name || 'unknown'}${charTarget ? `:${charTarget.name}` : ''}`,
                     finalPrompt: prepared.finalPrompt,
                     conn: prepared.conn,
-                    compiledScene: compiled,
                     runEpoch,
-                    retryTaskLabel: `SidePrompt:manual:retry:${tpl?.key || tpl?.name || 'unknown'}`,
                 });
-                if (!previewResult.approved) {
-                    toastr.info(__st_t_tag`SidePrompt "${tpl.name}" canceled.`, 'STMemoryBooks');
-                    return '';
-                }
-                resultText = previewResult.text;
-            } catch (previewErr) {
-                console.warn(`${MODULE_NAME}: Preview step failed; proceeding without preview`, previewErr);
-            }
-            throwIfStmbStopped(runEpoch);
-            if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) return '';
-            const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
-            const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runtimeMacros);
-            const endId = compiled?.metadata?.sceneEnd ?? currentLast;
-            const metadataUpdates = {
-                [`STMB_sp_${tpl.key}_lastMsgId`]: endId,
-                [`STMB_sp_${tpl.key}_lastRunAt`]: new Date().toISOString(),
-                STMB_tracker_lastMsgId: endId,
-                STMB_tracker_lastRunAt: new Date().toISOString(),
-            };
-            const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
-            for (const tplLore of tplLores) {
-                const targetData = tplLore.name === tplLores[0].name
-                    ? tplLore.data
-                    : (await loadWorldInfo(tplLore.name).catch(() => null));
-                if (!targetData) {
-                    console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
-                    continue;
-                }
-                await upsertLorebookEntryByTitle(tplLore.name, targetData, prepared.unifiedTitle, resultText, {
-                    defaults,
-                    entryOverrides,
-                    metadataUpdates,
-                    refreshEditor,
-                });
-            }
-            console.log(`${MODULE_NAME}: SidePrompt success`, {
-                trigger: 'manual',
-                name: tpl.name,
-                key: tpl.key,
-                saved: true,
-                contentChars: resultText.length,
-            });
-            } catch (err) {
-                if (isStmbStopError(err)) return '';
-                console.error(`${MODULE_NAME}: /sideprompt failed:`, err);
-                toastr.error(__st_t_tag`SidePrompt "${tpl.name}" failed: ${err.message}`, 'STMemoryBooks');
-                return '';
-            }
+                throwIfStmbStopped(runEpoch);
+                if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) continue;
 
-        toastr.success(__st_t_tag`SidePrompt "${tpl.name}" updated.`, 'STMemoryBooks');
+                // Preview gating if enabled
+                try {
+                    throwIfStmbStopped(runEpoch);
+                    const previewResult = await resolveSidePromptPreview({
+                        tpl,
+                        initialText: resultText,
+                        finalPrompt: prepared.finalPrompt,
+                        conn: prepared.conn,
+                        compiledScene: compiled,
+                        runEpoch,
+                        retryTaskLabel: `SidePrompt:manual:retry:${tpl?.key || tpl?.name || 'unknown'}${charTarget ? `:${charTarget.name}` : ''}`,
+                    });
+                    if (!previewResult.approved) {
+                        toastr.info(__st_t_tag`SidePrompt "${displayName}" canceled.`, 'STMemoryBooks');
+                        continue;
+                    }
+                    resultText = previewResult.text;
+                } catch (previewErr) {
+                    console.warn(`${MODULE_NAME}: Preview step failed; proceeding without preview`, previewErr);
+                }
+                throwIfStmbStopped(runEpoch);
+                if (!ensureSidePromptTextNotBlank(resultText, tpl, 'manual')) continue;
+                const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
+                const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, effectiveMacros);
+                // Add character name to keywords for per-character entries
+                if (charTarget) {
+                    if (entryOverrides.key) {
+                        if (!entryOverrides.key.some(k => k.toLowerCase() === charTarget.name.toLowerCase())) {
+                            entryOverrides.key.push(charTarget.name);
+                        }
+                    } else {
+                        entryOverrides.key = [charTarget.name];
+                    }
+                }
+                const endId = compiled?.metadata?.sceneEnd ?? currentLast;
+                const checkpointSuffix = charTarget ? `_${charTarget.name}` : '';
+                const metadataUpdates = {
+                    [`STMB_sp_${tpl.key}${checkpointSuffix}_lastMsgId`]: endId,
+                    [`STMB_sp_${tpl.key}${checkpointSuffix}_lastRunAt`]: new Date().toISOString(),
+                    STMB_tracker_lastMsgId: endId,
+                    STMB_tracker_lastRunAt: new Date().toISOString(),
+                };
+                if (charTarget) {
+                    metadataUpdates.STMB_character = charTarget.name;
+                }
+                const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
+                for (const tplLore of tplLores) {
+                    const targetData = tplLore.name === tplLores[0].name
+                        ? tplLore.data
+                        : (await loadWorldInfo(tplLore.name).catch(() => null));
+                    if (!targetData) {
+                        console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
+                        continue;
+                    }
+                    await upsertLorebookEntryByTitle(tplLore.name, targetData, effectiveTitle, resultText, {
+                        defaults,
+                        entryOverrides,
+                        metadataUpdates,
+                        refreshEditor,
+                    });
+                }
+                console.log(`${MODULE_NAME}: SidePrompt success`, {
+                    trigger: 'manual',
+                    name: tpl.name,
+                    key: tpl.key,
+                    character: charTarget?.name || null,
+                    saved: true,
+                    contentChars: resultText.length,
+                });
+                toastr.success(__st_t_tag`SidePrompt "${displayName}" updated.`, 'STMemoryBooks');
+            }
+        } catch (err) {
+            if (isStmbStopError(err)) return '';
+            console.error(`${MODULE_NAME}: /sideprompt failed:`, err);
+            toastr.error(__st_t_tag`SidePrompt "${tpl.name}" failed: ${err.message}`, 'STMemoryBooks');
+            return '';
+        }
         return '';
     } catch (outer) {
         if (isStmbStopError(outer)) return '';

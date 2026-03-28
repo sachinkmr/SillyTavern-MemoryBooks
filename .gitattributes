@@ -1,0 +1,5 @@
+# Build artifacts — always keep ours during merge/rebase to avoid conflicts.
+# Rebuild after merge with: bun run build
+index.build.js merge=ours
+index.build.js.map merge=ours
+style.build.css merge=ours
