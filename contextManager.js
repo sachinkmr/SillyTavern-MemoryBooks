@@ -16,6 +16,7 @@ import { world_names, loadWorldInfo, saveWorldInfo } from '../../../world-info.j
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument } from '../../../slash-commands/SlashCommandArgument.js';
+import { SlashCommandEnumValue } from '../../../slash-commands/SlashCommandEnumValue.js';
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../../popup.js';
 import { DOMPurify } from '../../../../lib.js';
 import { escapeHtml } from '../../../utils.js';
@@ -937,6 +938,17 @@ export async function initContextManager() {
         }
     });
 
+    // Enum provider: suggest CM template names in autocomplete
+    const cmTemplateEnumProvider = () => {
+        const templates = listTemplates();
+        return templates.map(tpl => new SlashCommandEnumValue(
+            `"${tpl.name}"`,
+            tpl.enabled ? 'Enabled' : 'Disabled',
+            'name',
+            '🧠',
+        ));
+    };
+
     // Register slash command
     const cmCmd = SlashCommand.fromProps({
         name: 'contextmanager',
@@ -948,6 +960,7 @@ export async function initContextManager() {
                 description: 'Quoted template name, optionally followed by X-Y range or last:N',
                 typeList: [ARGUMENT_TYPE.STRING],
                 isRequired: true,
+                enumProvider: cmTemplateEnumProvider,
             }),
         ],
     });
