@@ -1,9 +1,11 @@
-import { chat, chat_metadata, characters, name2, this_chid } from '../../../../script.js';
+import { chat, chat_metadata, characters, name2, this_chid, saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { getRegexedString, regex_placement } from '../../../extensions/regex/engine.js';
-import { METADATA_KEY, world_names, loadWorldInfo, saveWorldInfo } from '../../../world-info.js';
+import { METADATA_KEY, world_names, loadWorldInfo, saveWorldInfo, createNewWorldInfo } from '../../../world-info.js';
 import { executeSlashCommands } from '../../../slash-commands.js';
 import { selected_group, groups } from '../../../group-chats.js';
+import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../../popup.js';
+import { escapeHtml } from '../../../utils.js';
 import { getSceneMarkers } from './sceneManager.js';
 import { createSceneRequest, compileScene, toReadableText } from './chatcompile.js';
 import { getCurrentApiInfo, getUIModelSettings, normalizeCompletionSource, resolveEffectiveConnectionFromProfile, resolveManualLorebookNames, clampInt, createStmbInFlightTask, isStmbStopError, getStmbStopEpoch, throwIfStmbStopped } from './utils.js';
@@ -36,10 +38,26 @@ function isPerCharacterTemplate(tpl) {
 }
 
 /**
- * Discover all characters in the current chat.
+ * Get a character's attached lorebook name from their character data.
+ * SillyTavern stores this in character.data.extensions.world.
+ * @param {Object} char - Character object from SillyTavern's characters array
+ * @returns {string|null}
+ */
+function getCharacterLorebookName(char) {
+    // Primary: ST stores the character's attached lorebook in data.extensions.world
+    const worldName = char?.data?.extensions?.world;
+    if (worldName && typeof worldName === 'string' && worldName.trim()) {
+        const name = worldName.trim();
+        if (world_names?.includes(name)) return name;
+    }
+    return null;
+}
+
+/**
+ * Discover all characters in the current chat with their lorebook info.
  * For group chats: returns all group members.
  * For single chats: returns the single character.
- * @returns {Array<{ name: string, avatar: string }>}
+ * @returns {Array<{ name: string, avatar: string, lorebook: string|null }>}
  */
 function discoverChatCharacters() {
     const result = [];
@@ -51,7 +69,11 @@ function discoverChatCharacters() {
             for (const memberAvatar of group.members) {
                 const char = characters?.find(c => c.avatar === memberAvatar);
                 if (char?.name) {
-                    result.push({ name: char.name, avatar: memberAvatar });
+                    result.push({
+                        name: char.name,
+                        avatar: memberAvatar,
+                        lorebook: getCharacterLorebookName(char) || findCharacterLorebookByName(char.name),
+                    });
                 }
             }
         }
@@ -59,16 +81,20 @@ function discoverChatCharacters() {
         // Single character chat
         let charName = null;
         let charAvatar = null;
-        if (name2 && String(name2).trim()) {
-            charName = String(name2).trim();
-        } else if (this_chid !== undefined && characters?.[this_chid]) {
-            charName = characters[this_chid].name;
-        }
+        let char = null;
         if (this_chid !== undefined && characters?.[this_chid]) {
-            charAvatar = characters[this_chid].avatar;
+            char = characters[this_chid];
+            charName = char.name;
+            charAvatar = char.avatar;
+        } else if (name2 && String(name2).trim()) {
+            charName = String(name2).trim();
         }
         if (charName) {
-            result.push({ name: charName, avatar: charAvatar || '' });
+            result.push({
+                name: charName,
+                avatar: charAvatar || '',
+                lorebook: (char ? getCharacterLorebookName(char) : null) || findCharacterLorebookByName(charName),
+            });
         }
     }
 
@@ -76,15 +102,145 @@ function discoverChatCharacters() {
 }
 
 /**
- * For a given character, find lorebooks whose name contains the character's name.
- * Returns the first matching lorebook name, or null.
+ * Fallback: find a lorebook whose name contains the character's name.
+ * Used when the character doesn't have an explicitly attached lorebook.
  * @param {string} charName
  * @returns {string|null}
  */
-function findCharacterLorebook(charName) {
+function findCharacterLorebookByName(charName) {
     if (!charName || !Array.isArray(world_names)) return null;
     const lower = charName.toLowerCase();
     return world_names.find(n => n.toLowerCase().includes(lower)) || null;
+}
+
+/**
+ * Resolve the target lorebook for a per-character upsert.
+ * Priority: character's own lorebook > default STMB lorebook.
+ * @param {{ name: string, lorebook: string|null }} charTarget
+ * @param {{ name: string, data: any }} defaultLore - The STMB chat-bound lorebook
+ * @returns {Promise<{ name: string, data: any }>}
+ */
+async function resolvePerCharacterLorebook(charTarget, defaultLore) {
+    // Check persisted mapping first (from prior user selection)
+    const settings = extension_settings?.STMemoryBooks;
+    const charLorebookMap = settings?.characterLorebookMap || {};
+    const persistedName = charLorebookMap[charTarget.name];
+    if (persistedName && world_names?.includes(persistedName)) {
+        try {
+            const data = await loadWorldInfo(persistedName);
+            if (data) return { name: persistedName, data };
+        } catch {}
+    }
+
+    // Use character's attached lorebook
+    if (charTarget?.lorebook) {
+        if (charTarget.lorebook === defaultLore.name) return defaultLore;
+        try {
+            const data = await loadWorldInfo(charTarget.lorebook);
+            if (data) return { name: charTarget.lorebook, data };
+        } catch (err) {
+            console.warn(`${MODULE_NAME}: Failed to load character lorebook "${charTarget.lorebook}" for ${charTarget.name}; falling back to default.`, err);
+        }
+    }
+
+    // No lorebook found — prompt user to select or create one
+    const result = await promptCharacterLorebookSelection(charTarget.name);
+    if (result) {
+        // Persist the mapping so we don't ask again
+        if (!settings.characterLorebookMap) settings.characterLorebookMap = {};
+        settings.characterLorebookMap[charTarget.name] = result.name;
+        saveSettingsDebounced();
+        charTarget.lorebook = result.name;
+        return result;
+    }
+
+    // User dismissed — fall back to default
+    return defaultLore;
+}
+
+/**
+ * Prompt user to select an existing lorebook or create a new one for a character.
+ * @param {string} charName
+ * @returns {Promise<{ name: string, data: any }|null>}
+ */
+async function promptCharacterLorebookSelection(charName) {
+    const availableLorebooks = Array.isArray(world_names) ? world_names : [];
+    const lorebookOptions = availableLorebooks.map(n =>
+        `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`
+    ).join('');
+
+    const defaultNewName = `${charName} Lorebook`;
+    const content = `
+        <h3>${escapeHtml(translate('Character Lorebook Required', 'STMemoryBooks_CharLorebookRequired'))}</h3>
+        <p>${escapeHtml(translate('No lorebook found for', 'STMemoryBooks_NoLorebookFoundFor'))} <strong>${escapeHtml(charName)}</strong>.</p>
+        <p>${escapeHtml(translate('Per-character mode writes entries to each character\'s own lorebook. Select an existing one or create a new one.', 'STMemoryBooks_PerCharLorebookExplain'))}</p>
+        <div style="margin: 12px 0;">
+            <label>
+                <input type="radio" name="stmb-char-lb-choice" value="existing" checked>
+                ${escapeHtml(translate('Use existing lorebook:', 'STMemoryBooks_UseExistingLorebook'))}
+            </label>
+            <select id="stmb-char-lb-select" class="text_pole" style="margin-top: 4px;">
+                ${lorebookOptions || `<option disabled>${escapeHtml(translate('No lorebooks available', 'STMemoryBooks_NoLorebooksAvailable'))}</option>`}
+            </select>
+        </div>
+        <div style="margin: 12px 0;">
+            <label>
+                <input type="radio" name="stmb-char-lb-choice" value="create">
+                ${escapeHtml(translate('Create new lorebook:', 'STMemoryBooks_CreateNewLorebook'))}
+            </label>
+            <input type="text" id="stmb-char-lb-new-name" class="text_pole" value="${escapeHtml(defaultNewName)}" style="margin-top: 4px;">
+        </div>
+        <small class="opacity50p">${escapeHtml(translate('This choice is remembered and won\'t be asked again for this character.', 'STMemoryBooks_ChoiceRemembered'))}</small>
+    `;
+
+    const popup = new Popup(content, POPUP_TYPE.TEXT, '', {
+        okButton: translate('Confirm', 'STMemoryBooks_Confirm'),
+        cancelButton: translate('Skip', 'STMemoryBooks_Skip'),
+        wide: false,
+        allowVerticalScrolling: true,
+    });
+
+    const result = await popup.show();
+    if (result !== POPUP_RESULT.AFFIRMATIVE) return null;
+
+    const dlg = popup.dlg;
+    const choice = dlg.querySelector('input[name="stmb-char-lb-choice"]:checked')?.value;
+
+    if (choice === 'create') {
+        const newName = dlg.querySelector('#stmb-char-lb-new-name')?.value?.trim();
+        if (!newName) {
+            toastr.error(translate('Lorebook name cannot be empty.', 'STMemoryBooks_LorebookNameEmpty'), 'STMemoryBooks');
+            return null;
+        }
+        try {
+            const created = await createNewWorldInfo(newName);
+            if (created) {
+                const data = await loadWorldInfo(newName);
+                if (data) {
+                    toastr.success(`Created lorebook "${newName}" for ${charName}`, 'STMemoryBooks');
+                    return { name: newName, data };
+                }
+            }
+        } catch (err) {
+            console.error(`${MODULE_NAME}: Failed to create lorebook "${newName}":`, err);
+            toastr.error(`Failed to create lorebook "${newName}"`, 'STMemoryBooks');
+        }
+        return null;
+    }
+
+    // Existing lorebook
+    const selectedName = dlg.querySelector('#stmb-char-lb-select')?.value;
+    if (!selectedName || !world_names?.includes(selectedName)) {
+        toastr.error(translate('No valid lorebook selected.', 'STMemoryBooks_NoValidLorebookSelected'), 'STMemoryBooks');
+        return null;
+    }
+    try {
+        const data = await loadWorldInfo(selectedName);
+        if (data) return { name: selectedName, data };
+    } catch (err) {
+        console.error(`${MODULE_NAME}: Failed to load lorebook "${selectedName}":`, err);
+    }
+    return null;
 }
 
 /**
@@ -901,20 +1057,32 @@ export async function evaluateTrackers() {
                         metadataUpdates.STMB_character = charTarget.name;
                     }
                     const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
-                    for (const tplLore of tplLores) {
-                        const targetData = tplLore.name === tplLores[0].name
-                            ? tplLore.data
-                            : (await loadWorldInfo(tplLore.name).catch(() => null));
-                        if (!targetData) {
-                            console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
-                            continue;
-                        }
-                        await upsertLorebookEntryByTitle(tplLore.name, targetData, effectiveTitle, resultText, {
+
+                    // Per-character: write to the character's own lorebook; standard: use template lorebooks
+                    if (charTarget) {
+                        const charLore = await resolvePerCharacterLorebook(charTarget, tplLores[0]);
+                        await upsertLorebookEntryByTitle(charLore.name, charLore.data, effectiveTitle, resultText, {
                             defaults,
                             entryOverrides,
                             metadataUpdates,
                             refreshEditor,
                         });
+                    } else {
+                        for (const tplLore of tplLores) {
+                            const targetData = tplLore.name === tplLores[0].name
+                                ? tplLore.data
+                                : (await loadWorldInfo(tplLore.name).catch(() => null));
+                            if (!targetData) {
+                                console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
+                                continue;
+                            }
+                            await upsertLorebookEntryByTitle(tplLore.name, targetData, effectiveTitle, resultText, {
+                                defaults,
+                                entryOverrides,
+                                metadataUpdates,
+                                refreshEditor,
+                            });
+                        }
                     }
                     console.log(`${MODULE_NAME}: SidePrompt success`, {
                         trigger: 'onInterval',
@@ -1115,6 +1283,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         entryOverrides,
                         metadataUpdates,
                         _tplLores: r.tplLores,
+                        _charTarget: r.charTarget,
                     });
                     succeededNames.push(r.displayName);
                 } else {
@@ -1124,13 +1293,21 @@ export async function runAfterMemory(compiledScene, profile = null) {
 
             if (items.length > 0) {
                 throwIfStmbStopped(runEpoch);
-                // Group items by target lorebook; items with multi-lorebook override appear in multiple groups
+                // Group items by target lorebook.
+                // Per-character items route to the character's own lorebook;
+                // standard items use the template's lorebook overrides or the default.
                 const lorebookGroups = new Map();
                 for (const item of items) {
-                    const targets = item._tplLores || [{ name: lore.name }];
-                    for (const target of targets) {
-                        if (!lorebookGroups.has(target.name)) lorebookGroups.set(target.name, []);
-                        lorebookGroups.get(target.name).push(item);
+                    if (item._charTarget?.lorebook) {
+                        const charLbName = item._charTarget.lorebook;
+                        if (!lorebookGroups.has(charLbName)) lorebookGroups.set(charLbName, []);
+                        lorebookGroups.get(charLbName).push(item);
+                    } else {
+                        const targets = item._tplLores || [{ name: lore.name }];
+                        for (const target of targets) {
+                            if (!lorebookGroups.has(target.name)) lorebookGroups.set(target.name, []);
+                            lorebookGroups.get(target.name).push(item);
+                        }
                     }
                 }
 
@@ -1423,22 +1600,37 @@ export async function runSidePrompt(args, options = {}) {
                 }
                 dbg('Upsert params:', { title: effectiveTitle, defaults, entryOverrides, metadataUpdates });
                 const refreshEditor = extension_settings?.STMemoryBooks?.moduleSettings?.refreshEditor !== false;
-                for (const tplLore of tplLores) {
-                    const targetData = tplLore.name === tplLores[0].name
-                        ? tplLore.data
-                        : (await loadWorldInfo(tplLore.name).catch(() => null));
-                    if (!targetData) {
-                        console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
-                        continue;
-                    }
-                    dbg(`Writing to lorebook: "${tplLore.name}", title: "${effectiveTitle}", content: ${resultText.length} chars`);
-                    await upsertLorebookEntryByTitle(tplLore.name, targetData, effectiveTitle, resultText, {
+
+                // Per-character: write to the character's own lorebook; standard: use template lorebooks
+                if (charTarget) {
+                    const charLore = await resolvePerCharacterLorebook(charTarget, tplLores[0]);
+                    dbg(`Per-character lorebook for "${charTarget.name}": "${charLore.name}"${charTarget.lorebook ? '' : ' (fallback to default)'}`);
+                    dbg(`Writing to lorebook: "${charLore.name}", title: "${effectiveTitle}", content: ${resultText.length} chars`);
+                    await upsertLorebookEntryByTitle(charLore.name, charLore.data, effectiveTitle, resultText, {
                         defaults,
                         entryOverrides,
                         metadataUpdates,
                         refreshEditor,
                     });
-                    dbg(`Upsert complete for lorebook: "${tplLore.name}"`);
+                    dbg(`Upsert complete for lorebook: "${charLore.name}"`);
+                } else {
+                    for (const tplLore of tplLores) {
+                        const targetData = tplLore.name === tplLores[0].name
+                            ? tplLore.data
+                            : (await loadWorldInfo(tplLore.name).catch(() => null));
+                        if (!targetData) {
+                            console.warn(`${MODULE_NAME}: Could not reload lorebook "${tplLore.name}" for write; skipping.`);
+                            continue;
+                        }
+                        dbg(`Writing to lorebook: "${tplLore.name}", title: "${effectiveTitle}", content: ${resultText.length} chars`);
+                        await upsertLorebookEntryByTitle(tplLore.name, targetData, effectiveTitle, resultText, {
+                            defaults,
+                            entryOverrides,
+                            metadataUpdates,
+                            refreshEditor,
+                        });
+                        dbg(`Upsert complete for lorebook: "${tplLore.name}"`);
+                    }
                 }
                 console.log(`${MODULE_NAME}: SidePrompt success`, {
                     trigger: 'manual',
