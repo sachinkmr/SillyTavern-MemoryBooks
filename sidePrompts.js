@@ -804,11 +804,15 @@ async function prepareSidePromptRun({ tpl, loreData, compiledScene, defaultOverr
     let prevSummaries = [];
     const pmCountRaw = Number(tpl?.settings?.previousMemoriesCount ?? 0);
     const pmCount = Math.max(0, Math.min(7, pmCountRaw));
+    console.debug(`${MODULE_NAME}: prepareSidePromptRun previousMemoriesCount: raw=${pmCountRaw}, clamped=${pmCount}`);
     if (pmCount > 0) {
         try {
             const res = await fetchPreviousSummaries(pmCount, extension_settings, chat_metadata);
             prevSummaries = res?.summaries || [];
-        } catch {}
+            console.debug(`${MODULE_NAME}: fetchPreviousSummaries returned ${prevSummaries.length} of ${pmCount} requested`, prevSummaries.map(s => s.title));
+        } catch (err) {
+            console.warn(`${MODULE_NAME}: fetchPreviousSummaries failed:`, err);
+        }
     }
 
     const finalPrompt = buildPrompt(tpl.prompt, prior, compiledScene, tpl.responseFormat, prevSummaries, runtimeMacros);
