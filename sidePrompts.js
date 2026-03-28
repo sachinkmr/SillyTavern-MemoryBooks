@@ -44,9 +44,16 @@ function isPerCharacterTemplate(tpl) {
  * @returns {string|null}
  */
 function getCharacterLorebookName(char) {
+    // Debug: dump character keys to discover available lorebook paths
+    console.debug(`${MODULE_NAME}: getCharacterLorebookName for "${char?.name}":`, {
+        'data.extensions.world': char?.data?.extensions?.world || '(not set)',
+        'data.character_book': char?.data?.character_book ? '(present)' : '(not set)',
+        'data.extensions': char?.data?.extensions ? Object.keys(char.data.extensions) : '(no extensions)',
+        'top-level keys': char ? Object.keys(char) : [],
+    });
+
     // Primary: ST stores the character's attached lorebook in data.extensions.world
     const worldName = char?.data?.extensions?.world;
-    console.debug(`${MODULE_NAME}: getCharacterLorebookName for "${char?.name}": data.extensions.world = "${worldName || '(not set)'}"`);
     if (worldName && typeof worldName === 'string' && worldName.trim()) {
         const name = worldName.trim();
         if (world_names?.includes(name)) return name;
