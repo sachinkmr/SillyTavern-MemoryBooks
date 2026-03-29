@@ -49,9 +49,13 @@ Each summary must:
 - Use the structure below inside the summary string:
 
 # [{{stmbtier}} Title]
-Time period: ...
 
 {{stmbtier}} Premise: One sentence describing what this {{stmbtier}} is about.
+
+## Timeline
+- Time period covered (start date/time → end date/time, or relative markers like "Day 3 morning → Day 5 evening")
+- Key dated events in chronological order (e.g., "Day 3: ...", "Day 4: ...", "Later that night: ...")
+- Note any time skips, flashbacks, or simultaneous events
 
 ## Major Beats
 - 3-7 bullets focused on plot-changing events
@@ -90,10 +94,76 @@ Return JSON only:
 
 Requirements:
 - Respect chronology.
+- Begin each summary with a Timeline section noting the time period covered and key dated events in order.
 - Keep the summary compact but preserve major plot and continuity.
 - Ignore OOC and flavor-only detail unless it affects future events.
 - Use member_ids whenever possible.
 - Return only valid JSON.`, 'STMemoryBooks_SummaryPrompt_Alternate'),
+
+        arc_timeline: translate(`You are an expert narrative analyst and memory-engine assistant.
+Your task is to combine multiple {{stmbchildtier}} entries into one or more coherent {{stmbtier}} summaries with a strong emphasis on chronological structure and timeline accuracy.
+
+You will receive:
+- An optional PREVIOUS {{stmbtier}} block, which is canon and must not be rewritten.
+- A block of {{stmbchildtier}} entries in chronological order.
+
+Return JSON only:
+{
+  "summaries": [
+    {
+      "title": "Short descriptive {{stmbtier}} title (3-6 words)",
+      "summary": "Structured {{stmbtier}} summary as a single string.",
+      "keywords": ["keyword1", "keyword2"],
+      "member_ids": ["<ID>", "..."]
+    }
+  ],
+  "unassigned_items": [
+    { "id": "item-id", "reason": "Why this item does not fit the produced summaries." }
+  ]
+}
+
+Rules:
+- Respect chronology strictly — this is the primary organizing principle.
+- Produce the smallest coherent number of {{stmbtier}} summaries based on the content.
+- If an item does not fit, place it in unassigned_items with a short reason.
+- Do not repeat the PREVIOUS {{stmbtier}} text verbatim.
+
+Each summary must:
+- Be token-efficient and plot-accurate.
+- Preserve important changes, decisions, conflicts, consequences, and continuity.
+- Ignore OOC and flavor-only detail unless it affects future continuity.
+- Use the structure below inside the summary string:
+
+# [{{stmbtier}} Title]
+
+{{stmbtier}} Premise: One sentence describing what this {{stmbtier}} is about.
+
+## Timeline
+- **Period**: [Start date/time] → [End date/time] (or relative markers like "Day 3 morning → Day 5 evening")
+- List every key event with its date/time marker in strict chronological order
+- Format: "[Day/Time]: [Event description]" (e.g., "Day 3, morning: Character A discovers the letter")
+- Note all time skips explicitly (e.g., "[Three days pass]")
+- Note any flashbacks or non-linear narration with "[Flashback to...]" markers
+- Note simultaneous events with "[Meanwhile]" or "[At the same time]" markers
+
+## Major Beats
+- 3-7 bullets focused on plot-changing events, ordered chronologically
+
+## Character Dynamics
+- 1-2 short paragraphs on relationship, emotional, or motive changes over the time period
+
+## Key Exchanges
+- Up to 8 short exact quotes only if materially important, with temporal context (e.g., "On Day 4, Character said: ...")
+
+## Outcome & Continuity
+- 4-8 bullets covering decisions, promises, unresolved threads, permanent consequences, and foreshadowed next steps
+- Note the current in-story date/time at the end of this {{stmbtier}}
+
+Keywords must be concrete nouns, objects, places, proper nouns, or distinctive actions.
+Do not use abstract emotions, themes, or plot-summary phrases.
+Include temporal keywords when distinctive (e.g., "Day-5", "winter-solstice", "three-year-gap").
+
+Return only the JSON object. No markdown fences. No commentary.`, 'STMemoryBooks_SummaryPrompt_Timeline'),
 
         arc_tiny: translate(`You specialize in compressing many small {{stmbchildtier}} entries into compact, coherent {{stmbtier}} summaries.
 
@@ -108,6 +178,7 @@ Return JSON only:
 }
 
 Rules:
+- Open each summary with the time period covered (e.g., "Day 1 → Day 3").
 - Focus on plot, emotional progression, decisions, conflicts, and continuity.
 - Keep compression aggressive but accurate.
 - Identify non-fitting items in unassigned_items.

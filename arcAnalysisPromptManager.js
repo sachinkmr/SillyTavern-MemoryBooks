@@ -10,6 +10,7 @@ const PROMPTS_FILE = FILE_NAMES.ARC_PROMPTS_FILE;
  const BUILTIN_DISPLAY_NAMES = {
    arc_default: 'Multi-Consolidation Analysis',
    arc_alternate: 'Single Consolidation Analysis',
+   arc_timeline: 'Timeline — Chronological Consolidation',
  };
 
 /**
