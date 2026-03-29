@@ -4156,7 +4156,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     }
 
     // Initial candidates for the selected tier (used for initial HTML render)
-    const candidates = sortEntries(
+    let candidates = sortEntries(
       allEntries.filter((entry) =>
         isEligibleSummarySourceEntry(entry, getSourceTierForTarget(initialTargetTier)),
       ),
@@ -4445,6 +4445,18 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     const res = await popup.show();
     if (res !== POPUP_RESULT.AFFIRMATIVE) return;
 
+    // Read current popup state after user confirms
+    const targetTier = getCurrentTargetTier();
+    const sourceTier = getSourceTierForTarget(targetTier);
+    const sourceLabel = getSummaryTierLabel(sourceTier);
+    const sourcePlural = pluralizeSummaryLabel(sourceLabel);
+    const targetLabel = getSummaryTierLabel(targetTier);
+    candidates = getCandidatesForTier(targetTier);
+    const requiredMin = normalizeSummaryMinChildren(
+      getSavedSummaryTierMinimum(targetTier),
+      getDefaultSummaryMinChildren(targetTier),
+    );
+
     // Gather selections (exclude entries hidden by the chat-filter toggle)
     const selected = Array.from(dlg.querySelectorAll(".stmb-arc-item"))
       .filter((cb) => {
@@ -4662,25 +4674,26 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
       // Commit arcs to every selected target lorebook
       let totalCreated = 0;
       for (const { name: tName, data: tData } of targetLorebookPairs) {
-        const res2 = await commitArcs({
+        const res2 = await commitSummaryEntries({
           lorebookName: tName,
           lorebookData: tData,
-          arcCandidates,
+          summaryCandidates,
+          targetTier,
           disableOriginals,
           orderMode: normalizedArcOrderMode,
           orderValue: chosenArcOrderValue,
           reverseStart: chosenArcReverseStart,
         });
-        totalCreated += Array.isArray(res2?.results) ? res2.results.length : arcCandidates.length;
+        totalCreated += Array.isArray(res2?.results) ? res2.results.length : summaryCandidates.length;
       }
       // Disable arc members across all lorebooks.
-      // commitArcs handles the target lorebooks; here we cover non-target lorebooks
-      // (which may contain source entries whose UIDs are in arc memberIds).
+      // commitSummaryEntries handles the target lorebooks; here we cover non-target lorebooks
+      // (which may contain source entries whose UIDs are in summary memberIds).
       if (disableOriginals && validLorebookPairs.length > 0) {
-        const allMemberIds = new Set(arcCandidates.flatMap(a => (a.memberIds || []).map(String)));
+        const allMemberIds = new Set(summaryCandidates.flatMap(a => (a.memberIds || []).map(String)));
         const targetNameSet = new Set(targetLorebookNames);
         for (const { name: lbName, data: lbData } of validLorebookPairs) {
-          if (targetNameSet.has(lbName)) continue; // already handled by commitArcs
+          if (targetNameSet.has(lbName)) continue; // already handled by commitSummaryEntries
           let changed = false;
           for (const e of Object.values(lbData.entries || {})) {
             if (allMemberIds.has(String(e.uid)) && !e.disable) {
