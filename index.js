@@ -4155,6 +4155,13 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
       content += '</div>';
     }
 
+    // Initial candidates for the selected tier (used for initial HTML render)
+    const candidates = sortEntries(
+      allEntries.filter((entry) =>
+        isEligibleSummarySourceEntry(entry, getSourceTierForTarget(initialTargetTier)),
+      ),
+    );
+
     // Chat filter toggle (only shown when at least one candidate has a chatId)
     const hasChatIdData = candidates.some(e => e.STMB_chatId);
     if (hasChatIdData) {
