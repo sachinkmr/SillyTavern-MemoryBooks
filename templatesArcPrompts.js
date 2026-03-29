@@ -43,6 +43,7 @@ Rules:
 - Do not repeat the PREVIOUS {{stmbtier}} text verbatim.
 
 Each summary must:
+- Very clearly trace cause-effect in order to make the plot and continuity understandable.
 - Be token-efficient and plot-accurate.
 - Preserve important changes, decisions, conflicts, consequences, and continuity.
 - Ignore OOC and flavor-only detail unless it affects future continuity.
@@ -179,6 +180,7 @@ Return JSON only:
 
 Rules:
 - Open each summary with the time period covered (e.g., "Day 1 → Day 3").
+- Very clearly trace cause-effect in order to make the plot and continuity understandable.
 - Focus on plot, emotional progression, decisions, conflicts, and continuity.
 - Keep compression aggressive but accurate.
 - Identify non-fitting items in unassigned_items.
