@@ -107,6 +107,18 @@ export async function sendRawCompletionRequest({
     extra = {},
     signal = null,
 }) {
+    try {
+        console.groupCollapsed(
+            `%c[STMB-PROMPT]%c ${api}/${model} | temp=${temperature} | prompt=${(prompt || '').length} chars`,
+            'color: #00bcd4; font-weight: bold;',
+            'color: inherit;',
+        );
+        console.debug('Full prompt:\n', prompt);
+        if (extra && Object.keys(extra).length > 0) {
+            console.debug('Extra params:', extra);
+        }
+        console.groupEnd();
+    } catch {}
     let url = getCurrentCompletionEndpoint();
     let headers = getRequestHeaders();
     const modelId = (typeof model === 'string' ? model.toLowerCase() : '');

@@ -376,11 +376,13 @@ export function buildBriefsFromEntries(entries) {
     const order = extractNumberFromTitle(e.comment ?? "") ?? 0;
     const content = String(e.content ?? "").trim();
     const title = (e.comment || "Untitled").toString().trim(); // preserve the memory title
+    const keywords = Array.isArray(e.key) ? e.key.filter(k => k && typeof k === 'string') : [];
     briefs.push({
       id,
       order,
       content,
       title,
+      keywords,
     });
   }
   briefs.sort((a, b) => a.order - b.order);
@@ -440,6 +442,9 @@ export function buildSummaryAnalysisPrompt({
     lines.push(`=== ${childTierLabel} ${memNo} ===`);
     lines.push(`Title: ${title}`);
     lines.push(`Contents: ${content}`);
+    if (Array.isArray(b.keywords) && b.keywords.length > 0) {
+      lines.push(`Keywords: ${b.keywords.join(', ')}`);
+    }
     lines.push(`=== end ${childTierLabel} ${memNo} ===`);
     lines.push("");
   });
