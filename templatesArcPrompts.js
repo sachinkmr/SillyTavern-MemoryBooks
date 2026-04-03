@@ -182,6 +182,7 @@ Rules:
 - Open each summary with the time period covered (e.g., "Day 1 → Day 3").
 - Very clearly trace cause-effect in order to make the plot and continuity understandable.
 - Focus on plot, emotional progression, decisions, conflicts, and continuity.
+- Very clearly trace cause-effect in order to make the plot and continuity understandable.
 - Keep compression aggressive but accurate.
 - Identify non-fitting items in unassigned_items.
 - No commentary outside JSON.`, 'STMemoryBooks_SummaryPrompt_Tiny')

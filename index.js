@@ -38,9 +38,11 @@ import {
 import { createMemory, parseAIJsonResponse } from "./stmemory.js";
 import {
   addMemoryToLorebook,
+  DEFAULT_LOREBOOK_ENTRY_SETTINGS,
   getDefaultTitleFormats,
   identifyMemoryEntries,
   getRangeFromMemoryEntry,
+  normalizeLorebookEntrySettings,
 } from "./addlore.js";
 import { autoCreateLorebook } from "./autocreate.js";
 import {
@@ -137,6 +139,7 @@ import {
 } from "../../../i18n.js";
 import { localeData, loadLocaleJson } from "./locales.js";
 import { tr } from "./i18nHelpers.js";
+import { validateLorebookRequirement } from "./lorebookValidation.js";
 import { getRegexScripts } from "../../../extensions/regex/engine.js";
 import {
   buildSidePromptMacroSuggestion,
@@ -345,6 +348,9 @@ const defaultSettings = {
     summaryOrderMode: "auto",
     summaryOrderValue: 100,
     summaryReverseStart: 9999,
+    summaryEntrySettings: {
+      ...DEFAULT_LOREBOOK_ENTRY_SETTINGS,
+    },
     summaryTierMinimums: {
       1: 5,
       2: 5,
@@ -763,13 +769,15 @@ async function handleNextMemoryCommand(namedArgs, unnamedArgs) {
     // initiateMemoryCreation will validate again before running
     const lorebookValidation = await validateLorebook();
     if (!lorebookValidation.valid) {
-      toastr.error(
-        translate(
-          "No lorebook available: " + lorebookValidation.error,
-          "STMemoryBooks_NoLorebookAvailable",
-        ),
-        translate("STMemoryBooks", "index.toast.title"),
-      );
+      if (!lorebookValidation.handled) {
+        toastr.error(
+          translate(
+            "No lorebook available: " + lorebookValidation.error,
+            "STMemoryBooks_NoLorebookAvailable",
+          ),
+          translate("STMemoryBooks", "index.toast.title"),
+        );
+      }
       return "";
     }
 
@@ -985,22 +993,23 @@ async function handleSidePromptOffCommand(namedArgs, unnamedArgs) {
  * Side Prompt cache for autocomplete
  */
 let sidePromptNameCache = [];
+
+function isManualSidePromptEnabled(template) {
+  const cmds = template?.triggers?.commands;
+  return (
+    Array.isArray(cmds) &&
+    cmds.some((c) => String(c).toLowerCase() === "sideprompt")
+  );
+}
+
 async function refreshSidePromptCache() {
   try {
     const tpls = await listTemplates();
     sidePromptNameCache = (tpls || [])
-      .filter((t) => {
-        const cmds = t?.triggers?.commands;
-        // Back-compat: if commands is missing, treat as manual-enabled for suggestions
-        if (!("commands" in (t?.triggers || {}))) return true;
-        return (
-          Array.isArray(cmds) &&
-          cmds.some((c) => String(c).toLowerCase() === "sideprompt")
-        );
-      })
       .map((t) => ({
         name: t.name,
         runtimeMacros: collectTemplateRuntimeMacros(t),
+        manualEnabled: isManualSidePromptEnabled(t),
       }));
   } catch (e) {
     console.warn(
@@ -1020,17 +1029,21 @@ try {
   /* noop */
 }
 
-function findCachedSidePromptByName(name) {
+function findCachedSidePromptByName(name, entries = sidePromptNameCache) {
   const target = String(name || "").toLowerCase();
-  return sidePromptNameCache.find((entry) => entry.name.toLowerCase() === target) || null;
+  return entries.find((entry) => entry.name.toLowerCase() === target) || null;
 }
 
-function buildSidePromptNameSuggestions(rawInput) {
+function buildSidePromptNameSuggestions(rawInput, options = {}) {
+  const { manualOnly = false } = options;
   const input = String(rawInput || "").trimStart();
   const filter = input.startsWith('"') || input.startsWith("'")
     ? input.slice(1).toLowerCase()
     : input.toLowerCase();
-  return sidePromptNameCache.map((entry) =>
+  const entries = manualOnly
+    ? sidePromptNameCache.filter((entry) => entry.manualEnabled)
+    : sidePromptNameCache;
+  return entries.map((entry) =>
     new SlashCommandEnumValue(
       formatQuotedSidePromptName(entry.name),
       entry.runtimeMacros.length
@@ -1060,18 +1073,28 @@ function buildSidePromptMacroSuggestions(rawInput, draft, entry) {
 }
 
 // Synchronous enum provider for slash command suggestions
-const sidePromptTemplateEnumProvider = (executor) => {
+const sidePromptTemplateEnumProvider = (executor, options = {}) => {
+  const { manualOnly = false } = options;
   const rawInput = String(executor?.unnamedArgumentList?.[0]?.value || "");
   const draft = parseSidePromptCommandInput(rawInput, { allowIncomplete: true });
+  const entries = manualOnly
+    ? sidePromptNameCache.filter((entry) => entry.manualEnabled)
+    : sidePromptNameCache;
   if (draft.nameClosed) {
-    const entry = findCachedSidePromptByName(draft.name);
+    const entry = findCachedSidePromptByName(draft.name, entries);
     if (entry) {
       const macroSuggestions = buildSidePromptMacroSuggestions(rawInput, draft, entry);
       return macroSuggestions;
     }
   }
-  return buildSidePromptNameSuggestions(rawInput);
+  return buildSidePromptNameSuggestions(rawInput, { manualOnly });
 };
+
+const manualSidePromptTemplateEnumProvider = (executor) =>
+  sidePromptTemplateEnumProvider(executor, { manualOnly: true });
+
+const allSidePromptTemplateEnumProvider = (executor) =>
+  sidePromptTemplateEnumProvider(executor, { manualOnly: false });
 
 /**
  * Helper: build triggers badges for prompt picker
@@ -1317,6 +1340,28 @@ function validateSettings(settings) {
     9999,
   );
 
+  settings.moduleSettings.summaryEntrySettings = normalizeLorebookEntrySettings(
+    {
+      ...(settings.moduleSettings.summaryEntrySettings || {}),
+      orderMode:
+        settings.moduleSettings.summaryEntrySettings?.orderMode ??
+        settings.moduleSettings.summaryOrderMode,
+      orderValue:
+        settings.moduleSettings.summaryEntrySettings?.orderValue ??
+        settings.moduleSettings.summaryOrderValue,
+      reverseStart:
+        settings.moduleSettings.summaryEntrySettings?.reverseStart ??
+        settings.moduleSettings.summaryReverseStart,
+    },
+    defaultSettings.moduleSettings.summaryEntrySettings,
+  );
+  settings.moduleSettings.summaryOrderMode =
+    settings.moduleSettings.summaryEntrySettings.orderMode;
+  settings.moduleSettings.summaryOrderValue =
+    settings.moduleSettings.summaryEntrySettings.orderValue;
+  settings.moduleSettings.summaryReverseStart =
+    settings.moduleSettings.summaryEntrySettings.reverseStart;
+
   settings.moduleSettings.arcOrderMode = settings.moduleSettings.summaryOrderMode;
   settings.moduleSettings.arcOrderValue = settings.moduleSettings.summaryOrderValue;
   settings.moduleSettings.arcReverseStart =
@@ -1379,48 +1424,10 @@ function validateSettings(settings) {
  * Validate lorebook and return status with data
  */
 export async function validateLorebook(skipAutoCreate = false) {
-  const settings = extension_settings.STMemoryBooks;
-  let lorebookName = await getEffectiveLorebookName();
-
-  // Only auto-create if not skipping
-  if (!skipAutoCreate) {
-    // Check if auto-create is enabled and we're not in manual mode
-    if (
-      !lorebookName &&
-      settings?.moduleSettings?.autoCreateLorebook &&
-      !settings?.moduleSettings?.manualModeEnabled
-    ) {
-      // Auto-create lorebook using template
-      const template =
-        settings.moduleSettings.lorebookNameTemplate ||
-        "LTM - {{char}} - {{chat}}";
-      const result = await autoCreateLorebook(template, "chat");
-
-      if (result.success) {
-        lorebookName = result.name;
-      } else {
-        return { valid: false, error: result.error };
-      }
-    }
-  }
-
-  if (!lorebookName) {
-    return { valid: false, error: "No lorebook available or selected." };
-  }
-
-  if (!world_names || !world_names.includes(lorebookName)) {
-    return {
-      valid: false,
-      error: `Selected lorebook "${lorebookName}" not found.`,
-    };
-  }
-
-  try {
-    const lorebookData = await loadWorldInfo(lorebookName);
-    return { valid: !!lorebookData, data: lorebookData, name: lorebookName };
-  } catch (error) {
-    return { valid: false, error: "Failed to load the selected lorebook." };
-  }
+  return validateLorebookRequirement({
+    skipAutoCreate,
+    createContext: "chat",
+  });
 }
 
 /**
@@ -2162,17 +2169,19 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
 
     const lorebookValidation = await validateLorebook();
     if (!lorebookValidation.valid) {
-      console.error(
-        "STMemoryBooks: Lorebook validation failed:",
-        lorebookValidation.error,
-      );
-      toastr.error(
-        translate(
+      if (!lorebookValidation.handled) {
+        console.error(
+          "STMemoryBooks: Lorebook validation failed:",
           lorebookValidation.error,
-          "STMemoryBooks_LorebookValidationError",
-        ),
-        "STMemoryBooks",
-      );
+        );
+        toastr.error(
+          translate(
+            lorebookValidation.error,
+            "STMemoryBooks_LorebookValidationError",
+          ),
+          "STMemoryBooks",
+        );
+      }
       isProcessingMemory = false;
       return;
     }
@@ -4075,6 +4084,15 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     const arcReverseStart = Number.isFinite(Number(settings?.moduleSettings?.summaryReverseStart))
       ? Math.trunc(Number(settings.moduleSettings.summaryReverseStart))
       : 9999;
+    const summaryEntrySettings = normalizeLorebookEntrySettings(
+      settings?.moduleSettings?.summaryEntrySettings,
+      {
+        ...DEFAULT_LOREBOOK_ENTRY_SETTINGS,
+        orderMode: arcOrderMode,
+        orderValue: arcOrderValue,
+        reverseStart: arcReverseStart,
+      },
+    );
     const tierOptions = getSummaryTierOptions();
     const initialTargetTier = clampInt(
       Number(popupOptions?.initialTargetTier ?? 1),
@@ -4115,26 +4133,72 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     content += `<small id="stmb-summary-minassigned-note" class="opacity70p">${escapeHtml(translate("Also used for auto-consolidation readiness for this tier.", "STMemoryBooks_Arc_MinAssignedNote"))}</small>`;
     content += "</div>";
 
-    // Arc ordering (applies to newly created arcs)
+    // Saved lorebook entry settings for summaries
     content += '<div class="world_entry_form_control">';
-    content += `<div><h4 class="stmb-section-title">${escapeHtml(translate("Summary entry order", "STMemoryBooks_Arc_Order_Label"))}</h4></div>`;
+    content += `<div><h4 class="stmb-section-title">${escapeHtml(translate("Lorebook Entry Settings", "STMemoryBooks_LorebookEntrySettings"))}</h4></div>`;
+    content += `<small class="opacity70p">${escapeHtml(translate("These settings control how the generated summary is saved into the lorebook.", "STMemoryBooks_ConsolidateArcs_LorebookEntrySettingsDesc"))}</small>`;
+    content += '</div>';
+
+    content += '<div class="world_entry_form_control">';
+    content += `<label for="stmb-summary-entry-const-vect"><strong>${escapeHtml(translate("Activation Mode", "STMemoryBooks_ActivationMode"))}:</strong></label>`;
+    content += `<small class="opacity70p">${escapeHtml(translate("Vectorized is recommended for summaries.", "STMemoryBooks_ConsolidateArcs_ActivationModeDesc"))}</small>`;
+    content += '<select id="stmb-summary-entry-const-vect" class="text_pole">';
+    content += `<option value="link"${summaryEntrySettings.constVectMode === "link" ? " selected" : ""}>${escapeHtml(translate("Vectorized (Default)", "STMemoryBooks_Vectorized"))}</option>`;
+    content += `<option value="blue"${summaryEntrySettings.constVectMode === "blue" ? " selected" : ""}>${escapeHtml(translate("Constant", "STMemoryBooks_Constant"))}</option>`;
+    content += `<option value="green"${summaryEntrySettings.constVectMode === "green" ? " selected" : ""}>${escapeHtml(translate("Normal", "STMemoryBooks_Normal"))}</option>`;
+    content += "</select>";
+    content += "</div>";
+
+    content += '<div class="world_entry_form_control">';
+    content += `<label for="stmb-summary-entry-position"><strong>${escapeHtml(translate("Insertion Position", "STMemoryBooks_InsertionPosition"))}:</strong></label>`;
+    content += `<small class="opacity70p">${escapeHtml(translate("Choose where consolidated summaries should be inserted in the lorebook.", "STMemoryBooks_ConsolidateArcs_InsertionPositionDesc"))}</small>`;
+    content += '<select id="stmb-summary-entry-position" class="text_pole">';
+    content += `<option value="0"${summaryEntrySettings.position === 0 ? " selected" : ""}>${escapeHtml(translate("↑Char", "STMemoryBooks_CharUp"))}</option>`;
+    content += `<option value="1"${summaryEntrySettings.position === 1 ? " selected" : ""}>${escapeHtml(translate("↓Char", "STMemoryBooks_CharDown"))}</option>`;
+    content += `<option value="5"${summaryEntrySettings.position === 5 ? " selected" : ""}>${escapeHtml(translate("↑EM", "STMemoryBooks_EMUp"))}</option>`;
+    content += `<option value="6"${summaryEntrySettings.position === 6 ? " selected" : ""}>${escapeHtml(translate("↓EM", "STMemoryBooks_EMDown"))}</option>`;
+    content += `<option value="2"${summaryEntrySettings.position === 2 ? " selected" : ""}>${escapeHtml(translate("↑AN", "STMemoryBooks_ANUp"))}</option>`;
+    content += `<option value="3"${summaryEntrySettings.position === 3 ? " selected" : ""}>${escapeHtml(translate("↓AN", "STMemoryBooks_ANDown"))}</option>`;
+    content += `<option value="7"${summaryEntrySettings.position === 7 ? " selected" : ""}>${escapeHtml(translate("Outlet", "STMemoryBooks_Outlet"))}</option>`;
+    content += "</select>";
+    content += "</div>";
+
+    content += `<div id="stmb-summary-entry-outlet-name-container" class="world_entry_form_control${summaryEntrySettings.position === 7 ? "" : " displayNone"}">`;
+    content += `<label for="stmb-summary-entry-outlet-name"><strong>${escapeHtml(translate("Outlet Name", "STMemoryBooks_OutletName"))}:</strong></label>`;
+    content += `<input type="text" id="stmb-summary-entry-outlet-name" class="text_pole" placeholder="${escapeHtml(translate("Outlet name", "STMemoryBooks_OutletNamePlaceholder"))}" value="${escapeHtml(summaryEntrySettings.outletName || "")}">`;
+    content += "</div>";
+
+    content += '<div class="world_entry_form_control">';
+    content += `<div><h4 class="stmb-section-title">${escapeHtml(translate("Insertion Order", "STMemoryBooks_InsertionOrder"))}</h4></div>`;
     content += `<small class="opacity70p">${escapeHtml(translate("Controls the lorebook 'order' for newly created summaries only.", "STMemoryBooks_Arc_Order_Help"))}</small>`;
     content += '<div style="display:flex; flex-direction:column; gap:6px; margin-top:6px">';
     content += `<label class="checkbox_label"><input type="radio" name="stmb-arc-order-mode" value="auto"${
-      arcOrderMode === "auto" ? " checked" : ""
+      summaryEntrySettings.orderMode === "auto" ? " checked" : ""
     }> <span>${escapeHtml(translate("Auto (uses summary #)", "STMemoryBooks_Arc_AutoOrder"))}</span></label>`;
     content += `<label class="checkbox_label"><input type="radio" name="stmb-arc-order-mode" value="reverse"${
-      arcOrderMode === "reverse" ? " checked" : ""
-    }> <span>${escapeHtml(translate("Reverse (only use with Outlets)", "STMemoryBooks_ReverseOrder"))}</span> <input type="number" id="stmb-arc-reverse-start" value="${escapeHtml(String(arcReverseStart))}" class="text_pole ${
-      arcOrderMode === "reverse" ? "" : "displayNone"
+      summaryEntrySettings.orderMode === "reverse" ? " checked" : ""
+    }> <span>${escapeHtml(translate("Reverse (only use with Outlets)", "STMemoryBooks_ReverseOrder"))}</span> <input type="number" id="stmb-arc-reverse-start" value="${escapeHtml(String(summaryEntrySettings.reverseStart))}" class="text_pole ${
+      summaryEntrySettings.orderMode === "reverse" ? "" : "displayNone"
     } width100px" min="100" max="9999" step="1" style="margin-left: auto;"></label>`;
     content += `<label class="checkbox_label"><input type="radio" name="stmb-arc-order-mode" value="manual"${
-      arcOrderMode === "manual" ? " checked" : ""
-    }> <span>${escapeHtml(translate("Manual", "STMemoryBooks_ManualOrder"))}</span> <input type="number" id="stmb-arc-order-value" value="${escapeHtml(String(arcOrderValue))}" class="text_pole ${
-      arcOrderMode === "manual" ? "" : "displayNone"
+      summaryEntrySettings.orderMode === "manual" ? " checked" : ""
+    }> <span>${escapeHtml(translate("Manual", "STMemoryBooks_ManualOrder"))}</span> <input type="number" id="stmb-arc-order-value" value="${escapeHtml(String(summaryEntrySettings.orderValue))}" class="text_pole ${
+      summaryEntrySettings.orderMode === "manual" ? "" : "displayNone"
     } width100px" min="0" max="9999" step="1" style="margin-left: auto;"></label>`;
     content += "</div>";
     content += "</div>";
+
+    content += '<div class="world_entry_form_control">';
+    content += `<div><h4 class="stmb-section-title">${escapeHtml(translate("Recursion Settings", "STMemoryBooks_RecursionSettings"))}</h4></div>`;
+    content += '<div class="buttons_block justifyCenter">';
+    content += `<label class="checkbox_label"><input type="checkbox" id="stmb-summary-entry-prevent-recursion"${
+      summaryEntrySettings.preventRecursion ? " checked" : ""
+    }> <span>${escapeHtml(translate("Prevent Recursion", "STMemoryBooks_PreventRecursion"))}</span></label>`;
+    content += `<label class="checkbox_label"><input type="checkbox" id="stmb-summary-entry-delay-recursion"${
+      summaryEntrySettings.delayUntilRecursion ? " checked" : ""
+    }> <span>${escapeHtml(translate("Delay Until Recursion", "STMemoryBooks_DelayUntilRecursion"))}</span></label>`;
+    content += '</div>';
+    content += '</div>';
 
     // Disable originals toggle
     content += '<div class="world_entry_form_control" class="flex-container"><div class="flex flexFlowRow alignItemsBaseline">';
@@ -4189,12 +4253,60 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     content += `<small class="opacity70p">${escapeHtml(translate("Tip: uncheck memories that should not be included.", "STMemoryBooks_ConsolidateArcs_Tip"))}</small>`;
     content += "</div>";
 
-    const popup = new Popup(DOMPurify.sanitize(content), POPUP_TYPE.TEXT, "", {
+    let popup;
+    const persistSummaryConsolidationPopupSettings = (popupElement) => {
+      if (!popupElement) {
+        return false;
+      }
+
+      const liveSettings = initializeSettings();
+      const nextSummaryEntrySettings = readSummaryEntrySettings();
+      let hasChanges = false;
+
+      if (
+        JSON.stringify(nextSummaryEntrySettings) !==
+        JSON.stringify(liveSettings.moduleSettings.summaryEntrySettings || {})
+      ) {
+        liveSettings.moduleSettings.summaryEntrySettings = {
+          ...nextSummaryEntrySettings,
+        };
+        liveSettings.moduleSettings.summaryOrderMode =
+          nextSummaryEntrySettings.orderMode;
+        liveSettings.moduleSettings.summaryOrderValue =
+          nextSummaryEntrySettings.orderValue;
+        liveSettings.moduleSettings.summaryReverseStart =
+          nextSummaryEntrySettings.reverseStart;
+        liveSettings.moduleSettings.arcOrderMode = nextSummaryEntrySettings.orderMode;
+        liveSettings.moduleSettings.arcOrderValue =
+          nextSummaryEntrySettings.orderValue;
+        liveSettings.moduleSettings.arcReverseStart =
+          nextSummaryEntrySettings.reverseStart;
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        saveSettingsDebounced();
+      }
+
+      return hasChanges;
+    };
+
+    popup = new Popup(DOMPurify.sanitize(content), POPUP_TYPE.TEXT, "", {
       wide: true,
       large: true,
       allowVerticalScrolling: true,
       okButton: translate("Run", "STMemoryBooks_Run"),
       cancelButton: translate("Cancel", "STMemoryBooks_Cancel"),
+      onClose: () => {
+        try {
+          persistSummaryConsolidationPopupSettings(popup?.dlg);
+        } catch (error) {
+          console.error(
+            "STMemoryBooks: Failed to save consolidation popup settings:",
+            error,
+          );
+        }
+      },
     });
 
     // Attach handlers before show
@@ -4215,6 +4327,36 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     const getSavedSummaryTierMinimum = (targetTier) =>
       settings.moduleSettings.summaryTierMinimums?.[targetTier] ??
       getDefaultSummaryMinChildren(targetTier);
+    const readSummaryEntrySettings = () =>
+      normalizeLorebookEntrySettings(
+        {
+          constVectMode:
+            dlg.querySelector("#stmb-summary-entry-const-vect")?.value ||
+            summaryEntrySettings.constVectMode,
+          position: readIntInput(
+            dlg.querySelector("#stmb-summary-entry-position"),
+            summaryEntrySettings.position,
+          ),
+          outletName:
+            dlg.querySelector("#stmb-summary-entry-outlet-name")?.value || "",
+          orderMode:
+            dlg.querySelector('input[name="stmb-arc-order-mode"]:checked')?.value ||
+            summaryEntrySettings.orderMode,
+          orderValue: readIntInput(
+            dlg.querySelector("#stmb-arc-order-value"),
+            summaryEntrySettings.orderValue,
+          ),
+          reverseStart: readIntInput(
+            dlg.querySelector("#stmb-arc-reverse-start"),
+            summaryEntrySettings.reverseStart,
+          ),
+          preventRecursion:
+            !!dlg.querySelector("#stmb-summary-entry-prevent-recursion")?.checked,
+          delayUntilRecursion:
+            !!dlg.querySelector("#stmb-summary-entry-delay-recursion")?.checked,
+        },
+        summaryEntrySettings,
+      );
     const persistCurrentTierMinimum = () => {
       const targetTier = getCurrentTargetTier();
       const minInput = dlg.querySelector("#stmb-arc-minassigned");
@@ -4353,10 +4495,17 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     applyChatFilter(); // apply immediately on open
 
     // Arc order mode visibility
-    const syncArcOrderVisibility = () => {
+    const syncSummaryEntrySettingsVisibility = () => {
       const mode =
         dlg.querySelector('input[name="stmb-arc-order-mode"]:checked')?.value ||
         "auto";
+      const position = readIntInput(
+        dlg.querySelector("#stmb-summary-entry-position"),
+        summaryEntrySettings.position,
+      );
+      dlg
+        .querySelector("#stmb-summary-entry-outlet-name-container")
+        ?.classList.toggle("displayNone", position !== 7);
       dlg
         .querySelector("#stmb-arc-reverse-start")
         ?.classList.toggle("displayNone", mode !== "reverse");
@@ -4365,9 +4514,30 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
         ?.classList.toggle("displayNone", mode !== "manual");
     };
     dlg
+      .querySelector("#stmb-summary-entry-position")
+      ?.addEventListener("change", syncSummaryEntrySettingsVisibility);
+    dlg
       .querySelectorAll('input[name="stmb-arc-order-mode"]')
-      .forEach((el) => el.addEventListener("change", syncArcOrderVisibility));
-    syncArcOrderVisibility();
+      .forEach((el) => el.addEventListener("change", syncSummaryEntrySettingsVisibility));
+    dlg
+      .querySelectorAll(
+        [
+          "#stmb-summary-entry-const-vect",
+          "#stmb-summary-entry-position",
+          "#stmb-summary-entry-outlet-name",
+          "#stmb-arc-reverse-start",
+          "#stmb-arc-order-value",
+          "#stmb-summary-entry-prevent-recursion",
+          "#stmb-summary-entry-delay-recursion",
+          'input[name="stmb-arc-order-mode"]',
+        ].join(", "),
+      )
+      .forEach((el) =>
+        el.addEventListener("change", () => {
+          persistSummaryConsolidationPopupSettings(dlg);
+        }),
+      );
+    syncSummaryEntrySettingsVisibility();
     renderTierState();
 
     // Rebuild Arc prompts from built-ins with backup and refresh preset list
@@ -4517,30 +4687,25 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     const disableOriginals = !!dlg.querySelector("#stmb-arc-disable-originals")
       ?.checked;
 
-    const chosenArcOrderMode = String(
-      dlg.querySelector('input[name="stmb-arc-order-mode"]:checked')?.value ||
-        "auto",
-    ).toLowerCase();
-    const chosenArcOrderValue = clampInt(
-      readIntInput(dlg.querySelector("#stmb-arc-order-value"), arcOrderValue),
-      0,
-      9999,
-    );
-    const chosenArcReverseStart = clampInt(
-      readIntInput(dlg.querySelector("#stmb-arc-reverse-start"), arcReverseStart),
-      100,
-      9999,
-    );
-    const normalizedArcOrderMode =
-      chosenArcOrderMode === "manual" || chosenArcOrderMode === "reverse"
-        ? chosenArcOrderMode
-        : "auto";
+    const chosenSummaryEntrySettings = readSummaryEntrySettings();
+    const normalizedArcOrderMode = chosenSummaryEntrySettings.orderMode;
+    const chosenArcOrderValue = chosenSummaryEntrySettings.orderValue;
+    const chosenArcReverseStart = chosenSummaryEntrySettings.reverseStart;
     extension_settings.STMemoryBooks.moduleSettings.summaryOrderMode =
       normalizedArcOrderMode;
     extension_settings.STMemoryBooks.moduleSettings.summaryOrderValue =
       chosenArcOrderValue;
     extension_settings.STMemoryBooks.moduleSettings.summaryReverseStart =
       chosenArcReverseStart;
+    settings.moduleSettings.summaryOrderMode = normalizedArcOrderMode;
+    settings.moduleSettings.summaryOrderValue = chosenArcOrderValue;
+    settings.moduleSettings.summaryReverseStart = chosenArcReverseStart;
+    extension_settings.STMemoryBooks.moduleSettings.summaryEntrySettings = {
+      ...chosenSummaryEntrySettings,
+    };
+    settings.moduleSettings.summaryEntrySettings = {
+      ...chosenSummaryEntrySettings,
+    };
     extension_settings.STMemoryBooks.moduleSettings.summaryTierMinimums[
       targetTier
     ] = requiredMin;
@@ -4550,6 +4715,9 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
       chosenArcOrderValue;
     extension_settings.STMemoryBooks.moduleSettings.arcReverseStart =
       chosenArcReverseStart;
+    settings.moduleSettings.arcOrderMode = normalizedArcOrderMode;
+    settings.moduleSettings.arcOrderValue = chosenArcOrderValue;
+    settings.moduleSettings.arcReverseStart = chosenArcReverseStart;
     saveSettingsDebounced();
 
     const entryMap = new Map(candidates.map((e) => [String(e.uid), e]));
@@ -4583,6 +4751,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
         options,
         disableOriginals,
         targetTier,
+        summaryEntrySettings: chosenSummaryEntrySettings,
         summaryOrderMode: normalizedArcOrderMode,
         summaryOrderValue: chosenArcOrderValue,
         summaryReverseStart: chosenArcReverseStart,
@@ -4638,6 +4807,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
         options,
         disableOriginals,
         targetTier,
+        summaryEntrySettings: chosenSummaryEntrySettings,
         summaryOrderMode: normalizedArcOrderMode,
         summaryOrderValue: chosenArcOrderValue,
         summaryReverseStart: chosenArcReverseStart,
@@ -4680,6 +4850,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
           summaryCandidates,
           targetTier,
           disableOriginals,
+          summaryEntrySettings: chosenSummaryEntrySettings,
           orderMode: normalizedArcOrderMode,
           orderValue: chosenArcOrderValue,
           reverseStart: chosenArcReverseStart,
@@ -4712,12 +4883,14 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
       }
       const created = Math.round(totalCreated / Math.max(1, targetLorebookPairs.length));
       const targetCount = targetLorebookPairs.length;
-      const leftoverCount = leftovers?.length ?? 0;
-      let msg = `Created ${created} arc${created === 1 ? "" : "s"}`;
-      if (leftoverCount > 0) msg += `, ${leftoverCount} leftover${leftoverCount === 1 ? "" : "s"} (not assigned to any arc)`;
+      const createdLabel =
+        created === 1
+          ? targetLabel.toLowerCase()
+          : pluralizeSummaryLabel(targetLabel).toLowerCase();
+      let msg = `Created ${created} ${createdLabel}${leftovers?.length ? `, ${leftovers.length} leftover` : ""}`;
       msg += targetCount > 1 ? ` (written to ${targetCount} lorebooks).` : ".";
-      if (created === 1 && leftoverCount === 0) {
-        msg += " (all selected memories were consumed into a single arc)";
+      if (created === 1 && (!leftovers || leftovers.length === 0)) {
+        msg += ` (all selected ${sourcePlural.toLowerCase()} were consumed into a single ${targetLabel.toLowerCase()})`;
       }
       toastr.success(__st_t_tag`${msg}`, "STMemoryBooks");
       lastFailedArcError = null;
@@ -5944,7 +6117,7 @@ function registerSlashCommands() {
         ),
         typeList: [ARGUMENT_TYPE.STRING],
         isRequired: true,
-        enumProvider: sidePromptTemplateEnumProvider,
+        enumProvider: manualSidePromptTemplateEnumProvider,
       }),
     ],
   });
@@ -5967,7 +6140,7 @@ function registerSlashCommands() {
         isRequired: true,
         enumProvider: () => [
           new SlashCommandEnumValue("all"),
-          ...sidePromptTemplateEnumProvider(),
+          ...allSidePromptTemplateEnumProvider(),
         ],
       }),
     ],
@@ -5990,7 +6163,7 @@ function registerSlashCommands() {
         isRequired: true,
         enumProvider: () => [
           new SlashCommandEnumValue("all"),
-          ...sidePromptTemplateEnumProvider(),
+          ...allSidePromptTemplateEnumProvider(),
         ],
       }),
     ],
@@ -6601,6 +6774,21 @@ async function applyManualFixedSummaryJson(correctedRaw) {
       100,
       9999,
     );
+    const fallbackSummaryEntrySettings = normalizeLorebookEntrySettings(
+      context?.summaryEntrySettings ||
+        arcOrderFallback?.moduleSettings?.summaryEntrySettings ||
+        {
+          orderMode: fallbackOrderMode,
+          orderValue: fallbackOrderValue,
+          reverseStart: fallbackReverseStart,
+        },
+      {
+        ...DEFAULT_LOREBOOK_ENTRY_SETTINGS,
+        orderMode: fallbackOrderMode,
+        orderValue: fallbackOrderValue,
+        reverseStart: fallbackReverseStart,
+      },
+    );
 
     const targetTier = clampInt(Number(context?.targetTier ?? 1), 1, 6);
     const targetLabel = getSummaryTierLabel(targetTier);
@@ -6610,6 +6798,7 @@ async function applyManualFixedSummaryJson(correctedRaw) {
       summaryCandidates,
       targetTier,
       disableOriginals: !!context.disableOriginals,
+      summaryEntrySettings: fallbackSummaryEntrySettings,
       orderMode: context.summaryOrderMode || fallbackOrderMode,
       orderValue:
         context.summaryOrderValue !== undefined && context.summaryOrderValue !== null

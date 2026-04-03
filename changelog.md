@@ -2,6 +2,20 @@
 
 **← [Back to README](readme.md)**
 
+## v6.3.1 (March 31, 2026)
+- `/sideprompt` autocomplete now only suggests side prompts with manual run enabled.
+- Bugfix: sideprompt manual enable setting bug fixed
+- Bugfix: sideprompt regex path fixed
+
+## v6.3.0 (March 29, 2026)
+- Consolidated summaries can now save their own lorebook entry settings, including insertion and recursion controls, with dedicated localization keys.
+
+## v6.2.1 (March 27, 2026)
+- Changed wording in prompts from "vectorized database" to "keyworded database".
+
+## v6.2.1 (March 27, 2026)
+- if the chat-bound or manual lorebook was deleted or unbound and you try to make memories, STMB will prompt you for a lorebook instead of just erroring.
+
 ## v6.1.1 (March 25, 2026)
 - Bugfix: fixed sideprompt interval run save path.
 

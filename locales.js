@@ -452,6 +452,7 @@ export const localeData_en = {
     'STMemoryBooks_APIKeyPlaceholder': 'Enter your API key',
     'STMemoryBooks_LorebookEntrySettings': 'Lorebook Entry Settings',
     'STMemoryBooks_LorebookEntrySettingsDesc': 'These settings control how the generated memory is saved into the lorebook.',
+    'STMemoryBooks_ConsolidateArcs_LorebookEntrySettingsDesc': 'These settings control how the generated summary is saved into the lorebook.',
     'STMemoryBooks_LorebookEntryTitleOverride': 'Lorebook Entry Title Override',
     'STMemoryBooks_LorebookEntryTitleOverridePlaceholder': 'Optional title template (e.g., NPC {{npcname}})',
     'STMemoryBooks_LorebookEntryTitleOverrideHelp': 'Optional. Standard ST macros and required runtime macros are resolved here, and STMB still appends (STMB SidePrompt).',
@@ -464,11 +465,13 @@ export const localeData_en = {
     'STMemoryBooks_OutletNamePlaceholder': 'e.g., ENDING',
     'STMemoryBooks_ActivationMode': 'Activation Mode:',
     'STMemoryBooks_ActivationModeDesc': '🔗 Vectorized is recommended for memories.',
+    'STMemoryBooks_ConsolidateArcs_ActivationModeDesc': '🔗 Vectorized is recommended for summaries.',
     'STMemoryBooks_Vectorized': '🔗 Vectorized (Default)',
     'STMemoryBooks_Constant': '🔵 Constant',
     'STMemoryBooks_Normal': '🟢 Normal',
     'STMemoryBooks_InsertionPosition': 'Insertion Position:',
     'STMemoryBooks_InsertionPositionDesc': '↑Char is recommended. Aiko recommends memories never go lower than ↑AN.',
+    'STMemoryBooks_ConsolidateArcs_InsertionPositionDesc': 'Choose where consolidated summaries should be inserted in the lorebook.',
     'STMemoryBooks_CharUp': '↑Char',
     'STMemoryBooks_CharDown': '↓Char',
     'STMemoryBooks_ANUp': '↑AN',
@@ -835,6 +838,7 @@ Rules:
 - Do not repeat the PREVIOUS {{stmbtier}} text verbatim.
 
 Each summary must:
+- Very clearly trace cause-effect in order to make the plot and continuity understandable.
 - Be token-efficient and plot-accurate.
 - Preserve important changes, decisions, conflicts, consequences, and continuity.
 - Ignore OOC and flavor-only detail unless it affects future continuity.
@@ -901,6 +905,7 @@ Return JSON only:
 
 Rules:
 - Focus on plot, emotional progression, decisions, conflicts, and continuity.
+- Very clearly trace cause-effect in order to make the plot and continuity understandable.
 - Keep compression aggressive but accurate.
 - Identify non-fitting items in unassigned_items.
 - No commentary outside JSON.`,
@@ -991,14 +996,14 @@ You must respond with ONLY valid JSON in this exact format:
 }
 
 For the content field, create a detailed beat-by-beat summary in narrative prose. First, note the dates/time. Then capture this scene accurately without losing ANY important information EXCEPT FOR [OOC] conversation/interaction. All [OOC] conversation/interaction is not useful for summaries.
-This summary will go in a vectorized database, so include:
+This summary will go in lorebook entry, so include:
 - All important story beats/events that happened
 - Key interaction highlights and character developments
 - Notable details, memorable quotes, and revelations
 - Outcome and anything else important for future interactions between {{user}} and {{char}}
 Capture ALL nuance without repeating verbatim. Make it comprehensive yet digestible.
 
-For the keywords field, provide 15-30 specific, descriptive, relevant keywords for vectorized database retrieval. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+For the keywords field, provide 15-30 specific, descriptive, relevant keywords for keyword retrieval via word-matching in chat context. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
 
 Return ONLY the JSON, no other text.`,
 
@@ -1018,7 +1023,7 @@ For the content field, create a detailed bullet-point summary using markdown wit
 - **Notable Details**: Mention any important objects, settings, revelations, or details that might be relevant for future interactions.
 - **Outcome**: Summarize the result, resolution, or state of affairs at the end of the scene.
 
-For the keywords field, provide 15-30 specific, descriptive, relevant keywords that would help a vectorized database find this conversation again if something is mentioned. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+For the keywords field, provide 15-30 specific, descriptive, relevant keywords that would help a keyworded database find this conversation again if something is mentioned. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
 
 Ensure you capture ALL important information - comprehensive detail is more important than brevity.
 
@@ -1047,7 +1052,7 @@ For the content field, create a long and detailed beat-by-beat summary using mar
 
 Include EVERYTHING important for future interactions between {{user}} and {{char}}. Capture all nuance without regurgitating verbatim.
 
-For the keywords field, provide 15-30 specific, descriptive, relevant keywords for vectorized database retrieval. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+For the keywords field, provide 15-30 specific, descriptive, relevant keywords for keyworded database retrieval. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
 
 Return ONLY the JSON, no other text.`,
 
@@ -1064,7 +1069,7 @@ For the content field, write a comprehensive beat summary that captures this sce
 # Scene Summary - Day X - [Title]
 First note the dates/time covered by the scene. Then narrate ALL important story beats/events that happened, key interaction highlights, notable details, memorable quotes, character developments, and outcome. Ensure no important information is lost. [OOC] conversation/interaction is not useful for summaries and should be ignored and excluded.
 
-For the keywords field, provide 15-30 specific, descriptive, relevant keywords that would help a vectorized database find this summary again if mentioned. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
+For the keywords field, provide 15-30 specific, descriptive, relevant keywords that would help a keyworded database find this summary again if mentioned. Keywords must be concrete and scene-specific (locations, objects, proper nouns, unique actions). Do not use abstract themes (e.g., "sadness", "love") or character names.
 
 Return ONLY the JSON, no other text.`,
 
@@ -1107,7 +1112,7 @@ You must respond with ONLY valid JSON in this exact format:
   "keywords": ["keyword1", "keyword2", "keyword3"]
 }
 
-For the content field, create a beat-by-beat summary in narrative prose. Capture all key plot points that advance the story and character memories that leave a lasting impression, ensuring nothing essential is omitted. This summary will go in a vectorized database, so include:
+For the content field, create a beat-by-beat summary in narrative prose. Capture all key plot points that advance the story and character memories that leave a lasting impression, ensuring nothing essential is omitted. This summary will go in a keyworded database, so include:
 
 - Story beats, events, actions and consequences, turning points, and outcomes
 - Key character interactions, character developments, significant dialogue, revelations, emotional impact, and relationships
