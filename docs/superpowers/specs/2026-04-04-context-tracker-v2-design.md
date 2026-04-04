@@ -142,7 +142,7 @@ OUTPUT RULES:
 4. Third person — omniscient narrator describing {{char}}'s perspective. Never first person.
 5. Telegraphic bullets. No full sentences unless meaning is lost. Paraphrase, never quote.
 
-PERSPECTIVE: {{char}}'s subjective world-model only. Record what {{char}} has witnessed, been told, experienced, or can reasonably infer. Omit anything {{char}} cannot plausibly know.
+PERSPECTIVE: {{char}}'s subjective world-model only. Record what {{char}} has witnessed, been told, experienced, or can reasonably infer. Omit anything {{char}} cannot plausibly know. In group scenes, exclude events that happened while {{char}} was absent. Frame ALL content — threads, observations, secrets — around {{char}}'s stake and involvement, not as narration of other characters' activities.
 
 ---
 
@@ -164,6 +164,7 @@ BEFORE GENERATING — reason through these steps internally:
    - Secrets already in Threads or Model → drop.
 
 3. THREADS: For each thread decide:
+   - Every thread must be framed from {{char}}'s perspective and stake. Title what {{char}} is doing or affected by — never title another character's activity. Example: not "Shilpa's Sunday Date" but "Sunday Night — My Turn" (what Aisha is planning).
    - Status: `developing` | `ready to resolve` | `stale`
    - Initiate: `yes` (in-character for {{char}} to push) | `no` (wait for {{user}}/events)
    - Advance-by: one line — how {{char}} can naturally reference or move this forward.
