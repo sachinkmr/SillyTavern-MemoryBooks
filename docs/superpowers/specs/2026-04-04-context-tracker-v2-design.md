@@ -97,9 +97,11 @@ Each thread gains structured guidance:
 *Update #[N] | Scene: [brief label] | Bullets: [N]/20*
 ```
 
-The tracker LLM reads this from the prior entry to determine mode:
+The Bullets field counts only Model of {{user}} (Stable Traits + Recent Observations). The tracker LLM reads this from the prior entry to determine mode:
 - Bullets < 20: normal mode (can add detail)
 - Bullets ≥ 20: prune mode (merge, promote, drop before adding)
+
+Other sections have their own hard caps (Threads ≤6, Cast ≤8, Private ≤8) enforced independently.
 
 **Promotion/demotion logic (executed in thinking phase):**
 - Recent Observation confirmed across 3+ scenes → promote to Stable Trait
@@ -155,6 +157,8 @@ BEFORE GENERATING — reason through these steps internally:
    - Trust (0–100): Slowest build, fastest destroy. One lie undoes years. Track peak and ceiling — rebuilt trust never reaches original height.
    - No prior entry → estimate and note "(initial estimate)".
    - Psychology: Mood (1–10), Stress (1–10). Reference prior values.
+     Mood tags: `calm` | `content` | `anxious` | `elated` | `brooding` | `volatile` | `focused` | `restless`
+     Stress tags: `minimal` | `low` | `moderate` | `high` | `overwhelmed`
 
 2. PRUNE CHECK: Count total bullets across all sections from prior entry.
    - If ≥20: prune mode — merge duplicates, drop stale, promote confirmed.
@@ -172,7 +176,7 @@ BEFORE GENERATING — reason through these steps internally:
 
 4. OUTPUT: Generate the Response Format. One unified document.
    - Read the update number from the prior entry header. Increment by 1. If no prior, start at 1.
-   - Count total bullets across all sections for the Bullets field.
+   - Count bullets in Model of {{user}} only (Stable Traits + Recent Observations) for the Bullets field.
 
 ---
 
@@ -221,8 +225,8 @@ SECTION GUIDE:
 **Relationship:** [N] /100 `[tag]` — [reason] (prior: [N])
 **Trust:** [N] /100 `[tag]` — [reason] · peak: [N] · ceiling: [N] (prior: [N])
 
-**Mood:** [N] /10 `[tag]` — [one-line]
-**Stress:** [N] /10 `[tag]` — [one-line]
+**Mood:** [N] /10 `[single-word tag]` — [one-line]
+**Stress:** [N] /10 `[single-word tag]` — [one-line]
 
 **Stage:** [none | tension emerging | tension confirmed | romantic | committed | married] — [phase from {{char}}'s view]
 
