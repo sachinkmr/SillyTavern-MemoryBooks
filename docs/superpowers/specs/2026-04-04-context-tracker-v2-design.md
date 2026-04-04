@@ -138,7 +138,7 @@ The model's thinking phase reads the prior entry, executes the BEFORE GENERATING
 
 ```
 OUTPUT RULES:
-1. Output REPLACES the prior entry entirely. Carry unchanged facts verbatim, rewrite changed ones, drop stale ones.
+1. Output REPLACES the prior entry entirely. Carry unchanged facts verbatim, rewrite changed ones, drop stale ones. Exception: tags, thread titles, and formatting must ALWAYS comply with current rules even if the prior entry used different wording — do NOT copy non-compliant tags or titles from prior entries.
 2. ONLY the six sections in the Response Format, in order. No extras.
 3. Markdown: ## headings, bullets, --- dividers. No creative formatting.
 4. Third person — omniscient narrator describing {{char}}'s perspective. Never first person.
@@ -150,15 +150,18 @@ PERSPECTIVE: {{char}}'s subjective world-model only. Record what {{char}} has wi
 
 BEFORE GENERATING — reason through these steps internally:
 
-1. SCORES: Read prior values. For each, decide direction and magnitude:
+1. SCORES: Read prior values. For each, decide direction and magnitude. ALL tags must be exactly ONE word from the allowed list — never combine or invent tags.
    - Affinity (−100 to 100): volatile ±5–10/scene. Negativity bias. Former allies go negative, not neutral.
+     Tags: `warm` | `guarded` | `complicated` | `cold` | `hostile`
    - !lovefactor (0–100): HIGH INERTIA +1–3/scene. Above 50 decays −1–2/scene. Only catastrophic betrayal crashes (−15–30). Love lingers, never hits 0.
+     Tags: `active` | `dormant` | `conflicted` | `resentful` | `nostalgic`
    - Relationship (0–100): HIGHEST INERTIA. Measures commitment, not feeling. Milestones harden it. Arguments −1–3. Only betrayal/abandonment justifies −10+.
+     Tags: `stable` | `strained` | `eroding` | `fractured` | `severed` | `rebuilding`
    - Trust (0–100): Slowest build, fastest destroy. One lie undoes years. Track peak and ceiling — rebuilt trust never reaches original height.
+     Tags: `solid` | `tentative` | `damaged` | `broken` | `blind`
    - No prior entry → estimate and note "(initial estimate)".
-   - Psychology: Mood (1–10), Stress (1–10). Reference prior values.
-     Mood tags: `calm` | `content` | `anxious` | `elated` | `brooding` | `volatile` | `focused` | `restless`
-     Stress tags: `minimal` | `low` | `moderate` | `high` | `overwhelmed`
+   - Mood (1–10): Tags: `calm` | `content` | `anxious` | `elated` | `brooding` | `volatile` | `focused` | `restless`
+   - Stress (1–10): Tags: `minimal` | `low` | `moderate` | `high` | `overwhelmed`
 
 2. PRUNE CHECK: Count total bullets across all sections from prior entry.
    - If ≥20: prune mode — merge duplicates, drop stale, promote confirmed.
@@ -168,7 +171,7 @@ BEFORE GENERATING — reason through these steps internally:
    - Secrets already in Threads or Model → drop.
 
 3. THREADS: For each thread decide:
-   - Every thread must be framed from {{char}}'s perspective and stake. Title what {{char}} is doing or affected by — never title another character's activity. Example: not "Shilpa's Sunday Date" but "Sunday Night — My Turn" (what Aisha is planning).
+   - REWRITE any thread title that names another character's activity. Every title must describe {{char}}'s stake or action. Example: not "Shilpa's Sunday Date" but "Waiting My Turn — Sunday Night". Not "Priya's Professional Polish" but "The Polished Rival". If a prior entry has a non-compliant title, rename it now.
    - Status: `developing` | `ready to resolve` | `stale`
    - Initiate: `yes` (in-character for {{char}} to push) | `no` (wait for {{user}}/events)
    - Advance-by: one line — how {{char}} can naturally reference or move this forward.
