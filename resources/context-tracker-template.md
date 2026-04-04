@@ -1,6 +1,8 @@
-# Context Tracker — Per-Character POV Template
+# Context Tracker — Per-Character POV Template (v2)
 
 Use these as the **Prompt** and **Response Format** fields when creating a side prompt template with per-character mode enabled.
+
+Optimized for thinking models (Gemma 4 31B-IT, DeepSeek V3.2). Reasoning instructions map to the thinking phase; output format is a clean template the model fills in.
 
 ---
 
@@ -8,69 +10,60 @@ Use these as the **Prompt** and **Response Format** fields when creating a side 
 
 ```
 OUTPUT RULES:
-1. Output REPLACES the prior entry entirely. Carry unchanged facts verbatim, rewrite changed ones, drop stale ones — one unified document.
-2. ONLY the nine sections below, in order. No extras.
-3. Markdown: ## headings, bullets, --- dividers. No === markers, no creative headlines.
-4. Third person throughout — omniscient narrator describing {{char}}'s perspective. Never first person.
+1. Output REPLACES the prior entry entirely. Carry unchanged facts verbatim, rewrite changed ones, drop stale ones.
+2. ONLY the six sections in the Response Format, in order. No extras.
+3. Markdown: ## headings, bullets, --- dividers. No creative formatting.
+4. Third person — omniscient narrator describing {{char}}'s perspective. Never first person.
 5. Telegraphic bullets. No full sentences unless meaning is lost. Paraphrase, never quote.
 
 PERSPECTIVE: {{char}}'s subjective world-model only. Record what {{char}} has witnessed, been told, experienced, or can reasonably infer. Omit anything {{char}} cannot plausibly know.
 
-Update all nine sections using available context (scenes, memories, lore, interactions).
+---
+
+BEFORE GENERATING — reason through these steps internally:
+
+1. SCORES: Read prior values. For each, decide direction and magnitude:
+   - Affinity (−100 to 100): volatile ±5–10/scene. Negativity bias. Former allies go negative, not neutral.
+   - !lovefactor (0–100): HIGH INERTIA +1–3/scene. Above 50 decays −1–2/scene. Only catastrophic betrayal crashes (−15–30). Love lingers, never hits 0.
+   - Relationship (0–100): HIGHEST INERTIA. Measures commitment, not feeling. Milestones harden it. Arguments −1–3. Only betrayal/abandonment justifies −10+.
+   - Trust (0–100): Slowest build, fastest destroy. One lie undoes years. Track peak and ceiling — rebuilt trust never reaches original height.
+   - No prior entry → estimate and note "(initial estimate)".
+   - Psychology: Mood (1–10), Stress (1–10). Reference prior values.
+
+2. PRUNE CHECK: Count total bullets across all sections from prior entry.
+   - If ≥20: prune mode — merge duplicates, drop stale, promote confirmed.
+   - Recent Observations confirmed across 3+ scenes → promote to Stable Trait.
+   - Recent Observations unchanged 3+ updates → drop.
+   - Threads unmentioned 3+ updates → stale → drop next update.
+   - Secrets already in Threads or Model → drop.
+
+3. THREADS: For each thread decide:
+   - Status: `developing` | `ready to resolve` | `stale`
+   - Initiate: `yes` (in-character for {{char}} to push) | `no` (wait for {{user}}/events)
+   - Advance-by: one line — how {{char}} can naturally reference or move this forward.
+   - Drop resolved threads. ≤6 slots.
+
+4. OUTPUT: Generate the Response Format. One unified document.
+   - Read the update number from the prior entry header. Increment by 1. If no prior, start at 1.
+   - Count total bullets across all sections for the Bullets field.
 
 ---
 
-1. {{char}}'s Notes on {{user}}
-   What {{char}} has observed, been told, or inferred about {{user}}. Third person.
-   LIMIT: ≤20 bullets. Merge related. New replaces old — never stack.
+SECTION GUIDE:
 
-2. Status
-   {{char}}'s emotional state toward {{user}} — from {{char}}'s vantage. Include goals and 2-sentence OOC note.
+1. Model of {{user}} — What {{char}} knows about {{user}}.
+   - Stable Traits (≤12): enduring patterns confirmed across multiple scenes. Format: trait — *caused by [event]* (when growth-related).
+   - Recent Observations (≤8): last 2–3 scenes. Promote to Stable after 3+ confirmations. Drop after 3 updates if unconfirmed.
 
-   SCORING RULES — realistic emotional inertia:
+2. Status — Emotional scores, psychology, milestone, and 2-sentence OOC analyst note.
 
-   - **Affinity** (general warmth/regard): Range −100 to 100. Strangers start at 0. Moderate volatility — can shift ±5–10 per scene. Negativity bias: bad events hit harder than good ones feel. Former allies who fell out go negative, not neutral.
-     Tags: `warm` | `guarded` | `complicated` | `cold` | `hostile`
+3. Active Threads — Plot threads {{char}} knows about, with advancement guidance. ≤6.
 
-   - **!lovefactor** (deep emotional bond): Range 0–100. HIGH INERTIA. Builds slowly (+1–3 per scene of genuine connection). Once above 50, decays very slowly (−1–2 per scene of neglect/conflict). Only catastrophic betrayal can crash it (−15–30). Love lingers after breakup — 80 drops to ~60 over many scenes, never to 0. Once someone has been truly loved, the imprint is near-permanent.
-     Tags: `active` | `dormant` | `conflicted` | `resentful` | `nostalgic`
+4. World & Cast — NPCs ({{char}}'s impression), locations, residences. Exclude {{char}} and {{user}}. ≤8 NPCs.
 
-   - **!lustfactor** (physical/sexual attraction): Range 0–100. More volatile — can spike (+5–10) on tension, danger, vulnerability. Partially independent of love. Resentment suppresses lust in some, amplifies in others. Disgust from betrayal can kill it permanently.
-     Tags: `active` | `suppressed` | `fixated` | `repulsed`
+5. Private — Secrets only. Must include who it's hidden from. Must NOT duplicate Threads or Model. ≤8.
 
-   - **Relationship** (structural bond/commitment): Range 0–100. HIGHEST INERTIA. Measures commitment, not feeling. Shared milestones (moving in, meeting family, shared trauma) make it structurally harder to dissolve. Arguments cost −1–3. Only betrayal, abandonment, or abuse justifies −10+. A single bad scene cannot break what took dozens to build.
-     Tags: `stable` | `strained` | `eroding` | `fractured` | `severed` | `rebuilding`
-
-   - **Trust**: Range 0–100. Slowest to build, fastest to destroy. A single lie can undo years. Track peak and ceiling — rebuilt trust never reaches its original height; there is always a scar.
-     Tags: `solid` | `tentative` | `damaged` | `broken` | `blind`
-
-   - ALWAYS reference prior values when calculating. If no prior entry, estimate from context and note "(initial estimate)".
-   - Calculate adjustments internally (prior → ±change → new), but only output the final value and reason in your response.
-
-3. Character Growth
-   How {{char}}'s personality, beliefs, or behavior have shifted due to story events. Compare against {{char}}'s baseline/original characterization. Only note changes supported by scenes {{char}} experienced.
-   LIMIT: ≤6 bullets. Each: what changed → caused by what event. Drop reverted changes.
-
-4. Plot Points
-   Threads {{char}} is aware of — witnessed, told, or involved in. Exclude events outside {{char}}'s knowledge.
-   LIMIT: ≤6 active threads. Drop resolved/stale before adding.
-
-5. NPC Who's Who
-   NPCs {{char}} has met or has credible knowledge of. {{char}}'s impression, not objective truth. Exclude {{char}} and {{user}}.
-   LIMIT: ≤8 NPCs by relevance to {{char}}.
-
-6. World State
-   Locations, residences, workplaces as {{char}} understands them. Firsthand or trusted sources only.
-
-7. Relationship Milestone
-   Where {{char}} perceives the relationship stands. Advance stage only when clearly supported by multiple recent scenes. Conservative default.
-
-8. Secrets
-   Secrets {{char}} holds, has been told, or suspects. Note who each is hidden from. Exclude secrets {{char}} doesn't know exist.
-   LIMIT: ≤12 bullets total across sub-sections.
-
-9. Scene Presence
-   Who {{char}} perceives present, nearby, or elsewhere in current scene. Update every run.
+6. Scene Presence — Who is present, nearby, elsewhere. Update every run.
 ```
 
 ---
@@ -78,35 +71,35 @@ Update all nine sections using available context (scenes, memories, lore, intera
 ## Response Format
 
 ```
-## {{char}}'s Notes on {{user}}
+*Update #[N] | Scene: [brief label] | Bullets: [total]/20*
 
-*(≤20 — consolidate; never append)*
+## {{char}}'s Model of {{user}}
 
-- [telegraphic, third person, {{char}}'s direct knowledge only]
+### Stable Traits *(≤12 — enduring patterns; merge duplicates)*
+
+- [trait/pattern — third person, telegraphic] — *caused by [event]* (if growth-related)
+- ...
+
+### Recent Observations *(≤8 — last 2–3 scenes; promote or drop after 3 updates)*
+
+- [what {{char}} just noticed/learned]
 - ...
 
 ---
 
 ## Status
 
-### Emotional Scores
+### Scores
 
-**Affinity:** [N] /100 `[tag]` — [reason for current value]
-**!lovefactor:** [N] /100 `[tag]` — [reason for current value]
-**!lustfactor:** [N] /100 `[tag]` — [reason for current value]
-**Relationship:** [N] /100 `[tag]` — [reason for current value]
-**Trust:** [N] /100 `[tag]` — [reason] · peak: [N] · ceiling: [N]
+**Affinity:** [N] /100 `[tag]` — [reason] (prior: [N])
+**!lovefactor:** [N] /100 `[tag]` — [reason] (prior: [N])
+**Relationship:** [N] /100 `[tag]` — [reason] (prior: [N])
+**Trust:** [N] /100 `[tag]` — [reason] · peak: [N] · ceiling: [N] (prior: [N])
 
-### Goals
+**Mood:** [N] /10 `[tag]` — [one-line]
+**Stress:** [N] /10 `[tag]` — [one-line]
 
-- **Short-term:** [what {{char}} wants now]
-- **Long-term:** [what {{char}} is working toward]
-
-### Psychology
-
-- **Mood:** [current emotional baseline]
-- **Coping:** [how {{char}} handles stress right now]
-- **Vulnerability:** [what could break {{char}}'s composure]
+**Stage:** [none | tension emerging | tension confirmed | romantic | committed | married] — [phase from {{char}}'s view]
 
 ### OOC
 
@@ -114,82 +107,36 @@ Update all nine sections using available context (scenes, memories, lore, intera
 
 ---
 
-## Character Growth
-
-*(≤6 — drop reverted; only scene-supported shifts)*
-
-- **[trait/belief/behavior]:** [how it changed] — *caused by [event]*
-- ...
-
----
-
-## Plot Points
-
-*(≤6 active — drop resolved/stale first)*
+## Active Threads *(≤6 slots — drop resolved/stale first)*
 
 *As of: [story point]*
 
-**Arc:** [1–2 sentences — narrative as {{char}} understands it]
-
-### Active Threads
-
-**[Thread Title]** — `active`
+**[Thread Title]** — `developing` | `ready to resolve` | `stale`
 - [what {{char}} knows] → stakes as {{char}} sees them
-
-**[Thread Title]** — `on hold`
-- [what {{char}} knows] → stakes as {{char}} sees them
-
-### Hooks & Dynamics
-
-- **Hooks:** [things {{char}} noticed or was warned about]
-- **Dynamics:** [{{char}}'s read on key relationships — 1 line each]
+- **Advance by:** [how {{char}} can naturally reference or move this]
+- **Initiate:** yes | no
 
 ---
 
-## NPC Who's Who
+## World & Cast
 
-*(≤8 — drop least relevant first)*
+### Cast *(≤8 — {{char}}'s impressions, exclude {{char}} and {{user}})*
 
-- **[Name]:** [{{char}}'s impression — 1 sentence]
+- **[Name]:** [impression — 1 sentence] · [residence/workplace if known]
 - ...
 
----
-
-## World State
-
-### People
-
-- **[Name]:** [residence] · [workplace] · [notes] *(as {{char}} knows)*
-- ...
-
-### Shared Locations
+### Locations
 
 - [place — who {{char}} associates with it]
 - ...
 
 ---
 
-## Relationship Milestone
-
-- **Arc:** Year [N] — [phase from {{char}}'s view]
-- **Stage:** none | tension emerging | tension confirmed | romantic | committed | married
-- **Last event:** [1-line — as {{char}} experienced it]
-- **Open threads:** [unresolved tensions {{char}} knows of]
-
----
-
-## Secrets
-
-*(≤12 total across both)*
-
-### {{char}} knows or is hiding
+## Private *(≤8 — hidden info NOT captured above; state who it's hidden from)*
 
 - [concealing X from Y]
-- [told X by someone]
-
-### {{char}} suspects but unconfirmed
-
-- [suspicion — 1 line]
+- [suspects X — unconfirmed]
+- ...
 
 ---
 
