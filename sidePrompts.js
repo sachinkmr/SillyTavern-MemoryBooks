@@ -17,6 +17,7 @@ import { oai_settings } from '../../../openai.js';
 import { applySidePromptMacros, collectTemplateRuntimeMacros, extractMacroTokens, parseSidePromptCommandInput } from './sidePromptMacros.js';
 import { tr } from './i18nHelpers.js';
 import { validateLorebookRequirement } from './lorebookValidation.js';
+import { SIDE_PROMPT } from './constants.js';
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
@@ -875,6 +876,109 @@ async function runSidePromptAttempt({ taskLabel, finalPrompt, conn, runEpoch }) 
     }
 }
 
+/**
+ * Determine whether a side-prompt error is worth retrying.
+ * Stop/cancel and chat-change errors are never retried.
+ */
+function isSidePromptRetryableError(err) {
+    if (isSidePromptAbortError(err)) return false;
+    if (err?.name === 'TokenWarningError' || err?.name === 'InvalidProfileError') return false;
+    return true;
+}
+
+/**
+ * Sleep with abort support — resolves after `ms` or rejects if signal fires.
+ */
+function sidePromptSleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(resolve, ms);
+        if (!signal) return;
+        if (signal.aborted) {
+            clearTimeout(timeoutId);
+            reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' }));
+            return;
+        }
+        const onAbort = () => {
+            clearTimeout(timeoutId);
+            reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' }));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
+/**
+ * Wrap runSidePromptAttempt with retry logic matching memory generation behaviour.
+ * Retries up to SIDE_PROMPT.MAX_RETRIES on retryable errors OR blank responses,
+ * with SIDE_PROMPT.RETRY_DELAY_MS delay between attempts.
+ *
+ * @param {object}  opts                    Same args as runSidePromptAttempt plus extras.
+ * @param {string}  opts.taskLabel          Label for the in-flight task.
+ * @param {string}  opts.finalPrompt        Assembled prompt text.
+ * @param {object}  opts.conn               Connection/model config.
+ * @param {number}  opts.runEpoch           Stop-epoch for abort checks.
+ * @param {string}  opts.displayName        Human-readable name for toasts.
+ * @param {string}  opts.trigger            Trigger type label (onInterval | onAfterMemory | manual).
+ * @returns {Promise<string>} LLM response text (guaranteed non-blank on success).
+ * @throws {Error} After all retries exhausted, or on non-retryable / abort errors.
+ */
+async function runSidePromptWithRetry({ taskLabel, finalPrompt, conn, runEpoch, displayName, trigger }) {
+    const maxRetries = SIDE_PROMPT.MAX_RETRIES;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        let text;
+        try {
+            text = await runSidePromptAttempt({ taskLabel, finalPrompt, conn, runEpoch });
+        } catch (err) {
+            // Non-retryable or abort — propagate immediately
+            if (!isSidePromptRetryableError(err) || attempt >= maxRetries) {
+                throw err;
+            }
+            await _retrySidePromptDelay(taskLabel, displayName, attempt, maxRetries, runEpoch);
+            continue;
+        }
+
+        // Treat blank response as retryable
+        if (!String(text ?? '').trim()) {
+            if (attempt >= maxRetries) {
+                // All retries exhausted with blank — let caller handle via ensureSidePromptTextNotBlank
+                return text;
+            }
+            console.warn(`${MODULE_NAME}: SidePrompt "${displayName}" returned blank (attempt ${attempt + 1}/${maxRetries + 1}), retrying...`);
+            await _retrySidePromptDelay(taskLabel, displayName, attempt, maxRetries, runEpoch);
+            continue;
+        }
+
+        // Success with non-blank text
+        if (attempt > 0) {
+            console.log(`${MODULE_NAME}: SidePrompt "${displayName}" succeeded on attempt ${attempt + 1}`);
+        }
+        return text;
+    }
+}
+
+/** Shared delay logic between retry attempts. */
+async function _retrySidePromptDelay(taskLabel, displayName, attempt, maxRetries, runEpoch) {
+    const delaySeconds = Math.round(SIDE_PROMPT.RETRY_DELAY_MS / 1000);
+    toastr.warning(
+        __st_t_tag`SidePrompt "${displayName}" failed (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${delaySeconds}s...`,
+        'STMemoryBooks',
+        { timeOut: 3000 },
+    );
+
+    const task = createStmbInFlightTask(`${taskLabel}:retry-delay`);
+    try {
+        await sidePromptSleep(SIDE_PROMPT.RETRY_DELAY_MS, task.signal);
+    } catch (sleepErr) {
+        task.finish();
+        if (isStmbStopError(sleepErr) || sleepErr?.name === 'AbortError') {
+            throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+        }
+        throw sleepErr;
+    }
+    task.finish();
+    throwIfStmbStopped(runEpoch);
+}
+
 function ensureSidePromptTextNotBlank(text, tpl, trigger) {
     if (String(text ?? '').trim()) return true;
 
@@ -1060,9 +1164,10 @@ export async function evaluateTrackers() {
 
                 const effectiveTitle = perCharTitleHint || prepared.unifiedTitle;
 
-                // Call LLM
+                // Call LLM with retry
                 let resultText = '';
                 const runEpoch = getStmbStopEpoch();
+                const displayName = `${tpl.name}${charTarget ? ` (${charTarget.name})` : ''}`;
                 try {
                     console.log(`${MODULE_NAME}: SidePrompt attempt`, {
                         trigger: 'onInterval',
@@ -1075,16 +1180,18 @@ export async function evaluateTrackers() {
                         api: prepared.conn.api,
                         model: prepared.conn.model,
                     });
-                    resultText = await runSidePromptAttempt({
+                    resultText = await runSidePromptWithRetry({
                         taskLabel: `SidePrompt:onInterval:${tpl?.key || tpl?.name || 'unknown'}${charTarget ? `:${charTarget.name}` : ''}`,
                         finalPrompt: prepared.finalPrompt,
                         conn: prepared.conn,
                         runEpoch,
+                        displayName,
+                        trigger: 'onInterval',
                     });
                 } catch (err) {
-                    if (isStmbStopError(err)) return;
-                    console.error(`${MODULE_NAME}: Interval sideprompt LLM failed${charTarget ? ` for ${charTarget.name}` : ''}:`, err);
-                    toastr.error(__st_t_tag`SidePrompt "${tpl.name}"${charTarget ? ` (${charTarget.name})` : ''} failed: ${err.message}`, 'STMemoryBooks');
+                    if (isSidePromptAbortError(err)) return;
+                    console.error(`${MODULE_NAME}: Interval sideprompt LLM failed${charTarget ? ` for ${charTarget.name}` : ''} (all attempts exhausted):`, err);
+                    toastr.error(__st_t_tag`SidePrompt "${displayName}" failed after ${SIDE_PROMPT.MAX_RETRIES + 1} attempts: ${err.message}`, 'STMemoryBooks');
                     continue;
                 }
 
@@ -1275,11 +1382,13 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         api: prepared.conn.api,
                         model: prepared.conn.model,
                     });
-                    const text = await runSidePromptAttempt({
+                    const text = await runSidePromptWithRetry({
                         taskLabel: `SidePrompt:onAfterMemory:${tpl?.key || tpl?.name || 'unknown'}${charTarget ? `:${charTarget.name}` : ''}`,
                         finalPrompt: prepared.finalPrompt,
                         conn: prepared.conn,
                         runEpoch,
+                        displayName,
+                        trigger: 'onAfterMemory',
                     });
                     return {
                         ok: true,
@@ -1295,10 +1404,10 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         runtimeMacros,
                     };
                 } catch (e) {
-                    if (!isStmbStopError(e)) {
-                        console.error(`${MODULE_NAME}: Wave LLM failed for "${displayName}":`, e);
+                    if (!isSidePromptAbortError(e)) {
+                        console.error(`${MODULE_NAME}: Wave LLM failed for "${displayName}" (all attempts exhausted):`, e);
                     }
-                    return { ok: false, tpl, charTarget, error: e, cancelled: isStmbStopError(e), displayName };
+                    return { ok: false, tpl, charTarget, error: e, cancelled: isSidePromptAbortError(e), displayName };
                 }
             });
 
@@ -1642,7 +1751,7 @@ export async function runSidePrompt(args, options = {}) {
                     dbg('Full prompt being sent to LLM:\n', prepared.finalPrompt);
                 }
 
-                // Call LLM
+                // Call LLM with retry
                 let resultText = '';
                 console.log(`${MODULE_NAME}: SidePrompt attempt`, {
                     trigger: 'manual',
@@ -1653,11 +1762,13 @@ export async function runSidePrompt(args, options = {}) {
                     api: prepared.conn.api,
                     model: prepared.conn.model,
                 });
-                resultText = await runSidePromptAttempt({
+                resultText = await runSidePromptWithRetry({
                     taskLabel: `SidePrompt:manual:${tpl?.key || tpl?.name || 'unknown'}${charTarget ? `:${charTarget.name}` : ''}`,
                     finalPrompt: prepared.finalPrompt,
                     conn: prepared.conn,
                     runEpoch,
+                    displayName,
+                    trigger: 'manual',
                 });
                 throwIfStmbStopped(runEpoch);
                 throwIfChatChanged(startChatId);

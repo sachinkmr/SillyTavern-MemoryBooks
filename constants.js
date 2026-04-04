@@ -10,6 +10,12 @@ export const MEMORY_GENERATION = {
     DEFAULT_MEMORY_COUNT: 0,
 };
 
+// Side prompt retry settings
+export const SIDE_PROMPT = {
+    MAX_RETRIES: 2,
+    RETRY_DELAY_MS: 2000,
+};
+
 // Scene management settings
 export const SCENE_MANAGEMENT = {
     MAX_SCAN_RANGE: 100,
