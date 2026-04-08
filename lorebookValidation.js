@@ -231,6 +231,21 @@ export async function validateLorebookRequirement(options = {}) {
     }
 
     if (recoveryReason) {
+      // Auto-create lorebook without user interaction when allowed
+      if (allowCreate) {
+        const template =
+          extension_settings?.STMemoryBooks?.moduleSettings?.lorebookNameTemplate ||
+          "LTM - {{char}} - {{chat}}";
+        const createResult = await autoCreateLorebook(template, createContext);
+
+        if (createResult.success) {
+          lorebookName = createResult.name;
+          attempts += 1;
+          continue;
+        }
+        // Auto-create failed — fall through to recovery popup
+      }
+
       const recovery = await showLorebookRecoveryPopup({
         manualMode: resolvedManualMode,
         lorebookName,
