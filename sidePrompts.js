@@ -834,6 +834,25 @@ function findFirstLoreEntryByTitle(loreData, titles = []) {
     return null;
 }
 
+function getHighestProcessedMessageBaseline() {
+    const highestProcessed = Number(getSceneMarkers()?.highestMemoryProcessed);
+    return Number.isFinite(highestProcessed) ? highestProcessed : -1;
+}
+
+function getSidePromptLastMessageId(tpl, existingEntry) {
+    const storedLastMsgId = Number(
+        (existingEntry && existingEntry[`STMB_sp_${tpl.key}_lastMsgId`]) ??
+        (existingEntry && existingEntry.STMB_score_lastMsgId) ??
+        (existingEntry && existingEntry.STMB_tracker_lastMsgId)
+    );
+
+    if (Number.isFinite(storedLastMsgId)) {
+        return storedLastMsgId;
+    }
+
+    return getHighestProcessedMessageBaseline();
+}
+
 async function prepareSidePromptRun({ tpl, loreData, compiledScene, defaultOverrides = null, fallbackKinds = [], runtimeMacros = {}, additionalTitles = [] }) {
     const unifiedTitle = getUnifiedSidePromptTitle(tpl, runtimeMacros);
     const lookupTitles = [...additionalTitles, ...getSidePromptLookupTitles(tpl, runtimeMacros, fallbackKinds)];
@@ -1089,11 +1108,7 @@ export async function evaluateTrackers() {
             // Read existing entry to get last checkpoint
             const lookupTitles = getSidePromptLookupTitles(tpl, {}, ['tracker']);
             const existing = findFirstLoreEntryByTitle(tplLores[0].data, lookupTitles);
-            const lastMsgId = Number(
-                (existing && existing[`STMB_sp_${tpl.key}_lastMsgId`]) ??
-                (existing && existing.STMB_tracker_lastMsgId) ??
-                -1
-            );
+            const lastMsgId = getSidePromptLastMessageId(tpl, existing);
             const lastRunAt = existing?.[`STMB_sp_${tpl.key}_lastRunAt`]
                 ? Date.parse(existing[`STMB_sp_${tpl.key}_lastRunAt`])
                 : (existing?.STMB_tracker_lastRunAt ? Date.parse(existing.STMB_tracker_lastRunAt) : null);
