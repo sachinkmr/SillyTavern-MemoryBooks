@@ -30,6 +30,8 @@ async function validateLorebookForAutoSummary() {
     const settings = extension_settings.STMemoryBooks;
     const manualMode = !!settings?.moduleSettings?.manualModeEnabled;
 
+    let lorebookName = null;
+
     if (!settings.moduleSettings.manualModeEnabled) {
         // Automatic mode - use chat-bound lorebook
         lorebookName = chat_metadata?.[METADATA_KEY] || null;
