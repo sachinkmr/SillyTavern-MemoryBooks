@@ -4,7 +4,7 @@
 
 // Memory generation settings
 export const MEMORY_GENERATION = {
-    MAX_RETRIES: 2,
+    MAX_RETRIES: 5,
     RETRY_DELAY_MS: 2000,
     TOKEN_WARNING_THRESHOLD_DEFAULT: 50000,
     DEFAULT_MEMORY_COUNT: 0,
@@ -12,7 +12,7 @@ export const MEMORY_GENERATION = {
 
 // Side prompt retry settings
 export const SIDE_PROMPT = {
-    MAX_RETRIES: 2,
+    MAX_RETRIES: 5,
     RETRY_DELAY_MS: 2000,
 };
 
