@@ -310,6 +310,7 @@ async function openEditTemplate(parentPopup, key) {
         const presenceGateEnabled = !!s.presenceGate?.enabled;
         const witnessFilterEnabled = !!s.witnessFilter?.enabled;
         const injectOnlyCharEnabled = !!s.injectOnlyForCharacter?.enabled;
+        const parallelCallsEnabled = !!s.parallelCalls?.enabled;
 
         const perCharacterHtml = `
             <div class="world_entry_form_control">
@@ -335,6 +336,13 @@ async function openEditTemplate(parentPopup, key) {
                     <input type="checkbox" id="stmb-sp-edit-inject-only-char" ${injectOnlyCharEnabled ? 'checked' : ''}>
                     <span>${escapeHtml(translate('Inject entry only for this actor\'s drafts', 'STMemoryBooks_InjectOnlyForCharacter'))}</span>
                 </label>
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-sp-edit-parallel-calls" ${parallelCallsEnabled ? 'checked' : ''}>
+                    <span>${escapeHtml(translate('Run actors\' LLM calls in parallel (saves serially)', 'STMemoryBooks_ParallelCalls'))}</span>
+                </label>
+                <div style="margin-left:28px;">
+                    <input type="number" id="stmb-sp-edit-parallel-limit" class="text_pole" min="2" max="4" step="1" placeholder="${escapeHtml(translate('2-4 (default: 2)', 'STMemoryBooks_ParallelCallsLimitPlaceholder'))}" value="${s.parallelCalls?.limit ?? ''}">
+                </div>
                 <small class="opacity50p">${escapeHtml(translate('Actor scoping for per-character mode. Uses witness stamps when available; unstamped messages count as seen by everyone.', 'STMemoryBooks_ActorScopingDesc'))}</small>
             </div>
         `;
@@ -675,6 +683,11 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
             settings.witnessFilter = { enabled: !!dlg.querySelector('#stmb-sp-edit-witness-filter')?.checked };
             settings.injectOnlyForCharacter = { enabled: !!dlg.querySelector('#stmb-sp-edit-inject-only-char')?.checked };
 
+            // Bounded-concurrency per-character LLM calls (limit clamped to 2..4 at runtime too)
+            const plEnabled = !!dlg.querySelector('#stmb-sp-edit-parallel-calls')?.checked;
+            const plLimit = parseInt(dlg.querySelector('#stmb-sp-edit-parallel-limit')?.value, 10);
+            settings.parallelCalls = { enabled: plEnabled, ...(Number.isFinite(plLimit) ? { limit: Math.min(4, Math.max(2, plLimit)) } : {}) };
+
             await upsertTemplate({
                 key: tpl.key,
                 name: newName,
@@ -903,6 +916,13 @@ async function openNewTemplate(parentPopup) {
                 <input type="checkbox" id="stmb-sp-new-inject-only-char">
                 <span>${escapeHtml(translate('Inject entry only for this actor\'s drafts', 'STMemoryBooks_InjectOnlyForCharacter'))}</span>
             </label>
+            <label class="checkbox_label">
+                <input type="checkbox" id="stmb-sp-new-parallel-calls">
+                <span>${escapeHtml(translate('Run actors\' LLM calls in parallel (saves serially)', 'STMemoryBooks_ParallelCalls'))}</span>
+            </label>
+            <div style="margin-left:28px;">
+                <input type="number" id="stmb-sp-new-parallel-limit" class="text_pole" min="2" max="4" step="1" placeholder="${escapeHtml(translate('2-4 (default: 2)', 'STMemoryBooks_ParallelCallsLimitPlaceholder'))}" value="">
+            </div>
             <small class="opacity50p">${escapeHtml(translate('Actor scoping for per-character mode. Uses witness stamps when available; unstamped messages count as seen by everyone.', 'STMemoryBooks_ActorScopingDesc'))}</small>
         </div>
     `;
@@ -1058,6 +1078,11 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
         settings.presenceGate = { enabled: pgEnabled, ...(Number.isFinite(pgN) && pgN > 0 ? { lastNMessages: pgN } : {}) };
         settings.witnessFilter = { enabled: !!dlg.querySelector('#stmb-sp-new-witness-filter')?.checked };
         settings.injectOnlyForCharacter = { enabled: !!dlg.querySelector('#stmb-sp-new-inject-only-char')?.checked };
+
+        // Bounded-concurrency per-character LLM calls (limit clamped to 2..4 at runtime too)
+        const plEnabled = !!dlg.querySelector('#stmb-sp-new-parallel-calls')?.checked;
+        const plLimit = parseInt(dlg.querySelector('#stmb-sp-new-parallel-limit')?.value, 10);
+        settings.parallelCalls = { enabled: plEnabled, ...(Number.isFinite(plLimit) ? { limit: Math.min(4, Math.max(2, plLimit)) } : {}) };
 
         try {
             await upsertTemplate({ name, enabled, prompt, responseFormat, settings, triggers });
