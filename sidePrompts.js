@@ -1176,10 +1176,22 @@ export async function evaluateTrackers() {
                     ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
                     : null;
 
+                let perCharCompiled = compiled;
+                if (charTarget && tpl?.settings?.witnessFilter?.enabled) {
+                    perCharCompiled = filterCompiledSceneForCharacter(compiled, chat, charTarget.name);
+                    if (perCharCompiled.messages.length === 0) {
+                        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
+                        continue;
+                    }
+                    if (perCharCompiled.metadata.witnessFiltered > 0) {
+                        console.log(`${MODULE_NAME}: witnessFilter dropped ${perCharCompiled.metadata.witnessFiltered} message(s) for ${charTarget.name}`);
+                    }
+                }
+
                 const prepared = await prepareSidePromptRun({
                     tpl,
                     loreData: (charLore?.data) || lore.data,
-                    compiledScene: compiled,
+                    compiledScene: perCharCompiled,
                     defaultOverrides,
                     fallbackKinds: ['tracker'],
                     runtimeMacros,
@@ -1774,10 +1786,22 @@ export async function runSidePrompt(args, options = {}) {
                     ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, effectiveMacros), charTarget.name)
                     : null;
 
+                let perCharCompiled = compiled;
+                if (charTarget && tpl?.settings?.witnessFilter?.enabled) {
+                    perCharCompiled = filterCompiledSceneForCharacter(compiled, chat, charTarget.name);
+                    if (perCharCompiled.messages.length === 0) {
+                        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
+                        continue;
+                    }
+                    if (perCharCompiled.metadata.witnessFiltered > 0) {
+                        console.log(`${MODULE_NAME}: witnessFilter dropped ${perCharCompiled.metadata.witnessFiltered} message(s) for ${charTarget.name}`);
+                    }
+                }
+
                 const prepared = await prepareSidePromptRun({
                     tpl,
                     loreData: (charLore?.data) || tplLores[0].data,
-                    compiledScene: compiled,
+                    compiledScene: perCharCompiled,
                     defaultOverrides,
                     fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
                     runtimeMacros: effectiveMacros,
