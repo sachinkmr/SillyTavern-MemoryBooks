@@ -203,6 +203,13 @@ export async function validateLorebookRequirement(options = {}) {
     retryText = null,
     manualMode = undefined,
     lorebookName: lorebookNameOverride = undefined,
+    // interactive:false = QUIET mode for background triggers (interval runners,
+    // post-memory hooks): never raise the recovery popup — return
+    // { valid:false, quiet:true } and let the caller skip silently. Modal UI from
+    // a background task suspends ST's awaited emit chain and steals keyboard
+    // focus mid-play (clean-slate live finding, 2026-06-10). Auto-create (when
+    // the user enabled it) still runs — it needs no interaction.
+    interactive = true,
   } = options;
   const settings = extension_settings.STMemoryBooks;
   const resolvedManualMode =
@@ -246,6 +253,14 @@ export async function validateLorebookRequirement(options = {}) {
         // Auto-create failed — fall through to recovery popup
       }
 
+      if (!interactive) {
+        return {
+          valid: false,
+          quiet: true,
+          error: getProblemText({ manualMode: resolvedManualMode, lorebookName, reason: recoveryReason }),
+        };
+      }
+
       const recovery = await showLorebookRecoveryPopup({
         manualMode: resolvedManualMode,
         lorebookName,
@@ -277,6 +292,13 @@ export async function validateLorebookRequirement(options = {}) {
 
       return { valid: true, data: lorebookData, name: lorebookName };
     } catch (error) {
+      if (!interactive) {
+        return {
+          valid: false,
+          quiet: true,
+          error: getProblemText({ manualMode: resolvedManualMode, lorebookName, reason: "loadFailed" }),
+        };
+      }
       const recovery = await showLorebookRecoveryPopup({
         manualMode: resolvedManualMode,
         lorebookName,

@@ -401,6 +401,28 @@ async function requireLorebookStrict() {
 }
 
 /**
+ * Quiet (non-interactive) default-lorebook lookup for BACKGROUND triggers
+ * (onInterval, onAfterMemory). Returns { name, data } or null — NEVER raises
+ * the recovery popup. Clean-slate live finding (2026-06-10): the interval
+ * runner popped the recovery modal in lorebook-less solo chats; a modal from a
+ * background task suspends ST's awaited emit chain and steals keyboard focus
+ * mid-play. Templates whose lorebookOverride resolves still run with no
+ * default book at all; the rest are skipped with a console.debug.
+ * @returns {Promise<{ name: string, data: any }|null>}
+ */
+async function tryLorebookQuiet() {
+    const validation = await validateLorebookRequirement({
+        createContext: 'side-prompt',
+        interactive: false,
+    });
+    if (!validation?.valid || !validation?.data || !validation?.name) {
+        console.debug(`${MODULE_NAME}: SidePrompts: no default lorebook available (quiet): ${validation?.error || 'unknown'}`);
+        return null;
+    }
+    return { name: validation.name, data: validation.data };
+}
+
+/**
  * Current group chat's NAME (e.g. "🏠 TWW2"), or null in a solo chat.
  * Used for the custom {{group}} lorebook-name macro — intentionally NOT
  * SillyTavern's native {{group}} macro (which expands to a member list).
@@ -474,8 +496,9 @@ async function resolveOverrideLorebooks(tpl, defaultLore, charName = null) {
 
     const results = [];
     for (const name of validNames) {
-        // Reuse already-loaded default to avoid double fetch
-        if (name === defaultLore.name) {
+        // Reuse already-loaded default to avoid double fetch (defaultLore may be
+        // null on background triggers when no chat-bound book exists — quiet mode)
+        if (defaultLore && name === defaultLore.name) {
             results.push(defaultLore);
             continue;
         }
@@ -514,7 +537,10 @@ async function resolveOverrideLorebooks(tpl, defaultLore, charName = null) {
  * @returns {Promise<Array<{ name: string, data: any }>>}
  */
 async function resolveLorebooksForTemplate(tpl, defaultLore, charName = null) {
-    return (await resolveOverrideLorebooks(tpl, defaultLore, charName)) || [defaultLore];
+    // defaultLore may be null on background triggers (quiet mode, no chat-bound
+    // book): an override that resolves still wins; otherwise return [] and let
+    // the caller skip this template silently.
+    return (await resolveOverrideLorebooks(tpl, defaultLore, charName)) || (defaultLore ? [defaultLore] : []);
 }
 
 /**
@@ -1190,8 +1216,9 @@ export async function evaluateTrackers() {
         const enabledInterval = (await listByTrigger('onInterval')).filter(tpl => !getChatDisabledKeys().includes(tpl.key));
         if (!enabledInterval || enabledInterval.length === 0) return;
 
-        // Ensure lorebook exists up-front
-        const lore = await requireLorebookStrict();
+        // Background trigger: resolve the default book QUIETLY (null when absent —
+        // templates with a resolved lorebookOverride still run; the rest skip).
+        const lore = await tryLorebookQuiet();
         const defaultOverrides = resolveSidePromptConnection(null);
 
         const currentLast = chat.length - 1;
@@ -1200,6 +1227,10 @@ export async function evaluateTrackers() {
         for (const tpl of enabledInterval) {
             // Per-template lorebook resolution (supports lorebookOverride; falls back to default)
             const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+            if (tplLores.length === 0) {
+                console.debug(`${MODULE_NAME}: SidePrompts: no target lorebook for "${tpl.name}" (no chat-bound book, override unresolved) — skipping quietly.`);
+                continue;
+            }
 
             // Read existing entry to get last checkpoint
             const lookupTitles = getSidePromptLookupTitles(tpl, {}, ['tracker']);
@@ -1298,7 +1329,7 @@ export async function evaluateTrackers() {
 
                     const prepared = await prepareSidePromptRun({
                         tpl,
-                        loreData: (charLore?.data) || lore.data,
+                        loreData: (charLore?.data) || tplLores[0].data,
                         compiledScene: perCharCompiled,
                         defaultOverrides,
                         fallbackKinds: ['tracker'],
@@ -1477,7 +1508,7 @@ export async function evaluateTrackers() {
 
                 const prepared = await prepareSidePromptRun({
                     tpl,
-                    loreData: (charLore?.data) || lore.data,
+                    loreData: (charLore?.data) || tplLores[0].data,
                     compiledScene: perCharCompiled,
                     defaultOverrides,
                     fallbackKinds: ['tracker'],
@@ -1636,7 +1667,8 @@ export async function runAfterMemory(compiledScene, profile = null) {
     const parentTask = createStmbInFlightTask('SidePrompts:onAfterMemory');
     const runEpoch = parentTask.epoch;
     try {
-        const lore = await requireLorebookStrict();
+        // Background trigger: quiet default-book resolution (see tryLorebookQuiet).
+        const lore = await tryLorebookQuiet();
         const enabledAfter = (await listByTrigger('onAfterMemory')).filter(tpl => !getChatDisabledKeys().includes(tpl.key));
 
         if (!enabledAfter || enabledAfter.length === 0) return;
@@ -1663,6 +1695,10 @@ export async function runAfterMemory(compiledScene, profile = null) {
                     continue;
                 }
                 const tplLoresForChar = await resolveLorebooksForTemplate(tpl, lore);
+                if (tplLoresForChar.length === 0) {
+                    console.debug(`${MODULE_NAME}: SidePrompts: no target lorebook for per-character "${tpl.name}" (no chat-bound book, override unresolved) — skipping quietly.`);
+                    continue;
+                }
                 const resolved = await resolveAllPerCharacterLorebooks(chars, tplLoresForChar[0], tpl);
                 for (const { charTarget, lore: charLore } of resolved) {
                     workItems.push({ tpl, charTarget, charLore });
@@ -1687,6 +1723,10 @@ export async function runAfterMemory(compiledScene, profile = null) {
                     const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
                     // Actor name is in scope here, so {{char}} resolves to the actor
                     const tplLores = await resolveLorebooksForTemplate(tpl, lore, charTarget?.name || null);
+                    if (!charLore?.data && tplLores.length === 0) {
+                        console.debug(`${MODULE_NAME}: SidePrompts: no target lorebook for "${displayName}" (no chat-bound book, override unresolved) — skipping quietly.`);
+                        return { ok: false, skipped: true, displayName };
+                    }
                     const perCharTitleHint = charTarget
                         ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
                         : null;
@@ -1748,7 +1788,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
             const succeededNames = [];
             for (const r of llmResults) {
                 if (!r.ok) {
-                    if (r.cancelled) continue;
+                    if (r.cancelled || r.skipped) continue;
                     results.push({ name: r.displayName || 'unknown', ok: false, error: r.error });
                     continue;
                 }
@@ -1834,7 +1874,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         if (!lorebookGroups.has(charLbName)) lorebookGroups.set(charLbName, []);
                         lorebookGroups.get(charLbName).push(item);
                     } else {
-                        const targets = item._tplLores || [{ name: lore.name }];
+                        const targets = item._tplLores || (lore ? [{ name: lore.name }] : []);
                         for (const target of targets) {
                             if (!lorebookGroups.has(target.name)) lorebookGroups.set(target.name, []);
                             lorebookGroups.get(target.name).push(item);
@@ -1849,7 +1889,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                         throwIfStmbStopped(runEpoch);
                         const fresh = await loadWorldInfo(lorebookName);
                         await upsertLorebookEntriesBatch(lorebookName, fresh, groupItems, { refreshEditor });
-                        if (lorebookName === lore.name) lore.data = fresh;
+                        if (lore && lorebookName === lore.name) lore.data = fresh;
                     } catch (saveErr) {
                         if (isStmbStopError(saveErr)) return;
                         console.error(`${MODULE_NAME}: Wave save failed for lorebook "${lorebookName}":`, saveErr);
