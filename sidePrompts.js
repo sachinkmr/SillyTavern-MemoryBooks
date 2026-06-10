@@ -18,6 +18,7 @@ import { applySidePromptMacros, collectTemplateRuntimeMacros, extractMacroTokens
 import { tr } from './i18nHelpers.js';
 import { validateLorebookRequirement } from './lorebookValidation.js';
 import { SIDE_PROMPT } from './constants.js';
+import { isPresentInWindow, filterCompiledSceneForCharacter } from './witnessScope.js';
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
@@ -1154,7 +1155,15 @@ export async function evaluateTrackers() {
                     console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
                     continue;
                 }
-                charWorkItems = await resolveAllPerCharacterLorebooks(rawChars, tplLores[0]);
+                let gatedChars = rawChars;
+                if (tpl?.settings?.presenceGate?.enabled) {
+                    const win = Math.max(1, Number(tpl.settings.presenceGate.lastNMessages ?? threshold));
+                    const gateStart = Math.max(0, currentLast - win + 1);
+                    gatedChars = rawChars.filter(c => isPresentInWindow(c.name, chat, gateStart, currentLast));
+                    console.log(`${MODULE_NAME}: presenceGate "${tpl.name}" kept ${gatedChars.length}/${rawChars.length} characters (window ${gateStart}-${currentLast}): ${gatedChars.map(c => c.name).join(', ') || '(none)'}`);
+                    if (gatedChars.length === 0) continue; // nobody present — skip template this tick
+                }
+                charWorkItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0]);
                 if (charWorkItems.length === 0) continue;
             } else {
                 charWorkItems = [{ charTarget: null, lore: null }];
@@ -1661,10 +1670,14 @@ export async function runSidePrompt(args, options = {}) {
 
         // Compile window
         let compiled = null;
+        let gateStart = 0;          // compile-window bounds, reused by presenceGate below
+        let gateEnd = currentLast;
         if (lastN) {
             // last:N — take the last N messages regardless of checkpoint
             const n = Math.max(1, Math.min(lastN, currentLast + 1));
             const lastNStart = currentLast - n + 1;
+            gateStart = lastNStart;
+            gateEnd = currentLast;
             try {
                 compiled = await compileRange(lastNStart, currentLast);
             } catch (err) {
@@ -1684,6 +1697,8 @@ export async function runSidePrompt(args, options = {}) {
                 toastr.error(translate('Invalid message range for /sideprompt', 'STMemoryBooks_Toast_InvalidMessageRange'), 'STMemoryBooks');
                 return '';
             }
+            gateStart = start;
+            gateEnd = end;
             try {
                 compiled = await compileRange(start, end);
             } catch (err) {
@@ -1702,6 +1717,8 @@ export async function runSidePrompt(args, options = {}) {
             }
             const autoStart = Math.max(0, currentLast - defaultN + 1);
             console.log(`${MODULE_NAME}: Manual run — no range given, using last ${defaultN} messages (${autoStart}→${currentLast})`);
+            gateStart = autoStart;
+            gateEnd = currentLast;
 
             try {
                 compiled = await compileRange(autoStart, currentLast);
@@ -1723,7 +1740,16 @@ export async function runSidePrompt(args, options = {}) {
                 toastr.error(translate('No characters found for per-character side prompt.', 'STMemoryBooks_Toast_NoCharactersFound'), 'STMemoryBooks');
                 return '';
             }
-            charWorkItems = await resolveAllPerCharacterLorebooks(rawChars, tplLores[0]);
+            let gatedChars = rawChars;
+            if (tpl?.settings?.presenceGate?.enabled) {
+                gatedChars = rawChars.filter(c => isPresentInWindow(c.name, chat, gateStart, gateEnd));
+                console.log(`${MODULE_NAME}: presenceGate "${tpl.name}" kept ${gatedChars.length}/${rawChars.length} characters (window ${gateStart}-${gateEnd}): ${gatedChars.map(c => c.name).join(', ') || '(none)'}`);
+                if (gatedChars.length === 0) {
+                    toastr.info(translate('No actors present in the compiled window for this side prompt.', 'STMemoryBooks_Toast_NoActorsPresent'), 'STMemoryBooks');
+                    return '';
+                }
+            }
+            charWorkItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0]);
             dbg('Characters with resolved lorebooks:', charWorkItems.map(w => ({ name: w.charTarget.name, lorebook: w.lore.name })));
             if (charWorkItems.length === 0) {
                 toastr.warning(translate('All characters skipped — no lorebooks selected.', 'STMemoryBooks_Toast_AllCharactersSkipped'), 'STMemoryBooks');
