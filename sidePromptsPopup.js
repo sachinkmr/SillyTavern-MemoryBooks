@@ -307,6 +307,9 @@ async function openEditTemplate(parentPopup, key) {
         const lbEntryTitleOverride = String(lb.entryTitleOverride || '');
         const lbEntryKeywords = String(lb.entryKeywords || '');
         const perCharacterEnabled = !!s.perCharacter;
+        const presenceGateEnabled = !!s.presenceGate?.enabled;
+        const witnessFilterEnabled = !!s.witnessFilter?.enabled;
+        const injectOnlyCharEnabled = !!s.injectOnlyForCharacter?.enabled;
 
         const perCharacterHtml = `
             <div class="world_entry_form_control">
@@ -315,6 +318,24 @@ async function openEditTemplate(parentPopup, key) {
                     <span>${escapeHtml(translate('Per-character mode', 'STMemoryBooks_PerCharacterMode'))}</span>
                 </label>
                 <small class="opacity50p">${escapeHtml(translate('Runs a separate LLM call for each character in the chat. Each character gets its own lorebook entry with {{charname}} resolved to their name. In group chats, all group members are processed.', 'STMemoryBooks_PerCharacterModeDesc'))}</small>
+            </div>
+            <div class="world_entry_form_control">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-sp-edit-presence-gate" ${presenceGateEnabled ? 'checked' : ''}>
+                    <span>${escapeHtml(translate('Only for actors present in last N messages', 'STMemoryBooks_PresenceGate'))}</span>
+                </label>
+                <div style="margin-left:28px;">
+                    <input type="number" id="stmb-sp-edit-presence-window" class="text_pole" min="1" step="1" placeholder="${escapeHtml(translate('N (default: interval)', 'STMemoryBooks_PresenceGateWindowPlaceholder'))}" value="${s.presenceGate?.lastNMessages ?? ''}">
+                </div>
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-sp-edit-witness-filter" ${witnessFilterEnabled ? 'checked' : ''}>
+                    <span>${escapeHtml(translate('Witness-filter the window per actor', 'STMemoryBooks_WitnessFilter'))}</span>
+                </label>
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-sp-edit-inject-only-char" ${injectOnlyCharEnabled ? 'checked' : ''}>
+                    <span>${escapeHtml(translate('Inject entry only for this actor\'s drafts', 'STMemoryBooks_InjectOnlyForCharacter'))}</span>
+                </label>
+                <small class="opacity50p">${escapeHtml(translate('Actor scoping for per-character mode. Uses witness stamps when available; unstamped messages count as seen by everyone.', 'STMemoryBooks_ActorScopingDesc'))}</small>
             </div>
         `;
 
@@ -647,6 +668,13 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
             // Per-character mode
             settings.perCharacter = !!dlg.querySelector('#stmb-sp-edit-per-character')?.checked;
 
+            // Actor scoping (presence gate / witness filter / inject-only-for-character)
+            const pgEnabled = !!dlg.querySelector('#stmb-sp-edit-presence-gate')?.checked;
+            const pgN = parseInt(dlg.querySelector('#stmb-sp-edit-presence-window')?.value, 10);
+            settings.presenceGate = { enabled: pgEnabled, ...(Number.isFinite(pgN) && pgN > 0 ? { lastNMessages: pgN } : {}) };
+            settings.witnessFilter = { enabled: !!dlg.querySelector('#stmb-sp-edit-witness-filter')?.checked };
+            settings.injectOnlyForCharacter = { enabled: !!dlg.querySelector('#stmb-sp-edit-inject-only-char')?.checked };
+
             await upsertTemplate({
                 key: tpl.key,
                 name: newName,
@@ -859,6 +887,24 @@ async function openNewTemplate(parentPopup) {
             </label>
             <small class="opacity50p">${escapeHtml(translate('Runs a separate LLM call for each character in the chat. Each character gets its own lorebook entry with {{charname}} resolved to their name. In group chats, all group members are processed.', 'STMemoryBooks_PerCharacterModeDesc'))}</small>
         </div>
+        <div class="world_entry_form_control">
+            <label class="checkbox_label">
+                <input type="checkbox" id="stmb-sp-new-presence-gate">
+                <span>${escapeHtml(translate('Only for actors present in last N messages', 'STMemoryBooks_PresenceGate'))}</span>
+            </label>
+            <div style="margin-left:28px;">
+                <input type="number" id="stmb-sp-new-presence-window" class="text_pole" min="1" step="1" placeholder="${escapeHtml(translate('N (default: interval)', 'STMemoryBooks_PresenceGateWindowPlaceholder'))}" value="">
+            </div>
+            <label class="checkbox_label">
+                <input type="checkbox" id="stmb-sp-new-witness-filter">
+                <span>${escapeHtml(translate('Witness-filter the window per actor', 'STMemoryBooks_WitnessFilter'))}</span>
+            </label>
+            <label class="checkbox_label">
+                <input type="checkbox" id="stmb-sp-new-inject-only-char">
+                <span>${escapeHtml(translate('Inject entry only for this actor\'s drafts', 'STMemoryBooks_InjectOnlyForCharacter'))}</span>
+            </label>
+            <small class="opacity50p">${escapeHtml(translate('Actor scoping for per-character mode. Uses witness stamps when available; unstamped messages count as seen by everyone.', 'STMemoryBooks_ActorScopingDesc'))}</small>
+        </div>
     `;
 
     const newPopup = new Popup(DOMPurify.sanitize(content), POPUP_TYPE.TEXT, '', {
@@ -1005,6 +1051,13 @@ settings.previousMemoriesCount = Number.isFinite(prevCountRaw) && prevCountRaw >
 
         // Per-character mode
         settings.perCharacter = !!dlg.querySelector('#stmb-sp-new-per-character')?.checked;
+
+        // Actor scoping (presence gate / witness filter / inject-only-for-character)
+        const pgEnabled = !!dlg.querySelector('#stmb-sp-new-presence-gate')?.checked;
+        const pgN = parseInt(dlg.querySelector('#stmb-sp-new-presence-window')?.value, 10);
+        settings.presenceGate = { enabled: pgEnabled, ...(Number.isFinite(pgN) && pgN > 0 ? { lastNMessages: pgN } : {}) };
+        settings.witnessFilter = { enabled: !!dlg.querySelector('#stmb-sp-new-witness-filter')?.checked };
+        settings.injectOnlyForCharacter = { enabled: !!dlg.querySelector('#stmb-sp-new-inject-only-char')?.checked };
 
         try {
             await upsertTemplate({ name, enabled, prompt, responseFormat, settings, triggers });
