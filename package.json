@@ -2,6 +2,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run build.ts",
+    "test": "node --test tests/",
     "install-hooks": "bun bin/install-hooks.js",
     "postinstall": "bun bin/postinstall.js"
   },
