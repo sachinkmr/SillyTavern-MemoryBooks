@@ -79,24 +79,30 @@ Each summary must:
 
 KEYWORD INSTRUCTIONS — READ CAREFULLY:
 
-Generate 15-25 retrieval keywords for each {{stmbtier}} summary. These keywords are stored in a lorebook entry and trigger when matched in future roleplay messages.
+Generate 15-25 retrieval keywords for each {{stmbtier}} summary using a DUAL-LAYER strategy. Keywords serve two retrieval systems simultaneously: (1) substring matching against chat messages, and (2) vector/semantic similarity search. You must include keywords that work for BOTH.
 
 PURPOSE: A {{stmbtier}} covers a broader narrative span than individual {{stmbchildtier}} entries. Your keywords must capture the {{stmbtier}}'s distinct narrative identity — not rehash every detail from each child entry. Ask: "What is this {{stmbtier}} ABOUT that no other {{stmbtier}} is about?"
 
-Generate keywords in three tiers:
+LAYER 1 — SIMPLE TRIGGER WORDS (7-12 keywords):
+Short, concrete, 1-2 word keywords that characters would ACTUALLY TYPE in future messages when referencing events in this {{stmbtier}}. These trigger substring matching.
+- Must be 1-2 words maximum
+- Must be concrete nouns, verbs, or short phrases that naturally appear in conversation
+- Since a {{stmbtier}} covers multiple scenes, include the most important simple words from across its span
+- Examples: "date", "roti", "fire and ice", "GPS tracker", "parking lot", "blue balls", "condom"
+- It is OK if a simple keyword appears in 2-3 other entries — substring matches are ranked by vector similarity. But avoid keywords that would match 5+ entries.
 
-SIGNATURE KEYWORDS (4-7): The defining phrases, metaphors, coined terms, turning-point events, or named concepts that characterize THIS {{stmbtier}}. These should be things a character would reference when recalling this period of the story. If a metaphor or phrase was introduced and became important across multiple {{stmbchildtier}} entries, it belongs here. Examples: "the circle rules", "load-bearing wall metaphor", "forget my name", "the excavation talk".
-
-DISTINCTIVE DETAILS (5-10): Specific objects, actions, locations, or sensory details that are prominent within this {{stmbtier}}'s span and would help retrieve it. Elevate details that recur meaningfully across multiple {{stmbchildtier}} entries within this {{stmbtier}} — these are the {{stmbtier}}'s motifs. But skip generic environmental details (headboard, lamplight, bedsheets) that appear in every scene.
-
-TEMPORAL ANCHORS (2-4): Time markers, date references, or period descriptors that pin this {{stmbtier}} to its place in the timeline. Examples: "Day-3-night", "March-13", "parental-visit-week", "post-confession-morning".
+LAYER 2 — SIGNATURE PHRASES (5-10 keywords):
+Longer, descriptive phrases (2-5 words) that capture the {{stmbtier}}'s unique identity for semantic/vector search.
+- Defining quotes, metaphors, coined terms, turning-point events unique to this {{stmbtier}}
+- Details that recur as motifs across multiple {{stmbchildtier}} entries within this {{stmbtier}}
+- Temporal anchors that pin this {{stmbtier}} to its timeline position
+- Examples: "load-bearing wall metaphor", "forget my name challenge", "kitchen floor reconciliation", "parental-visit-week"
 
 WHAT TO AVOID:
 - Character names ({{char}}, {{user}})
 - Abstract emotions or themes (intimacy, vulnerability, trust, cowardice, control, silence, warmth, surrender)
 - Generic recurring details that appear across most {{stmbtier}} entries in this story
-- Compound micro-summaries or narrative descriptions as keywords
-- Keywords shorter than 2 characters
+- DO NOT make all keywords compound phrases — if every keyword is 3+ words, none will substring-match actual chat messages. At least half your keywords must be 1-2 words.
 
 DEDUPLICATION: Each {{stmbchildtier}} entry includes its own keywords. When the {{stmbtier}} replaces its children in the lorebook, those child keywords stop firing. Your {{stmbtier}} keywords must COVER the important retrievable concepts from across all children — but at a higher level. Do not simply union all child keywords (that creates noise). Instead, identify which child keywords are truly important for future retrieval and promote them. Drop child keywords that are generic or scene-specific minutiae that don't matter at the {{stmbtier}} level.
 

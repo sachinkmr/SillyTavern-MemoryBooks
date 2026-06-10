@@ -51,26 +51,28 @@ Resulting decisions, emotional states, consequences, unresolved threads, and any
 
 Ensure no important information is lost. [OOC] conversation/interaction is not useful for summaries and should be ignored and excluded.
 
-For the keywords field, generate 10-20 retrieval keywords following these rules:
+For the keywords field, generate 10-20 retrieval keywords using a DUAL-LAYER strategy. Keywords serve two retrieval systems simultaneously: (1) substring matching against chat messages, and (2) vector/semantic similarity search. You must include keywords that work for BOTH.
 
-PURPOSE: Each keyword is a retrieval trigger stored in a lorebook entry. When this keyword appears in future roleplay messages, this memory activates and is injected into context. Ask yourself for each keyword: "If this word appears in a future message, should THIS specific scene activate — and not dozens of others?"
+LAYER 1 — SIMPLE TRIGGER WORDS (5-8 keywords):
+Short, concrete, 1-2 word keywords that characters would ACTUALLY TYPE in future messages when referencing this scene. These trigger substring matching.
+- Must be 1-2 words maximum
+- Must be concrete nouns, verbs, or short phrases that naturally appear in conversation
+- Ask: "Would a character plausibly type this word when referencing this scene?"
+- Examples: "date", "roti", "fire and ice", "GPS tracker", "parking lot", "blue balls", "condom"
+- It is OK if a simple keyword appears in 2-3 other entries — substring matches are ranked by vector similarity, so the most relevant entry wins. But avoid keywords that would match 5+ entries.
 
-UNIQUENESS TEST: Before including any keyword, ask: "Could this keyword match 3 or more other scenes in this story?" If yes, it is too generic — drop it or make it more specific. A keyword that fires everywhere is worse than no keyword at all.
-
-Generate keywords in three tiers:
-
-SIGNATURE KEYWORDS (3-5): The highest-value tier. These are phrases, metaphors, distinctive quotes, named events, or coined terms that are UNIQUE to this scene. If a character says something memorable or a concept is introduced for the first time, capture it. Examples of good signature keywords: "load-bearing wall", "forget my name challenge", "no more performances", "pack for forever".
-
-DISTINCTIVE DETAILS (4-8): Specific physical objects, actions, or sensory details that are notable IN THIS SCENE — not recurring backdrop. Apply this filter: if this detail appears in most scenes of this story, skip it. A "headboard" in every bedroom scene is noise; a "plastic stool in the shower" or "cardamom tea tray" is signal because it pins a specific moment.
-
-ANCHORING CONTEXT (2-4): Location or time markers ONLY when they help distinguish this scene from others. If the story takes place mostly in one location, that location name is NOT a useful keyword. Include locations and times only when they are unusual or first-time for the story.
+LAYER 2 — SIGNATURE PHRASES (5-8 keywords):
+Longer, descriptive phrases (2-5 words) that capture the scene's unique identity for semantic/vector search.
+- Distinctive quotes, metaphors, coined terms, or named events unique to this scene
+- Scene-specific details that pin this moment
+- Examples: "load-bearing wall metaphor", "never experienced a date", "kitchen floor reconciliation", "first roti puffs perfectly"
 
 WHAT TO AVOID:
 - Character names ({{char}}, {{user}}) — these match everything
-- Abstract emotions or themes (intimacy, vulnerability, trust, cowardice, control, silence, performance, practice, sanctuary, warmth, surrender, exhaustion)
-- Generic body parts (neck, wrist, collarbone, thigh, pulse, sternum) — unless they are modified to be scene-specific (e.g., "bite mark scar below ribcage" is specific; "collarbone" alone is not)
-- Recurring environmental details that appear in most scenes (mattress, lamplight, bedsheets, headboard, bedroom, living room, scent, whisper, kiss)
-- Compound micro-summaries ("rough sex negotiation", "ankle healing countdown") — keywords should be 1-3 words
+- Abstract emotions or themes (intimacy, vulnerability, trust, cowardice, control, silence, warmth, surrender, exhaustion)
+- Generic body parts (neck, wrist, collarbone, thigh, pulse, sternum) — unless modified to be scene-specific
+- Recurring environmental details that appear in most scenes (mattress, lamplight, bedsheets, headboard, bedroom, living room)
+- DO NOT make all keywords compound phrases — if every keyword is 3+ words, none will substring-match actual chat messages. At least half your keywords must be 1-2 words.
 
 DEDUPLICATION: If PREVIOUS SCENE CONTEXT is provided above, scan the keywords listed there. Do NOT reuse any keyword that already appears in a previous entry, unless this scene gives that keyword a fundamentally different meaning. Instead, find what makes THIS scene different from those previous scenes and keyword THAT.
 
