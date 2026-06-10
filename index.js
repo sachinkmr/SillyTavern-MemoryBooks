@@ -58,6 +58,7 @@ import {
   importProfiles,
   validateAndFixProfiles,
 } from "./profileManager.js";
+import { getProfileSafe } from "./profileResolver.js";
 import {
   getSceneMarkers,
   setSceneRange,
@@ -1240,7 +1241,13 @@ function validateSettings(settings) {
     settings.defaultProfile = 0;
   }
 
-  if (settings.defaultProfile >= settings.profiles.length) {
+  // Repair stale stored index: missing key (undefined), NaN, negative, or
+  // past the end all resolve to profiles[<bad>] === undefined downstream.
+  if (
+    !Number.isInteger(settings.defaultProfile) ||
+    settings.defaultProfile < 0 ||
+    settings.defaultProfile >= settings.profiles.length
+  ) {
     settings.defaultProfile = 0;
   }
 
@@ -1466,7 +1473,7 @@ async function showAndGetMemorySettings(
     }
   } else {
     // Use default profile without confirmation
-    const selectedProfile = settings.profiles[settings.defaultProfile];
+    const selectedProfile = getProfileSafe(settings, settings.defaultProfile);
     confirmationResult = {
       confirmed: true,
       profileSettings: {
@@ -4999,7 +5006,7 @@ async function showSettingsPopup() {
   } catch (e) {
     console.warn("STMemoryBooks: Failed to enumerate Regex scripts for UI", e);
   }
-  const selectedProfile = settings.profiles[settings.defaultProfile];
+  const selectedProfile = getProfileSafe(settings, settings.defaultProfile);
   const sceneMarkers = getSceneMarkers();
 
   // Get current lorebook information
@@ -5084,7 +5091,7 @@ async function showSettingsPopup() {
     selectedProfile: {
       ...selectedProfile,
       connection:
-        selectedProfile.useDynamicSTSettings ||
+        selectedProfile?.useDynamicSTSettings ||
         selectedProfile?.connection?.api === "current_st"
           ? (() => {
               const currentApiInfo = getCurrentApiInfo();
@@ -5899,7 +5906,7 @@ async function refreshPopupContent() {
     persistMainPopupSettings(currentPopupInstance.dlg);
     const settings = initializeSettings();
     const sceneData = await getSceneData();
-    const selectedProfile = settings.profiles[settings.defaultProfile];
+    const selectedProfile = getProfileSafe(settings, settings.defaultProfile);
     const sceneMarkers = getSceneMarkers();
 
     // Get current lorebook information
@@ -5981,7 +5988,7 @@ async function refreshPopupContent() {
       selectedProfile: {
         ...selectedProfile,
         connection:
-          selectedProfile.useDynamicSTSettings ||
+          selectedProfile?.useDynamicSTSettings ||
           selectedProfile?.connection?.api === "current_st"
             ? (() => {
                 const currentApiInfo = getCurrentApiInfo();

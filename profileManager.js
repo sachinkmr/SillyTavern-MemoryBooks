@@ -406,6 +406,13 @@ export async function deleteProfile(settings, profileIndex, refreshCallback) {
 
     const profile = settings.profiles[profileIndex];
 
+    // Stale/out-of-range index: nothing to delete (do NOT fall back to
+    // another profile here — that would delete the wrong one).
+    if (!profile) {
+        console.error(`${MODULE_NAME}: No profile found at index ${profileIndex}`);
+        return;
+    }
+
     // Prevent deletion of the required default profile
     if (profile?.isBuiltinCurrentST) {
         toastr.error(translate('Cannot delete the "Current SillyTavern Settings" profile - it is required for the extension to work', 'STMemoryBooks_CannotDeleteDefaultProfile'), 'STMemoryBooks');
@@ -980,7 +987,14 @@ export function validateAndFixProfiles(settings) {
         }
     });
 
-    if (settings.defaultProfile >= settings.profiles.length) {
+    // Repair stale stored index: a missing key (undefined) or NaN fails the
+    // plain `>=` comparison and used to slip through, leaving
+    // profiles[undefined] dereferences to crash the UI.
+    if (
+        !Number.isInteger(settings.defaultProfile) ||
+        settings.defaultProfile < 0 ||
+        settings.defaultProfile >= settings.profiles.length
+    ) {
         settings.defaultProfile = 0;
         fixes.push('Fixed invalid default profile index');
     }
