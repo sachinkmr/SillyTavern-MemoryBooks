@@ -303,11 +303,27 @@ Side prompts support a **per-character mode** that runs a separate LLM call for 
 - `{{charname}}` is automatically resolved to each character's name in prompts and response formats
 - Character names are auto-added to entry keywords
 - In group chats, all group members are processed; in single chats, the one character is processed
-- Entries are written to each character's **own lorebook** (from `character.data.extensions.world`). If none is found, STMB prompts you to select or create one. The choice is persisted so you're only asked once per character.
+- Entries are written to each character's **own lorebook** (from `character.data.extensions.world`). If none is found, STMB prompts you to select or create one. The choice is persisted so you're only asked once per character. **Exception:** if the template's lorebook override is enabled (see below), the override takes priority and all actors' entries route to the override book(s) instead.
 
 To enable: Edit a side prompt template and check **"Per-character mode"** at the bottom of the dialog.
 
 A ready-to-use per-character context tracker template is available at [`resources/context-tracker-template.md`](resources/context-tracker-template.md).
+
+#### **Lorebook Override & Name Macros:**
+Each side prompt template can route its output to specific lorebook(s) instead of the chat-bound default via `settings.lorebookOverride = { enabled, lorebookNames[] }` (UI: **"Override lorebook(s) for this side prompt"** in the template editor).
+
+The `lorebookNames` strings support two macros, resolved at run time **before** the names are validated against existing lorebooks:
+- `{{group}}` — the current **group chat's name** (e.g. `🏠 TWW2`, emoji and all). This is custom STMB resolution, **not** SillyTavern's native `{{group}}` macro (which expands to a member-name list). In a solo (non-group) chat, `{{group}}` falls back to the current character's name.
+- `{{char}}` — inside per-character mode, each **actor's** name (the override is re-resolved per actor, so `My World - {{char}}` routes each actor to their own book); outside per-character mode, the card character's name.
+
+Example: `{{group}} - Actors` in the group chat `🏠 TWW2` resolves to lorebook `🏠 TWW2 - Actors`.
+
+Semantics and fallback:
+- Macro names are case-insensitive and tolerate inner whitespace (`{{ Group }}` works).
+- If a resolved name does not match an existing lorebook, STMB logs a console warning and **falls back to the default routing behavior** (chat-bound lorebook, or per-character routing in per-character mode). Lorebooks are never auto-created by the override.
+- If a macro cannot be resolved (no group and no character context), the token is left literal, which intentionally fails validation and triggers the same fallback.
+- In per-character mode an enabled override takes **priority** over per-character lorebook routing (character's own book / persisted mapping).
+- Macro names are preserved when you edit the template in the UI (shown as ✨ rows in the lorebook list).
 
 #### **Character Lorebook Mappings:**
 At the bottom of the Trackers & Side Prompts dialog, the **Character Lorebook Mappings** section shows which lorebook each character is mapped to. These mappings are created automatically when you first run a per-character side prompt for a character without an attached lorebook. You can edit or clear them at any time.

@@ -256,12 +256,21 @@ async function openEditTemplate(parentPopup, key) {
         const lbOverrideEnabled = !!(s.lorebookOverride?.enabled);
         const lbOverrideNames = Array.isArray(s.lorebookOverride?.lorebookNames) ? s.lorebookOverride.lorebookNames : [];
         const availableLorebooks = Array.isArray(world_names) ? world_names : [];
-        const lorebookCheckboxes = availableLorebooks.map(n =>
+        // Saved names not in world_names (e.g. {{group}}/{{char}} macro names) must
+        // survive an edit round-trip: render them as checked rows so save keeps them.
+        const customOverrideNames = lbOverrideNames.filter(n => typeof n === 'string' && n.trim() && !availableLorebooks.includes(n));
+        const customCheckboxes = customOverrideNames.map(n =>
+            `<label style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">
+                <input type="checkbox" name="stmb-sp-edit-lb-override-book" value="${escapeHtml(n)}" checked style="flex-shrink: 0;">
+                <span style="overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(translate('Macro/custom lorebook name — resolved at run time', 'STMemoryBooks_MacroLorebookName'))}">${escapeHtml(n)} ✨</span>
+            </label>`
+        ).join('');
+        const lorebookCheckboxes = (customCheckboxes + availableLorebooks.map(n =>
             `<label style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">
                 <input type="checkbox" name="stmb-sp-edit-lb-override-book" value="${escapeHtml(n)}" ${lbOverrideNames.includes(n) ? 'checked' : ''} style="flex-shrink: 0;">
                 <span style="overflow: hidden; text-overflow: ellipsis;">${escapeHtml(n)}</span>
             </label>`
-        ).join('') || `<small class="opacity70p">${escapeHtml(translate('No lorebooks available.', 'STMemoryBooks_NoLorebooksAvailable'))}</small>`;
+        ).join('')) || `<small class="opacity70p">${escapeHtml(translate('No lorebooks available.', 'STMemoryBooks_NoLorebooksAvailable'))}</small>`;
         const lorebookOverrideHtml = `
             <div class="world_entry_form_control">
                 <label class="checkbox_label">

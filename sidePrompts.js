@@ -20,6 +20,7 @@ import { validateLorebookRequirement } from './lorebookValidation.js';
 import { SIDE_PROMPT } from './constants.js';
 import { isPresentInWindow, filterCompiledSceneForCharacter } from './witnessScope.js';
 import { runBounded, resolveParallelLimit } from './concurrency.js';
+import { resolveLorebookNameList } from './lorebookNameMacros.js';
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
@@ -214,13 +215,31 @@ async function resolvePerCharacterLorebook(charTarget, defaultLore) {
  * Resolve lorebooks for all per-character targets upfront (before LLM calls).
  * Prompts the user for any character missing a lorebook.
  * Returns only characters with a resolved lorebook; skipped characters are excluded.
+ *
+ * When the template's lorebookOverride is enabled, it takes priority over
+ * per-character routing: the override names are macro-resolved PER ACTOR
+ * ({{char}} = this actor's name, {{group}} = group chat name) and the first
+ * resolved book becomes the actor's write target. If the override resolves to
+ * no existing lorebook, a console warning is logged (inside
+ * resolveOverrideLorebooks) and routing falls back to the existing behavior
+ * (character's own lorebook / persisted mapping / user prompt).
+ *
  * @param {Array<{ name: string, avatar: string, lorebook: string|null }>} charTargets
  * @param {{ name: string, data: any }} defaultLore
+ * @param {object|null} tpl - Side prompt template (for lorebookOverride priority)
  * @returns {Promise<Array<{ charTarget: object, lore: { name: string, data: any } }>>}
  */
-async function resolveAllPerCharacterLorebooks(charTargets, defaultLore) {
+async function resolveAllPerCharacterLorebooks(charTargets, defaultLore, tpl = null) {
     const resolved = [];
     for (const charTarget of charTargets) {
+        if (tpl?.settings?.lorebookOverride?.enabled) {
+            const overrideLores = await resolveOverrideLorebooks(tpl, defaultLore, charTarget.name);
+            if (overrideLores?.length) {
+                resolved.push({ charTarget, lore: overrideLores[0] });
+                continue;
+            }
+            // fall through: warning already logged; use default per-character routing
+        }
         const lore = await resolvePerCharacterLorebook(charTarget, defaultLore);
         if (lore) {
             resolved.push({ charTarget, lore });
@@ -382,31 +401,75 @@ async function requireLorebookStrict() {
 }
 
 /**
- * Resolve the list of target lorebooks for a side prompt template.
- * Returns an array of { name, data } objects.
+ * Current group chat's NAME (e.g. "🏠 TWW2"), or null in a solo chat.
+ * Used for the custom {{group}} lorebook-name macro — intentionally NOT
+ * SillyTavern's native {{group}} macro (which expands to a member list).
+ * @returns {string|null}
+ */
+function getCurrentGroupName() {
+    if (!selected_group) return null;
+    const group = groups?.find(x => x.id === selected_group);
+    return group?.name || null;
+}
+
+/**
+ * Current card character's name (solo chats), best-effort in group chats.
+ * @returns {string|null}
+ */
+function getCurrentCardCharacterName() {
+    if (this_chid !== undefined && characters?.[this_chid]?.name) {
+        return characters[this_chid].name;
+    }
+    const n = String(name2 || '').trim();
+    return n || null;
+}
+
+/**
+ * Context for {{group}}/{{char}} macros in lorebookOverride names.
+ * @param {string|null} charName - Actor name when inside the per-character loop
+ */
+function buildLorebookNameMacroContext(charName = null) {
+    return {
+        groupName: getCurrentGroupName(),
+        charName: charName || getCurrentCardCharacterName(),
+    };
+}
+
+/**
+ * Resolve the lorebookOverride of a template into loaded lorebooks, or null
+ * when the override is disabled/unusable (caller decides the fallback).
  *
- * If `tpl.settings.lorebookOverride` is enabled and contains valid lorebook names,
- * each lorebook is loaded and returned. If the override name matches the default
- * lorebook it is reused without a redundant fetch. On any failure (all names invalid,
- * load errors) the function falls back to [defaultLore] and logs a warning.
- *
- * If the override is disabled, [defaultLore] is returned immediately (single-element
- * array so all callers can uniformly iterate).
+ * {{group}}/{{char}} macros in lorebookNames are resolved BEFORE the
+ * existence-validation against world_names. A resolved name that does not
+ * match an existing lorebook logs a console warning and is skipped (no
+ * auto-creation); if no name survives, null is returned so the caller falls
+ * back to its existing default routing behavior.
  *
  * @param {object} tpl - Side prompt template object
- * @param {{ name: string, data: any }} defaultLore - Default lorebook from requireLorebookStrict
- * @returns {Promise<Array<{ name: string, data: any }>>}
+ * @param {{ name: string, data: any }} defaultLore - Default lorebook (reused when an override name matches it)
+ * @param {string|null} charName - Actor name for {{char}} when inside the per-character loop
+ * @returns {Promise<Array<{ name: string, data: any }>|null>}
  */
-async function resolveLorebooksForTemplate(tpl, defaultLore) {
+async function resolveOverrideLorebooks(tpl, defaultLore, charName = null) {
     const override = tpl?.settings?.lorebookOverride;
     if (!override?.enabled || !Array.isArray(override.lorebookNames) || override.lorebookNames.length === 0) {
-        return [defaultLore];
+        return null;
     }
 
-    const validNames = [...new Set(override.lorebookNames.filter(n => typeof n === 'string' && n.trim() && world_names?.includes(n)))];
+    // Macro resolution MUST precede existence-validation
+    const resolvedNames = resolveLorebookNameList(override.lorebookNames, buildLorebookNameMacroContext(charName));
+
+    const validNames = [];
+    for (const name of resolvedNames) {
+        if (world_names?.includes(name)) {
+            validNames.push(name);
+        } else {
+            console.warn(`${MODULE_NAME}: lorebookOverride for "${tpl.name}": resolved lorebook name "${name}" does not exist; skipping (no auto-create).`);
+        }
+    }
     if (validNames.length === 0) {
-        console.warn(`${MODULE_NAME}: lorebookOverride enabled for "${tpl.name}" but no valid lorebook names found; falling back to default.`);
-        return [defaultLore];
+        console.warn(`${MODULE_NAME}: lorebookOverride enabled for "${tpl.name}" but no valid lorebook names found; falling back to default routing.`);
+        return null;
     }
 
     const results = [];
@@ -426,11 +489,32 @@ async function resolveLorebooksForTemplate(tpl, defaultLore) {
     }
 
     if (results.length === 0) {
-        console.warn(`${MODULE_NAME}: All override lorebooks failed to load for "${tpl.name}"; falling back to default.`);
-        return [defaultLore];
+        console.warn(`${MODULE_NAME}: All override lorebooks failed to load for "${tpl.name}"; falling back to default routing.`);
+        return null;
     }
 
     return results;
+}
+
+/**
+ * Resolve the list of target lorebooks for a side prompt template.
+ * Returns an array of { name, data } objects.
+ *
+ * If `tpl.settings.lorebookOverride` is enabled and contains valid lorebook names
+ * (after {{group}}/{{char}} macro resolution — see resolveOverrideLorebooks),
+ * each lorebook is loaded and returned. On any failure (all names invalid,
+ * load errors) the function falls back to [defaultLore] and logs a warning.
+ *
+ * If the override is disabled, [defaultLore] is returned immediately (single-element
+ * array so all callers can uniformly iterate).
+ *
+ * @param {object} tpl - Side prompt template object
+ * @param {{ name: string, data: any }} defaultLore - Default lorebook from requireLorebookStrict
+ * @param {string|null} charName - Actor name for {{char}} when known (per-character loop)
+ * @returns {Promise<Array<{ name: string, data: any }>>}
+ */
+async function resolveLorebooksForTemplate(tpl, defaultLore, charName = null) {
+    return (await resolveOverrideLorebooks(tpl, defaultLore, charName)) || [defaultLore];
 }
 
 /**
@@ -1174,7 +1258,7 @@ export async function evaluateTrackers() {
                     console.log(`${MODULE_NAME}: presenceGate "${tpl.name}" kept ${gatedChars.length}/${rawChars.length} characters (window ${gateStart}-${currentLast}): ${gatedChars.map(c => c.name).join(', ') || '(none)'}`);
                     if (gatedChars.length === 0) continue; // nobody present — skip template this tick
                 }
-                charWorkItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0]);
+                charWorkItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0], tpl);
                 if (charWorkItems.length === 0) continue;
             } else {
                 charWorkItems = [{ charTarget: null, lore: null }];
@@ -1579,7 +1663,7 @@ export async function runAfterMemory(compiledScene, profile = null) {
                     continue;
                 }
                 const tplLoresForChar = await resolveLorebooksForTemplate(tpl, lore);
-                const resolved = await resolveAllPerCharacterLorebooks(chars, tplLoresForChar[0]);
+                const resolved = await resolveAllPerCharacterLorebooks(chars, tplLoresForChar[0], tpl);
                 for (const { charTarget, lore: charLore } of resolved) {
                     workItems.push({ tpl, charTarget, charLore });
                 }
@@ -1601,7 +1685,8 @@ export async function runAfterMemory(compiledScene, profile = null) {
                 const displayName = charTarget ? `${tpl.name} (${charTarget.name})` : tpl.name;
                 try {
                     const runtimeMacros = charTarget ? buildPerCharacterMacros(charTarget.name) : {};
-                    const tplLores = await resolveLorebooksForTemplate(tpl, lore);
+                    // Actor name is in scope here, so {{char}} resolves to the actor
+                    const tplLores = await resolveLorebooksForTemplate(tpl, lore, charTarget?.name || null);
                     const perCharTitleHint = charTarget
                         ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
                         : null;
@@ -1966,7 +2051,7 @@ export async function runSidePrompt(args, options = {}) {
                     return '';
                 }
             }
-            charWorkItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0]);
+            charWorkItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0], tpl);
             dbg('Characters with resolved lorebooks:', charWorkItems.map(w => ({ name: w.charTarget.name, lorebook: w.lore.name })));
             if (charWorkItems.length === 0) {
                 toastr.warning(translate('All characters skipped — no lorebooks selected.', 'STMemoryBooks_Toast_AllCharactersSkipped'), 'STMemoryBooks');
