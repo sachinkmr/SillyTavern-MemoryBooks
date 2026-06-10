@@ -331,6 +331,16 @@ function buildPerCharacterMacros(charName, baseMacros = {}) {
 }
 
 /**
+ * Per-character injection scoping: when the template opts in, the upserted
+ * entry gets a WI characterFilter so it only activates for that character's
+ * own drafts — other group members never see this actor's private tracker.
+ */
+function sidePromptEntryOverrides(tpl, charTarget) {
+    if (!charTarget?.name || !tpl?.settings?.injectOnlyForCharacter?.enabled) return {};
+    return { characterFilter: { isExclude: false, names: [charTarget.name], tags: [] } };
+}
+
+/**
  * Get a per-character entry title by appending character name to the unified title.
  * @param {string} baseTitle - The unified side prompt title
  * @param {string} charName
@@ -1277,6 +1287,8 @@ export async function evaluateTrackers() {
                     } else if (charTarget) {
                         entryOverrides.key = [charTarget.name];
                     }
+                    // Inject-only-for-character: scope the entry to this actor's drafts (no-op unless opted in)
+                    Object.assign(entryOverrides, sidePromptEntryOverrides(tpl, charTarget));
                     const endId = compiled?.metadata?.sceneEnd ?? currentLast;
                     const checkpointSuffix = charTarget ? `_${charTarget.name}` : '';
                     const metadataUpdates = {
@@ -1878,6 +1890,8 @@ export async function runSidePrompt(args, options = {}) {
                         entryOverrides.key = [charTarget.name];
                     }
                 }
+                // Inject-only-for-character: scope the entry to this actor's drafts (no-op unless opted in)
+                Object.assign(entryOverrides, sidePromptEntryOverrides(tpl, charTarget));
                 const endId = compiled?.metadata?.sceneEnd ?? currentLast;
                 const checkpointSuffix = charTarget ? `_${charTarget.name}` : '';
                 const metadataUpdates = {
