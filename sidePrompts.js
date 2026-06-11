@@ -21,6 +21,7 @@ import { SIDE_PROMPT } from './constants.js';
 import { isPresentInWindow, filterCompiledSceneForCharacter } from './witnessScope.js';
 import { runBounded, resolveParallelLimit } from './concurrency.js';
 import { resolveLorebookNameList, deriveWorldPrefix } from './lorebookNameMacros.js';
+import { characterFilterName } from './wiFilterName.js';
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
@@ -357,7 +358,11 @@ function buildPerCharacterMacros(charName, baseMacros = {}) {
  */
 function sidePromptEntryOverrides(tpl, charTarget) {
     if (!charTarget?.name || !tpl?.settings?.injectOnlyForCharacter?.enabled) return {};
-    return { characterFilter: { isExclude: false, names: [charTarget.name], tags: [] } };
+    // characterFilter matches the AVATAR FILE basename (getCharaFilename), never the
+    // display name — see wiFilterName.js. 'Priya.png' → 'Priya', not 'Priya Mehta'.
+    const filterName = characterFilterName(charTarget);
+    if (!filterName) return {};
+    return { characterFilter: { isExclude: false, names: [filterName], tags: [] } };
 }
 
 /**
