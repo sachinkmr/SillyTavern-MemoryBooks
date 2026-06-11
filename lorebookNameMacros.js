@@ -47,6 +47,25 @@ export function resolveLorebookNameMacros(name, context = {}) {
 }
 
 /**
+ * Option A (solo = 1-member group): derive the WORLD PREFIX from a chat-bound
+ * lorebook name, so a solo chat can resolve {{group}} to the same value the
+ * group chat uses (the world name, e.g. '🏠 TWW2') instead of the card char
+ * name. Only the canonical world books derive — names ending EXACTLY in
+ * ' - Core' or ' - Memories':
+ *   '🏠 TWW2 - Core'     → '🏠 TWW2'
+ *   '🏠 TWW2 - Memories' → '🏠 TWW2'
+ *   '🏠 TWW2 - Shilpa'   → null   (character book — not a world anchor)
+ *   'X - Core - Y'       → null   (suffix only, never mid-string)
+ * @param {string|null|undefined} bookName - chat-bound lorebook name
+ * @returns {string|null} the world prefix, or null when not derivable
+ */
+export function deriveWorldPrefix(bookName) {
+    if (typeof bookName !== 'string') return null;
+    const m = bookName.match(/^(.+) - (?:Core|Memories)$/);
+    return m ? m[1] : null;
+}
+
+/**
  * Resolve a lorebookNames array: per-name macro resolution, trim, drop
  * non-strings/empties, and dedupe AFTER resolution (two raw names may
  * resolve to the same book).

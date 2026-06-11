@@ -20,7 +20,7 @@ import { validateLorebookRequirement } from './lorebookValidation.js';
 import { SIDE_PROMPT } from './constants.js';
 import { isPresentInWindow, filterCompiledSceneForCharacter } from './witnessScope.js';
 import { runBounded, resolveParallelLimit } from './concurrency.js';
-import { resolveLorebookNameList } from './lorebookNameMacros.js';
+import { resolveLorebookNameList, deriveWorldPrefix } from './lorebookNameMacros.js';
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
@@ -448,11 +448,20 @@ function getCurrentCardCharacterName() {
 
 /**
  * Context for {{group}}/{{char}} macros in lorebookOverride names.
+ *
+ * Option A (solo = 1-member group): in a solo chat there is no group name, but
+ * the chat-bound lorebook (chat_metadata[METADATA_KEY], auto-bound to the world
+ * Core by StateTracker) carries the world identity — deriveWorldPrefix maps
+ * '🏠 TWW2 - Core'/'… - Memories' → '🏠 TWW2', so '{{group}} - Actors' resolves
+ * to the SAME '🏠 TWW2 - Actors' book the group chat uses (unified cross-mode
+ * actor state). The char-name fallback inside resolveLorebookNameMacros stays
+ * LAST for back-compat when neither group nor world prefix resolves.
+ *
  * @param {string|null} charName - Actor name when inside the per-character loop
  */
 function buildLorebookNameMacroContext(charName = null) {
     return {
-        groupName: getCurrentGroupName(),
+        groupName: getCurrentGroupName() || deriveWorldPrefix(chat_metadata?.[METADATA_KEY]),
         charName: charName || getCurrentCardCharacterName(),
     };
 }

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     hasLorebookNameMacros, resolveLorebookNameMacros, resolveLorebookNameList,
+    deriveWorldPrefix,
 } from '../lorebookNameMacros.js';
 
 test('{{group}} resolves to the group chat NAME (emoji preserved), not a member list', () => {
@@ -75,4 +76,47 @@ test('group name takes priority over char name for {{group}} when both exist', (
         resolveLorebookNameMacros('{{group}} - Actors', { groupName: '🏠 TWW2', charName: 'Shilpa' }),
         '🏠 TWW2 - Actors',
     );
+});
+
+// ---------------------------------------------------------------------------
+// Option A — solo {{group}} = world prefix derived from the chat-bound lorebook.
+// deriveWorldPrefix('<prefix> - Core' | '<prefix> - Memories') → '<prefix>';
+// anything else (suffix mid-string, other suffixes, empty) → null.
+// ---------------------------------------------------------------------------
+
+test('deriveWorldPrefix: "… - Core" yields the world prefix (emoji preserved)', () => {
+    assert.equal(deriveWorldPrefix('🏠 TWW2 - Core'), '🏠 TWW2');
+});
+
+test('deriveWorldPrefix: "… - Memories" yields the world prefix', () => {
+    assert.equal(deriveWorldPrefix('🏠 TWW2 - Memories'), '🏠 TWW2');
+});
+
+test('deriveWorldPrefix: plain name without a recognized suffix => null', () => {
+    assert.equal(deriveWorldPrefix('Alaris Lorebook'), null);
+});
+
+test('deriveWorldPrefix: null/undefined/empty => null', () => {
+    assert.equal(deriveWorldPrefix(null), null);
+    assert.equal(deriveWorldPrefix(undefined), null);
+    assert.equal(deriveWorldPrefix(''), null);
+});
+
+test('deriveWorldPrefix: " - Core" mid-string does NOT derive (suffix only)', () => {
+    assert.equal(deriveWorldPrefix('X - Core - Y'), null);
+});
+
+test('deriveWorldPrefix: character books like "🏠 TWW2 - Shilpa" => null (only Core/Memories derive)', () => {
+    assert.equal(deriveWorldPrefix('🏠 TWW2 - Shilpa'), null);
+    assert.equal(deriveWorldPrefix('🏠 TWW2 - Actors'), null);
+});
+
+test('deriveWorldPrefix: multi-dash prefixes keep everything before the suffix', () => {
+    assert.equal(deriveWorldPrefix('A - B - Core'), 'A - B');
+    assert.equal(deriveWorldPrefix('A - B - Memories'), 'A - B');
+});
+
+test('deriveWorldPrefix: bare suffix with no prefix => null', () => {
+    assert.equal(deriveWorldPrefix(' - Core'), null);
+    assert.equal(deriveWorldPrefix(' - Memories'), null);
 });
