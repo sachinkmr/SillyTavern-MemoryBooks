@@ -22,6 +22,12 @@ import { isPresentInWindow, filterCompiledSceneForCharacter } from './witnessSco
 import { runBounded, resolveParallelLimit } from './concurrency.js';
 import { resolveLorebookNameList, deriveWorldPrefix } from './lorebookNameMacros.js';
 import { characterFilterName } from './wiFilterName.js';
+import {
+    shouldFireForCharacter,
+    resolveCharacterCheckpoint,
+    countVisibleMessagesSince as countVisibleMessagesSinceGate,
+    DEBOUNCE_MS as INTERVAL_DEBOUNCE_MS,
+} from './sidePromptIntervalGate.js';
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
@@ -1246,50 +1252,61 @@ export async function evaluateTrackers() {
                 continue;
             }
 
-            // Read existing entry to get last checkpoint
-            const lookupTitles = getSidePromptLookupTitles(tpl, {}, ['tracker']);
-            const existing = findFirstLoreEntryByTitle(tplLores[0].data, lookupTitles);
-            const lastMsgId = getSidePromptLastMessageId(tpl, existing);
-            const lastRunAt = existing?.[`STMB_sp_${tpl.key}_lastRunAt`]
-                ? Date.parse(existing[`STMB_sp_${tpl.key}_lastRunAt`])
-                : (existing?.STMB_tracker_lastRunAt ? Date.parse(existing.STMB_tracker_lastRunAt) : null);
             const now = Date.now();
-
-            // Internal debounce to prevent disk thrash (not user-configurable)
-            const debounceMs = 10_000; // 10 seconds
-            if (lastRunAt && now - lastRunAt < debounceMs) {
-                continue;
-            }
-
-            // Count visible messages since last checkpoint
-            // If lastMsgId is from a different (longer) chat, treat as no checkpoint
-            const effectiveLastMsgId = lastMsgId > currentLast ? -1 : lastMsgId;
-            const visibleSince = countVisibleMessagesSince(effectiveLastMsgId, currentLast);
             const threshold = Math.max(1, Number(tpl?.triggers?.onInterval?.visibleMessages ?? 50));
-            if (visibleSince < threshold) {
-                continue;
-            }
-
-            // Build compiled scene using the interval window (last N messages)
-            // Using onInterval.visibleMessages as the window keeps the compile range
-            // consistent and avoids checkpoint bleed on shared lorebooks.
-            if (lastMsgId > currentLast) {
-                console.warn(`${MODULE_NAME}: Interval: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Running with interval window.`);
-            }
-            const boundedStart = Math.max(0, currentLast - threshold + 1);
-
-            let compiled = null;
-            try {
-                compiled = await compileRange(boundedStart, currentLast);
-            } catch (err) {
-                console.warn(`${MODULE_NAME}: Interval compile failed:`, err);
-                continue;
-            }
-
-            // Per-character mode: resolve lorebooks upfront; standard mode: single run
             const perChar = isPerCharacterTemplate(tpl);
+
+            // Title/checkpoint derivation deps shared by the gate (symmetric with the
+            // per-character WRITER: getPerCharacterTitle / checkpointSuffix below).
+            const gateDeps = {
+                unifiedTitle: (t, charName) => getUnifiedSidePromptTitle(
+                    t, charName ? buildPerCharacterMacros(charName) : {},
+                ),
+                perCharTitle: getPerCharacterTitle,
+                baseline: getHighestProcessedMessageBaseline(),
+            };
+
+            // visibleSince is reported in the SidePrompt attempt log; for perChar
+            // templates the authoritative per-character value is computed in the
+            // gate, so keep a template-level estimate here for the standard path.
+            let visibleSince = 0;
             let charWorkItems;
-            if (perChar) {
+
+            if (!perChar) {
+                // Standard (non-perCharacter) interval gate — unchanged semantics:
+                // read the template-level (un-suffixed) checkpoint, debounce, and
+                // require >= threshold new visible messages since the checkpoint.
+                const lookupTitles = getSidePromptLookupTitles(tpl, {}, ['tracker']);
+                const existing = findFirstLoreEntryByTitle(tplLores[0].data, lookupTitles);
+                const lastMsgId = getSidePromptLastMessageId(tpl, existing);
+                const lastRunAt = existing?.[`STMB_sp_${tpl.key}_lastRunAt`]
+                    ? Date.parse(existing[`STMB_sp_${tpl.key}_lastRunAt`])
+                    : (existing?.STMB_tracker_lastRunAt ? Date.parse(existing.STMB_tracker_lastRunAt) : null);
+
+                // Internal debounce to prevent disk thrash (not user-configurable)
+                if (lastRunAt && now - lastRunAt < INTERVAL_DEBOUNCE_MS) {
+                    continue;
+                }
+
+                // Count visible messages since last checkpoint
+                // If lastMsgId is from a different (longer) chat, treat as no checkpoint
+                const effectiveLastMsgId = lastMsgId > currentLast ? -1 : lastMsgId;
+                visibleSince = countVisibleMessagesSince(effectiveLastMsgId, currentLast);
+                if (visibleSince < threshold) {
+                    continue;
+                }
+                if (lastMsgId > currentLast) {
+                    console.warn(`${MODULE_NAME}: Interval: lastMsgId (${lastMsgId}) is beyond current chat length (${chat.length}); checkpoint likely from a different chat sharing this lorebook. Running with interval window.`);
+                }
+
+                charWorkItems = [{ charTarget: null, lore: null }];
+            } else {
+                // Per-character interval gate: each present character is gated
+                // INDEPENDENTLY against THAT character's own checkpoint — the
+                // suffixed lorebook title + STMB_sp_<key>_<Char>_lastMsgId the
+                // writer wrote. (Previously the gate read the un-suffixed
+                // template-level checkpoint, never found the per-character one,
+                // fell back to baseline -1, and re-fired every message.)
                 const rawChars = discoverChatCharacters();
                 if (rawChars.length === 0) {
                     console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
@@ -1303,10 +1320,44 @@ export async function evaluateTrackers() {
                     console.log(`${MODULE_NAME}: presenceGate "${tpl.name}" kept ${gatedChars.length}/${rawChars.length} characters (window ${gateStart}-${currentLast}): ${gatedChars.map(c => c.name).join(', ') || '(none)'}`);
                     if (gatedChars.length === 0) continue; // nobody present — skip template this tick
                 }
-                charWorkItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0], tpl);
-                if (charWorkItems.length === 0) continue;
-            } else {
-                charWorkItems = [{ charTarget: null, lore: null }];
+
+                const resolvedItems = await resolveAllPerCharacterLorebooks(gatedChars, tplLores[0], tpl);
+                if (resolvedItems.length === 0) continue;
+
+                // Per-character interval/debounce gate against each character's OWN
+                // checkpoint, read from THAT character's resolved lorebook.
+                charWorkItems = resolvedItems.filter(item => shouldFireForCharacter({
+                    lore: item.lore?.data,
+                    tpl,
+                    charName: item.charTarget?.name,
+                    chat,
+                    currentLast,
+                    now,
+                    deps: gateDeps,
+                }));
+                if (charWorkItems.length === 0) {
+                    // Nobody crossed their own threshold this tick — skip quietly.
+                    continue;
+                }
+                // Template-level visibleSince for logging: max across firing characters.
+                visibleSince = Math.max(...charWorkItems.map(item => {
+                    const cp = resolveCharacterCheckpoint(item.lore?.data, tpl, item.charTarget?.name, gateDeps);
+                    const eff = cp.lastMsgId > currentLast ? -1 : cp.lastMsgId;
+                    return countVisibleMessagesSinceGate(chat, eff, currentLast);
+                }));
+            }
+
+            // Build compiled scene using the interval window (last N messages)
+            // Using onInterval.visibleMessages as the window keeps the compile range
+            // consistent and avoids checkpoint bleed on shared lorebooks.
+            const boundedStart = Math.max(0, currentLast - threshold + 1);
+
+            let compiled = null;
+            try {
+                compiled = await compileRange(boundedStart, currentLast);
+            } catch (err) {
+                console.warn(`${MODULE_NAME}: Interval compile failed:`, err);
+                continue;
             }
 
             // Bounded-concurrency mode (opt-in via settings.parallelCalls):
