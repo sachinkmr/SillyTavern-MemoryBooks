@@ -1032,6 +1032,7 @@ export function createProfileObject(data = {}) {
         connection: {
             api: data.api || 'openai',
             temperature: temperature,
+            useReasoning: !!(data.useReasoning),
         },
         prompt: (data.prompt || '').trim(),
         preset: data.preset || '',

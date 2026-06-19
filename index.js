@@ -6329,8 +6329,8 @@ function setupEventListeners() {
       // Force source/model/temp
       generate_data.chat_completion_source = src;
 
-      // Disable thinking mode for memory generation
-      generate_data.include_reasoning = false;
+      // Enable or disable thinking mode based on profile setting
+      generate_data.include_reasoning = !!(conn.useReasoning);
 
       if (conn.model) {
         generate_data.model = conn.model;

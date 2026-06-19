@@ -83,6 +83,14 @@ const profileEditTemplate = Handlebars.compile(`
             <input type="number" id="stmb-profile-temperature" value="{{connection.temperature}}" class="text_pole" min="0" max="2" step="0.1" data-i18n="[placeholder]STMemoryBooks_TemperaturePlaceholder" placeholder="DO NOT LEAVE BLANK! If unsure put 0.8." {{#if (eq connection.api "current_st")}}disabled title="Managed by SillyTavern UI"{{/if}}>
         </label>
 
+        <div class="world_entry_form_control marginTop5">
+            <label class="checkbox_label {{#if (eq connection.api "current_st")}}opacity50p{{/if}}" for="stmemory-conn-use-reasoning">
+                <input type="checkbox" id="stmemory-conn-use-reasoning" {{#if connection.useReasoning}}checked{{/if}} {{#if (eq connection.api "current_st")}}disabled{{/if}}>
+                <span data-i18n="STMemoryBooks_UseReasoning">Use reasoning / extended thinking</span>
+            </label>
+            <small class="opacity50p" data-i18n="STMemoryBooks_UseReasoningNote">Not available when using current ST connection</small>
+        </div>
+
         <div id="stmb-full-manual-section" class="{{#unless (eq connection.api 'full-manual')}}displayNone{{/unless}}">
             <label for="stmb-profile-endpoint">
                 <h4 data-i18n="STMemoryBooks_APIEndpointURL">API Endpoint URL:</h4>
@@ -714,12 +722,14 @@ function setupProfileEditEventHandlers(popupInstance, settings) {
         const fullManualSection = popupElement.querySelector('#stmb-full-manual-section');
         const modelInput = popupElement.querySelector('#stmb-profile-model');
         const tempInput = popupElement.querySelector('#stmb-profile-temperature');
+        const reasoningCheckbox = popupElement.querySelector('#stmemory-conn-use-reasoning');
+        const reasoningLabel = reasoningCheckbox ? reasoningCheckbox.closest('label') : null;
         if (e.target.value === 'full-manual') {
             fullManualSection.classList.remove('displayNone');
         } else {
             fullManualSection.classList.add('displayNone');
         }
-        // Disable model/temp when using Current SillyTavern Settings provider
+        // Disable model/temp/reasoning when using Current SillyTavern Settings provider
         const isCurrentST = e.target.value === 'current_st';
         if (modelInput) {
             modelInput.disabled = isCurrentST;
@@ -728,6 +738,12 @@ function setupProfileEditEventHandlers(popupInstance, settings) {
         if (tempInput) {
             tempInput.disabled = isCurrentST;
             tempInput.title = isCurrentST ? 'Managed by SillyTavern UI' : '';
+        }
+        if (reasoningCheckbox) {
+            reasoningCheckbox.disabled = isCurrentST;
+        }
+        if (reasoningLabel) {
+            reasoningLabel.classList.toggle('opacity50p', isCurrentST);
         }
     });
 
@@ -830,6 +846,7 @@ function buildProfileFromForm(popupElement, fallbackName) {
         reverseStart: popupElement.querySelector('#stmb-profile-reverse-start')?.value,
         preventRecursion: popupElement.querySelector('#stmb-profile-prevent-recursion')?.checked,
         delayUntilRecursion: popupElement.querySelector('#stmb-profile-delay-recursion')?.checked,
+        useReasoning: popupElement.querySelector('#stmemory-conn-use-reasoning')?.checked,
     };
 
     // Step 2: Intelligently determine whether to use the selected preset or the custom prompt.
