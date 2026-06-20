@@ -28,6 +28,8 @@ test('U1 solo: one character, gated to that character, nothing dropped', () => {
   assert.equal(r.skipped, false);
   assert.deepEqual(r.characterFilter.names, ['Aisha']);
   assert.equal(r.filteredScene.messages.length, 2);
+  // user is in the input-filter cast (returned audience) but NOT in the gate names
+  assert.deepEqual(r.audience.sort(), ['aisha', 'user']);
 });
 
 test('U2 full group homogeneous: gated to all present, nothing dropped', () => {
@@ -84,4 +86,16 @@ test('fail-open: fully unstamped scene -> no gate, keep all', () => {
   const r = computePlane1Memory(compiledScene, chat, ROSTER3, { userToken: 'user' });
   assert.equal(r.characterFilter, null);
   assert.equal(r.filteredScene.messages.length, 2);
+});
+
+test('no-cast-witnessed: disjoint audiences -> skipped (conservative; 1b will segment)', () => {
+  // Shilpa present only for msg0, Aisha only for msg1 -> union cast {user,shilpa,aisha},
+  // no single message witnessed by all three -> input-filter empties -> skipped.
+  const { chat, compiledScene } = fixture([
+    { name: 'Shilpa', audience: ['user', 'shilpa'] },
+    { name: 'Aisha', audience: ['user', 'aisha'] },
+  ]);
+  const r = computePlane1Memory(compiledScene, chat, ROSTER3, { userToken: 'user' });
+  assert.equal(r.skipped, true);
+  assert.equal(r.reason, 'no-cast-witnessed');
 });
