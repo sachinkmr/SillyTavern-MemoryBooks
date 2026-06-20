@@ -6,6 +6,7 @@ import {
   saveSettingsDebounced,
   characters,
   this_chid,
+  name1,
   settings as st_settings,
 } from "../../../../script.js";
 import { Popup, POPUP_TYPE, POPUP_RESULT } from "../../../popup.js";
@@ -191,6 +192,8 @@ import {
   parseSidePromptCommandInput,
 } from "./sidePromptMacros.js";
 import "../../../../lib/select2.min.js";
+import { computePlane1Memory } from './plane1.js';
+import { getChatRoster, resolveWorldMemoriesBook } from './plane1Context.js';
 
 /**
  * Async effective prompt that respects Summary Prompt Manager overrides
@@ -449,6 +452,9 @@ let lastArcFailureToast = null;
 let lastFailedArcContext = null;
 let memoryBoundaryButton = null;
 let memoryBoundaryButtonDragState = null;
+
+/** Gate helper: true when Phase-1a two-plane memory is enabled. */
+const isTwoPlane = () => !!(extension_settings?.STMemoryBooks?.moduleSettings?.twoPlaneMemory);
 
 function normalizeMemoryBoundaryMode(mode) {
   const value = String(mode ?? DEFAULT_MEMORY_BOUNDARY_MODE);
@@ -2527,6 +2533,19 @@ async function executeMemoryGeneration(
     );
     compiledScene = compileScene(sceneRequest);
 
+    // Phase-1a two-plane memory: objective input-filter + gate resolve
+    let plane1Book = null, plane1Filter = null;
+    if (isTwoPlane()) {
+      const p1 = computePlane1Memory(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+      if (p1.skipped) {
+        // Nothing real/witnessed to record — clean no-op (mirrors "no memory" false return)
+        return false;
+      }
+      compiledScene = p1.filteredScene;   // objective summary sees the input-filtered transcript
+      plane1Filter = p1.characterFilter;
+      plane1Book = await resolveWorldMemoriesBook();
+    }
+
     // Validate compiled scene
     const validation = validateCompiledScene(compiledScene);
     if (!validation.valid) {
@@ -2606,6 +2625,8 @@ async function executeMemoryGeneration(
     });
     stmbTask.throwIfStopped();
     throwIfStmbStopped(runEpoch);
+    // Phase-1a: stamp characterFilter on the result so addMemoryToLorebook can gate the entry
+    if (isTwoPlane()) memoryResult.characterFilter = plane1Filter;
 
     // Check if memory previews are enabled and handle accordingly
     let finalMemoryResult = memoryResult;
@@ -2704,9 +2725,10 @@ async function executeMemoryGeneration(
     throwIfStmbStopped(runEpoch);
 
     // Add to lorebook silently
+    // Phase-1a: when two-plane is ON and we have a world memories book, route there instead
     const addResult = await addMemoryToLorebook(
       finalMemoryResult,
-      lorebookValidation,
+      (isTwoPlane() && plane1Book) ? plane1Book : lorebookValidation,
       { expectedChatId: startChatId },
     );
     throwIfStmbStopped(runEpoch);
@@ -3009,7 +3031,7 @@ async function resolveAdditionalContextSnapshot(profileSettings, options = {}) {
 async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSettings) {
   const { profileSettings, summaryCount, tokenThreshold, settings } = effectiveSettings;
   const sceneRequest = createSceneRequest(sceneData.sceneStart, sceneData.sceneEnd);
-  const compiledScene = compileScene(sceneRequest);
+  let compiledScene = compileScene(sceneRequest);
   const validation = validateCompiledScene(compiledScene);
   if (!validation.valid) {
     throw new Error(`Scene compilation failed: ${validation.errors.join(", ")}`);
@@ -3035,6 +3057,21 @@ async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSett
   const chatRef = getCurrentStmbChatRef();
   const lorebookName = String(lorebookValidation?.name || "").trim();
 
+  // Phase-1a: compute plane1 data BEFORE deep-clone snapshot (reads live chat)
+  let plane1 = null;
+  if (isTwoPlane()) {
+    const p1 = computePlane1Memory(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+    if (!p1.skipped) {
+      compiledScene = p1.filteredScene;                         // snapshot the filtered scene
+      plane1 = {
+        characterFilter: p1.characterFilter,
+        bookName: (await resolveWorldMemoriesBook())?.name || null,
+      };
+    } else {
+      plane1 = { skipped: true, reason: p1.reason };
+    }
+  }
+
   return {
     type: "memory",
     title: translate("Memory", "STMemoryBooks_Jobs_Memory"),
@@ -3055,6 +3092,7 @@ async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSett
       tokenThreshold,
       settings: deepClone(settings),
       memoryFetchResult: deepClone(memoryFetchResult),
+      plane1,
     },
   };
 }
@@ -3180,12 +3218,20 @@ async function executeQueuedMemoryJob(job, jobContext) {
     throw new Error("Memory job snapshot is incomplete.");
   }
 
+  // Phase-1a: if all messages were unreal/unwitnessed at enqueue, skip cleanly
+  if (payload.plane1?.skipped) {
+    jobContext.patch({ state: "canceled", detail: `Skipped: ${payload.plane1.reason || 'all-unreal'}` });
+    return;
+  }
+
   jobContext.setState("generating", { detail: profileSettings.name || "Memory" });
   const memoryResult = await createMemory(compiledScene, profileSettings, {
     tokenWarningThreshold: payload.tokenThreshold,
     signal: jobContext.signal,
   });
   jobContext.throwIfCancelled();
+  // Phase-1a: stamp characterFilter so addMemoryToLorebook can gate the entry
+  memoryResult.characterFilter = payload.plane1?.characterFilter ?? null;
 
   let finalMemoryResult = memoryResult;
   if (settings.moduleSettings?.showMemoryPreviews) {
@@ -3221,13 +3267,26 @@ async function executeQueuedMemoryJob(job, jobContext) {
   jobContext.setState("saving", { detail: lorebookName });
   let addResult = null;
   let latestLorebookData = null;
-  await withStmbWriteLane({ type: "lorebook", name: lorebookName }, async () => {
-    const freshLorebook = await loadWorldInfo(lorebookName);
-    if (!freshLorebook?.entries) {
-      throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
+  // Phase-1a: when two-plane and a bookName was captured at enqueue, reload data fresh and route there
+  const _plane1BookName = payload.plane1?.bookName || null;
+  const _effectiveLorebookName = (_plane1BookName) ? _plane1BookName : lorebookName;
+  await withStmbWriteLane({ type: "lorebook", name: _effectiveLorebookName }, async () => {
+    let _lorebookValidation;
+    if (_plane1BookName) {
+      const data = await loadWorldInfo(_plane1BookName);
+      if (!data?.entries) {
+        throw new Error(`World memories lorebook "${_plane1BookName}" could not be loaded.`);
+      }
+      _lorebookValidation = { valid: true, name: _plane1BookName, data };
+    } else {
+      const freshLorebook = await loadWorldInfo(lorebookName);
+      if (!freshLorebook?.entries) {
+        throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
+      }
+      _lorebookValidation = { valid: true, name: lorebookName, data: freshLorebook };
     }
     if (!settings.moduleSettings?.allowSceneOverlap) {
-      const overlap = findOverlappingMemoryInLorebook(freshLorebook, sceneData);
+      const overlap = findOverlappingMemoryInLorebook(_lorebookValidation.data, sceneData);
       if (overlap) {
         const error = new Error(`Scene overlaps with existing memory: "${overlap.title}" (messages ${overlap.start}-${overlap.end})`);
         error.name = "StmbJobNeedsReview";
@@ -3236,7 +3295,7 @@ async function executeQueuedMemoryJob(job, jobContext) {
     }
     addResult = await addMemoryToLorebook(
       finalMemoryResult,
-      { valid: true, name: lorebookName, data: freshLorebook },
+      _lorebookValidation,
       {
         autoHide: false,
         refreshEditor: getStmbChatKey(job.chatRef) === getStmbChatKey(),
@@ -3246,7 +3305,7 @@ async function executeQueuedMemoryJob(job, jobContext) {
     if (!addResult?.success) {
       throw new Error(addResult?.error || "Failed to add memory to lorebook");
     }
-    latestLorebookData = freshLorebook;
+    latestLorebookData = _lorebookValidation.data;
   });
 
   jobContext.throwIfCancelled();
@@ -8556,10 +8615,19 @@ async function applyManualFixedJson(correctedRaw) {
       },
     };
 
+    // Phase-1a: stamp characterFilter and resolve world memories book for repair path
+    let _repairLorebookValidation = context.lorebookValidation;
+    if (isTwoPlane() && context?.compiledScene) {
+      const p1 = computePlane1Memory(context.compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+      memoryResult.characterFilter = p1.characterFilter ?? null;
+      const wb = await resolveWorldMemoriesBook();
+      if (wb) _repairLorebookValidation = wb;
+    }
+
     throwIfStmbStopped(runEpoch);
     const addResult = await addMemoryToLorebook(
       memoryResult,
-      context.lorebookValidation,
+      _repairLorebookValidation,
       { expectedChatId: startChatId },
     );
     throwIfStmbStopped(runEpoch);
