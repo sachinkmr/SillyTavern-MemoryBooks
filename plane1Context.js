@@ -31,12 +31,12 @@ export function getChatRoster() {
         return members
             .map(av => {
                 const c = (characters || []).find(ch => ch.avatar === av);
-                return c ? { name: c.name, avatar: c.avatar } : null;
+                return c?.name ? { name: c.name, avatar: c.avatar } : null; // mirror discoverChatCharacters' name guard
             })
             .filter(Boolean);
     }
     const c = characters?.[this_chid];
-    return c ? [{ name: c.name, avatar: c.avatar }] : [];
+    return c?.name ? [{ name: c.name, avatar: c.avatar }] : [];
 }
 
 /**
