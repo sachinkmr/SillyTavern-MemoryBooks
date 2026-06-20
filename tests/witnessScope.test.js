@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     audienceOf, messageWitnessedBy, isPresentInWindow, filterCompiledSceneForCharacter,
-    realityOf, isUnreal, dropUnrealMessages,
+    realityOf, isUnreal, dropUnrealMessages, dropUnrealFromCompiledScene, filterCompiledSceneForAudience,
 } from '../witnessScope.js';
+
+function scene(ids) { return { metadata: { messageCount: ids.length }, messages: ids.map(id => ({ id })) }; }
 
 const stamped = (aud, name = 'Shilpa', extra = {}) => ({
     name, mes: 'x', extra: { channel: { audience: aud } }, ...extra,
@@ -89,4 +91,32 @@ test('dropUnrealMessages removes only unreal-tagged messages', () => {
     ];
     assert.deepEqual(dropUnrealMessages(msgs).map(m => m.mes), ['a', 'c']);
     assert.deepEqual(dropUnrealMessages(null), []);
+});
+
+test('dropUnrealFromCompiledScene removes dream/flashback/story by cm.id join', () => {
+    const chat = [];
+    chat[0] = { mes: 'a' };
+    chat[1] = { mes: 'b', extra: { channel: { reality: 'dream' } } };
+    chat[2] = { mes: 'c', extra: { channel: { reality: 'flashback' } } };
+    chat[3] = { mes: 'd' };
+    const out = dropUnrealFromCompiledScene(scene([0, 1, 2, 3]), chat);
+    assert.deepEqual(out.messages.map(m => m.id), [0, 3]);
+    assert.equal(out.metadata.messageCount, 2);
+    assert.equal(out.metadata.unrealFiltered, 2);
+});
+
+test('filterCompiledSceneForAudience keeps only messages witnessed by EVERY token', () => {
+    const chat = [];
+    chat[0] = { extra: { channel: { audience: ['user', 'shilpa', 'aisha'] } } }; // all
+    chat[1] = { extra: { channel: { audience: ['user', 'shilpa'] } } };          // whisper, no aisha
+    chat[2] = {};                                                                // unstamped = everyone
+    const out = filterCompiledSceneForAudience(scene([0, 1, 2]), chat, ['user', 'shilpa', 'aisha']);
+    assert.deepEqual(out.messages.map(m => m.id), [0, 2]);
+    assert.equal(out.metadata.audienceFiltered, 1);
+});
+
+test('filterCompiledSceneForAudience with empty audience keeps all (fail-open)', () => {
+    const chat = [{ extra: { channel: { audience: ['x'] } } }];
+    const out = filterCompiledSceneForAudience(scene([0]), chat, []);
+    assert.deepEqual(out.messages.map(m => m.id), [0]);
 });

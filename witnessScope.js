@@ -85,3 +85,41 @@ export function isUnreal(message) {
 export function dropUnrealMessages(messages) {
     return (Array.isArray(messages) ? messages : []).filter(m => !isUnreal(m));
 }
+
+/**
+ * Return a NEW compiledScene with unreal-tagged messages removed.
+ * Joins each compiledMessage to the live chat via cm.id (compiled clones drop extra.channel).
+ */
+export function dropUnrealFromCompiledScene(compiledScene, chat) {
+    const all = compiledScene?.messages || [];
+    const messages = all.filter(cm => !isUnreal(chat?.[cm.id]));
+    return {
+        ...compiledScene,
+        messages,
+        metadata: {
+            ...(compiledScene?.metadata || {}),
+            messageCount: messages.length,
+            unrealFiltered: all.length - messages.length,
+        },
+    };
+}
+
+/**
+ * Return a NEW compiledScene keeping only messages witnessed by EVERY name in audience
+ * (fail-open per token via messageWitnessedBy). Empty audience keeps all messages.
+ * audience entries are stamp-token form (lowercased); join is via cm.id -> chat.
+ */
+export function filterCompiledSceneForAudience(compiledScene, chat, audience) {
+    const aud = Array.isArray(audience) ? audience : [];
+    const all = compiledScene?.messages || [];
+    const messages = all.filter(cm => aud.every(a => messageWitnessedBy(chat?.[cm.id], a)));
+    return {
+        ...compiledScene,
+        messages,
+        metadata: {
+            ...(compiledScene?.metadata || {}),
+            messageCount: messages.length,
+            audienceFiltered: all.length - messages.length,
+        },
+    };
+}
