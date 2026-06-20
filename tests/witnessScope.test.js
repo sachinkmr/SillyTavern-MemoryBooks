@@ -112,6 +112,7 @@ test('filterCompiledSceneForAudience keeps only messages witnessed by EVERY toke
     chat[2] = {};                                                                // unstamped = everyone
     const out = filterCompiledSceneForAudience(scene([0, 1, 2]), chat, ['user', 'shilpa', 'aisha']);
     assert.deepEqual(out.messages.map(m => m.id), [0, 2]);
+    assert.equal(out.metadata.messageCount, 2);
     assert.equal(out.metadata.audienceFiltered, 1);
 });
 
@@ -119,4 +120,16 @@ test('filterCompiledSceneForAudience with empty audience keeps all (fail-open)',
     const chat = [{ extra: { channel: { audience: ['x'] } } }];
     const out = filterCompiledSceneForAudience(scene([0]), chat, []);
     assert.deepEqual(out.messages.map(m => m.id), [0]);
+    assert.equal(out.metadata.messageCount, 1);
+    assert.equal(out.metadata.audienceFiltered, 0);
+});
+
+test('compiled-scene filters fail-open (no throw) when cm.id has no live chat entry', () => {
+    const chat = [{}];                       // chat[5] is undefined
+    const dropped = dropUnrealFromCompiledScene(scene([0, 5]), chat);
+    assert.deepEqual(dropped.messages.map(m => m.id), [0, 5]); // isUnreal(undefined)=false -> kept
+    assert.equal(dropped.metadata.unrealFiltered, 0);
+    const scoped = filterCompiledSceneForAudience(scene([0, 5]), chat, ['aisha']);
+    assert.deepEqual(scoped.messages.map(m => m.id), [0, 5]);  // messageWitnessedBy(undefined,_)=true
+    assert.equal(scoped.metadata.audienceFiltered, 0);
 });
