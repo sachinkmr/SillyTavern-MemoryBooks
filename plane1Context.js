@@ -11,7 +11,7 @@
  */
 
 // Import specifiers copied verbatim from sidePrompts.js lines 1, 3, 5
-import { chat_metadata, characters, this_chid } from '../../../../script.js';
+import { chat_metadata, characters, this_chid, name2 } from '../../../../script.js';
 import { METADATA_KEY, world_names, loadWorldInfo, createNewWorldInfo } from '../../../world-info.js';
 import { selected_group, groups } from '../../../group-chats.js';
 
@@ -35,8 +35,11 @@ export function getChatRoster() {
             })
             .filter(Boolean);
     }
-    const c = characters?.[this_chid];
-    return c?.name ? [{ name: c.name, avatar: c.avatar }] : [];
+    // Solo: prefer the active card; fall back to name2 (avatar '') — mirrors discoverChatCharacters.
+    const c = (this_chid !== undefined) ? characters?.[this_chid] : null;
+    if (c?.name) return [{ name: c.name, avatar: c.avatar }];
+    if (name2 && String(name2).trim()) return [{ name: String(name2).trim(), avatar: '' }];
+    return [];
 }
 
 /**
