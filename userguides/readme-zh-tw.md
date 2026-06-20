@@ -4,8 +4,34 @@
 
 ### ❓ 詞彙表
 - Scene (場景) → Memory (記憶)
+- One saved fact (單一已保存事實) → Clip (剪輯)
+- Ongoing tracker (持續追蹤器) → Side Prompt (側邊提示詞/追蹤器)
 - Many Memories (多個記憶) → Summary / Consolidation (總結 / 整合)
-- Always-On (常駐) → Side Prompt (Tracker) (側邊提示詞/追蹤器)
+- One long entry (單一過長條目) → Compaction (壓縮)
+
+### 剪輯 vs Side Prompts
+
+簡單規則：**一個固定事實 = 剪輯；持續追蹤器 = Side Prompt。**
+
+| **剪輯** | **Side Prompts** |
+|---|---|
+| 把選取的聊天文字保存為記憶書中的筆記。 | 請 AI 閱讀聊天並更新一個追蹤器條目。 |
+| 用在您已經知道確切要記住哪個事實的時候。 | 用在資訊會隨時間變化的時候。 |
+| 可以理解為：「把這條筆記釘住。」 | 可以理解為：「讓這個區塊保持更新。」 |
+
+更長說明請看[使用者指南](USER_GUIDE-zh-tw.md#clips-vs-side-prompts)。
+
+### 壓縮 vs 總結整合
+
+簡單規則：**一個臃腫條目 = 壓縮；多個記憶 = 總結整合。**
+
+| **壓縮** | **總結整合** |
+|---|---|
+| 縮短一個既有的 STMB 管理條目。 | 把多個記憶或總結合併成一個更高層級的回顧。 |
+| 用在某個剪輯、Side Prompt 或記憶條目仍然有用，但開始太長的時候。 | 用在多個記憶已經適合整理成 Arc、Chapter、Book 或其他更大總結的時候。 |
+| 可以理解為：「修剪這一個條目。」 | 可以理解為：「把這些記憶卷成一條回顧。」 |
+
+更長說明請看[使用者指南](USER_GUIDE-zh-tw.md#compaction-vs-consolidation)。
 
 ## ❗ 請先閱讀！
 
@@ -49,7 +75,9 @@
   - [內建預設組](#內建預設組)
   - [自訂提示詞](#自訂提示詞)
 - [📚 世界書整合](#-世界書整合)
+- [主題剪輯](#-主題剪輯)
   - [🎡 追蹤器與側邊提示詞](#-追蹤器與側邊提示詞)
+  - [🧹 壓縮](#-壓縮)
   - [🧠 Regex (正規表達式) 整合與進階自訂](#-regex-正規表達式-整合與進階自訂)
 - [👤 設定檔管理](#-設定檔管理)
 - [⚙️ 設定與組態](#-設定與組態)
@@ -57,6 +85,7 @@
   - [設定檔欄位 (Profile Fields)](#設定檔欄位-profile-fields)
 - [🏷️ 標題格式化](#-標題格式化)
 - [🧵 上下文記憶 (Context Memories)](#-上下文記憶-context-memories)
+- [🧾 選用工作佇列](#optional-job-queue-chat-top-bar-required)
 - [🎨 視覺回饋與無障礙設計](#-視覺回饋與無障礙設計)
   - [我在 Extensions (擴充功能) 選單中找不到 Memory Books！](#我在-extensions-擴充功能-選單中找不到-memory-books)
   - [我需要運作 Vectors (向量) 嗎？](#我需要運作-vectors-向量-嗎)
@@ -69,7 +98,7 @@
 ## 📋 前置需求
 
 - **SillyTavern:** 1.14.0+ (建議使用最新版本)
-- **場景選擇:** 必須設定開始和結束標記 (開始 < 結束)。
+- **選用工作佇列:** STMB 不需要工作佇列也能運作。若要使用佇列功能，請安裝並啟用 **Chat Top Bar** / **Chat Top Info Bar**，這是 SillyTavern 官方擴充功能，會在聊天視窗上方加入一條頂部列。STMB 會使用該頂部列顯示 **記憶書任務** 按鈕和抽屜。
 - **Chat Completion 支援:** 完全支援 OpenAI, Claude, Anthropic, OpenRouter 或其他聊天補全 API。
 - **Text Completion 支援:** 當透過 Chat Completion (OpenAI 相容) API 端點連接時，支援文本補全 API (Kobold, TextGen 等)。我建議根據下方的 KoboldCpp 提示設定 Chat Completion API 連接 (如果你使用 Ollama 或其他軟體，請依需求調整)。之後，設定一個 STMB 設定檔並使用 Custom (推薦) 或全手動配置 (僅當 Custom 失敗或你有多個自訂連接時使用)。
 **注意**: 請注意，如果你使用 Text Completion，你必須... (原文此處中斷，請接續閱讀下方設定提示)
@@ -112,10 +141,20 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ### 1. **安裝與載入**
 
+![等待這些按鈕出現](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/startup.png)
+
+
 * 載入 SillyTavern 並選擇一個角色或群組聊天。
 * 等待聊天訊息上出現箭頭按鈕 (► ◄) (可能需要約 10 秒)。
 
 ### 2. **標記場景**
+
+![已點擊的開始按鈕](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-start.png)
+
+![場景中間按鈕](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-middle.png)
+
+![已點擊的結束按鈕](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-end.png)
+
 
 * 在你想標記的場景的第一條訊息上點擊 ►。
 * 在最後一條訊息上點擊 ◄。
@@ -130,14 +169,49 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ## 🆕 斜線指令快捷鍵
 
-* `/creatememory` 將使用現有的箭頭開始/結束標記來創建記憶。
-* `/scenememory x-y` 將創建一個從訊息 x 開始到訊息 y 結束的記憶。
-* `/nextmemory` 將創建一個包含自上次記憶以來所有訊息的記憶。
+* `/creatememory` — 從已標記的場景建立記憶。
+* `/scenememory X-Y` — 設定場景範圍並建立記憶，例如 `/scenememory 10-15`。
+* `/nextmemory` — 從上一筆記憶結尾到目前訊息建立記憶。
+* `/stmb-catchup interval:x start:y end:y` — 為既有長聊天建立補記憶，透過依照指定間隔大小分段處理所選訊息範圍來產生記憶。
+* `/sideprompt "Name" {{macro}}="value" [X-Y]` — 執行 Side Prompt（`{{macro}}` 可選）。
+* `/sideprompt-set "Set Name" [X-Y]` — 執行已儲存的 Side Prompt Set。
+* `/sideprompt-macroset "Set Name" {{macro}}="value" [X-Y]` — 執行 Side Prompt Set 並提供可重複使用的巨集值。
+* `/sideprompt-on "Name" | all` — 依名稱啟用某個 Side Prompt，或啟用全部。
+* `/sideprompt-off "Name" | all` — 依名稱停用某個 Side Prompt，或停用全部。
+* `/stmb-highest` — 回傳此聊天中已處理記憶的最高 message id。
+* `/stmb-set-highest <N|none>` — 手動設定此聊天的最高已處理 message id。
+* `/stmb-stop` — 停止所有正在進行的 STMB 生成。用於緊急中止。
+
+### `/stmb-catchup`
+
+當你想把既有的長聊天轉換成 STMB 記憶時，使用 `/stmb-catchup`。
+
+語法：
+
+```txt
+/stmb-catchup interval:x start:y end:y
+```
+
+範例：
+
+```txt
+/stmb-catchup interval:30 start:0 end:300
+```
+
+參數：
+
+- `interval:x` - 每筆產生的記憶大約包含的訊息數量。
+- `start:y` - 要包含的第一則訊息編號。
+- `end:y` - 要包含的最後一則訊息編號。
+
+此指令用於補登轉換，不適合一般持續使用。STMB 追上既有聊天進度後，請使用自動摘要或 `/nextmemory`。
+
+---
 
 ## 👥 群組聊天支援
 
 * 所有功能皆適用於群組聊天。
-* 場景標記、記憶創建和世界書整合都儲存在群組元數據 (metadata) 中。
+* 場景標記、記憶創建和世界書整合都儲存在目前聊天元數據 (metadata) 中。
 * 無需特殊設定——只需選擇群組聊天並照常使用即可。
 
 ---
@@ -145,6 +219,9 @@ llama-server -m <model-path> -c <context-size> --port 8080
 ## 🧭 運作模式
 
 ### **自動模式 (預設)**
+
+![聊天世界書綁定範例](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/chatlorebook.png)
+
 
 * **如何運作:** 自動使用綁定到目前聊天的世界書。
 * **適用於:** 簡單快速。大多數使用者應該從這裡開始。
@@ -196,6 +273,9 @@ llama-server -m <model-path> -c <context-size> --port 8080
 ---
 
 ### 🌈 總結整合 (Summary Consolidation)
+
+![整合按鈕](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-consolidate.png)
+
 
 總結整合捕捉跨越多個記憶或總結後 **隨時間發生了什麼變化**。
 
@@ -274,6 +354,9 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ## 📚 世界書整合
 
+![剪輯文字](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/clip.png)
+
+
 * **自動條目創建:** 新記憶將作為包含所有元數據的條目儲存。
 * **基於標記的檢測:** 只有帶有 `stmemorybooks` 標籤的條目才會被識別為記憶。
 * **自動編號:** 支援多種格式的順序、補零編號 (`[000]`, `(000)`, `{000}`, `#000`)。
@@ -287,43 +370,109 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ### 🎡 追蹤器與側邊提示詞
 
-側邊提示詞可以像追蹤器一樣使用，並會在你的記憶世界書中創建獨立的 side prompt 條目。側邊提示詞允許你追蹤 **當前狀態**，而不僅僅是過去的事件。例如：
+![在哪裡找到追蹤器與 Side Prompts](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/sp.png)
 
-* 💰 庫存與資源 ("使用者擁有什麼物品？")
-* ❤️ 關係狀態 ("X 對 Y 的感覺如何？")
-* 📊 角色數值 ("當前健康、技能、聲望")
-* 🎯 任務進度 ("哪些目標是活躍的？")
-* 🌍 世界狀態 ("設定中有什麼變化？")
 
-#### **存取:** 從 Memory Books 設定中，點擊 “🎡 追蹤器與側邊提示詞” (側邊提示詞管理器)。
+> 📘 Side Prompts 有獨立指南：[Side Prompts Guide](side-prompts-zh-tw.md)。請參考該指南了解 Sets、巨集、範例與疑難排解。
+> 🎡 需要完整點擊路徑？請參閱 [啟用 Side Prompts 的 Scribe 教學](https://scribehow.com/viewer/How_to_Enable_Side_Prompts_in_Memory_Books__fif494uSSjCmxE2ZCmRGxQ)。
+
+Side Prompts 是獨立的 STMB 提示詞執行，用於維護持續的聊天狀態。可將它們用於追蹤器和輔助筆記，避免讓一般角色回覆變得臃腫。如果您只是想保存一條已選取的固定事實，請使用剪輯，而不是 Side Prompt。
+
+例如：
+
+* 💰 庫存與資源（「使用者擁有什麼物品？」）
+* ❤️ 關係狀態（「X 對 Y 的感覺如何？」）
+* 📊 角色數值（「當前健康、技能、聲望」）
+* 🎯 任務進度（「哪些目標是活躍的？」）
+* 🌍 世界狀態（「設定中有什麼變化？」）
+
+#### **存取:** 從 Memory Books 設定中，點擊 “🎡 追蹤器與側邊提示詞”。
 
 #### **功能:**
 
-```
-- 查看所有側邊提示詞。
-- 創建新的或複製提示詞以嘗試不同的提示詞風格。
-- 編輯或刪除任何預設組 (包括內建的)。
-- 將預設組匯出或匯入為 JSON 檔案以進行備份或分享。
-- 依照模板，手動或自動執行。
-- 在 `Prompt` 和 `Response Format` 中使用 `{{user}}`、`{{char}}` 之類的標準 ST 巨集。
-- 使用像 `{{npc name}}` 這樣的自訂執行階段巨集，它們會在執行 `/sideprompt` 時傳入。
-
-```
+* 查看、建立、複製、編輯、刪除、匯出與匯入 Side Prompts。
+* 手動執行 Side Prompts，在記憶建立後執行，或作為 Side Prompt Set 的一部分執行。
+* 使用 `{{user}}` 和 `{{char}}` 等標準 SillyTavern 巨集。
+* 當提示詞執行時需要提供值，可使用 `{{npc name}}` 等執行階段巨集。
+* 將 Side Prompt 輸出儲存為記憶世界書中的獨立 side-prompt 條目。
 
 #### **使用技巧:**
 
-```
-- 創建新提示詞時，你可以複製內建的以獲得最佳相容性。
-- 額外的側邊提示詞範本庫 [JSON 檔案](../resources/SidePromptTemplateLibrary.json) - 匯入即可使用。
-- 手動語法：`/sideprompt "名稱" {{macro}}="value" [X-Y]`。
-- 在命令自動完成中選擇 side prompt 後，STMB 會提示仍缺少的執行階段巨集。
-- 含有自訂執行階段巨集的 side prompt 只能手動執行。STMB 會在儲存/匯入時移除這類模板的 `On Interval` 和 `On After Memory`，並顯示警告。
+* 建立新提示詞時，建議從內建範本複製。
+* Side Prompts 不必返回 JSON。純文字或 Markdown 都可以。
+* Side Prompts 通常會被更新/覆寫；記憶會依序儲存。
+* 手動語法：`/sideprompt "Name" {{macro}}="value" [X-Y]`。
+* 當聊天需要一組有順序的追蹤器時，使用 Side Prompt Sets。
+* 選定的「記憶建立後」Side Prompt Set 會取代該聊天中個別啟用的「記憶建立後」Side Prompts。
+* 額外的 Side Prompt 範本庫：[JSON 檔案](../resources/SidePromptTemplateLibrary.json)。匯入即可使用。
 
-```
+---
+
+### 🧹 壓縮
+
+![點擊這裡打開壓縮選單](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/compaction.png)
+
+
+壓縮是一種審閱流程，用來讓 STMB 管理的 lorebook 條目更節省 token。它會請 AI 重寫一個現有條目，然後在替換任何內容之前，先讓您查看原文與壓縮草稿。
+
+這和總結整合不同：壓縮會重寫一個條目；總結整合會把多個記憶合併成更大的回顧。
+
+您可以從 Memory Books 主彈窗點擊 **📝 壓縮** 開啟它。較長的剪輯條目也可能在剪輯流程中顯示 **壓縮條目** 按鈕。
+
+#### 符合條件的條目
+
+壓縮會列出所選記憶書中的符合條件條目：
+
+- 帶有 `[STMB Clip]` 標記的剪輯條目
+- 側邊提示詞條目
+- 由 Memory Books 標記的 STMB 記憶條目
+
+不由 STMB 管理的一般 lorebook 條目不會顯示。
+
+#### 運作方式
+
+1. 打開 Memory Books，然後點擊 **📝 壓縮**。
+2. 選擇一個 **記憶書**。如果目前聊天已經有有效的記憶書，STMB 會預先選取它；否則，請從可搜尋下拉選單中選擇。
+3. 選擇一個 **壓縮設定檔**。這會決定壓縮請求使用哪個 AI 連線 / 模型。
+4. 選用：如果想修改送給 AI 的指令，請點擊 **編輯壓縮提示**。
+5. 點擊要重寫條目旁邊的 **壓縮條目**。
+6. 比較 **原始內容** 與 **壓縮草稿**。STMB 會顯示兩者的估算 token 數。
+7. 視需要編輯草稿，然後選擇 **替換為壓縮版本**、**複製壓縮草稿** 或 **取消**。
+
+STMB 不會自動替換原文。只有點擊 **替換為壓縮版本** 後，lorebook 條目才會被修改。
+
+#### 壓縮提示
+
+壓縮提示可以編輯。預設提示會要求 AI 保留重要事實、姓名、代名詞、巨集、包裝標題和結尾標記，同時移除重複內容與低價值措辭。
+
+支援的提示佔位符：
+
+- `{{ENTRY_CONTENT}}` — 目前 lorebook 條目的內容。此佔位符是必需的。
+- `{{ENTRY_KIND}}` — 條目類型，例如 Clip、SidePrompt 或 Memory。
+- `{{ENTRY_TITLE}}` — lorebook 條目的標題。
+
+如果想恢復內建壓縮提示，請在提示編輯器中使用 **重設為預設值**。
+
+#### 適合用於
+
+- 較長的剪輯條目
+- 隨時間累積重複內容的側邊提示詞追蹤條目
+- 有用但冗長的 STMB 記憶條目
+- 常駐且開始浪費上下文的條目
+
+#### 不適合用於
+
+- 添加新事實
+- 總結原始聊天
+- 建立新記憶
+- 重寫不由 STMB 管理的一般 lorebook 條目
 
 ---
 
 ### 🧠 Regex (正規表達式) 整合與進階自訂
+
+![設定 regex](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/regex.png)
+
 
 * **完全控制文字處理**: Memory Books 現在與 SillyTavern 的 **Regex** 擴充功能整合，允許你在送出前和解析前兩個關鍵階段應用文字轉換。
 1. **提示詞生成 (Prompt Generation)**: 使用針對 **User Input (使用者輸入)** 的腳本，自動修改發送給 AI 的提示詞。
@@ -335,7 +484,61 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ---
 
+## 🔎 主題剪輯
+
+主題剪輯會建立或更新一條關於某個主題的聚焦型剪輯式記憶條目。
+
+當你已經保存了一些 STMB 記憶，但想要一條乾淨的「關於這個主題」條目，把這些記憶中的相關細節集中起來時，可以使用它。例如：
+
+- `關於 Seraphina`
+- `關於 {{user}} 的魔法`
+- `關於 Alex 和 Mira 的關係`
+- `關於 Black Harbor 調查`
+
+主題剪輯不同於普通的「剪輯到記憶書」。普通剪輯會直接保存你選取的聊天文字。主題剪輯會讀取既有的 STMB 記憶條目，請 AI 擷取一個主題相關的細節，然後在保存前給你一份可編輯草稿。
+
+#### 運作方式
+
+1. 打開 Memory Books。
+2. 點擊 **🔎 主題剪輯**。
+3. 選擇**來源記憶書**。
+4. 輸入**主題**。
+5. 輸入啟用**關鍵字**，或留空以使用主題。
+6. 選擇建立新的主題剪輯，或更新既有的 `[STMB Clip]` 條目。
+7. 選擇**生成設定檔**。
+8. 點擊**生成草稿**。
+9. 檢查並編輯草稿。
+10. 只有在滿意時才點擊**儲存主題剪輯**。
+
+主題剪輯會保存為普通的剪輯條目，並帶有 `[STMB Clip]` 標記。新條目會使用類似這樣的標題：
+
+```txt
+關於 Seraphina [STMB Clip]
+```
+
+#### 更新既有主題剪輯
+
+更新既有主題剪輯時，STMB 會記住上一次成功執行使用過哪些來源記憶。下一次更新通常只會使用新的或已變更的來源記憶。
+
+如果你想用所有符合條件的記憶重新建立整條條目，請在生成草稿前啟用**從所有來源記憶重建**。
+
+#### 說明
+
+- 主題剪輯只使用已確認的 STMB 記憶條目作為來源材料。
+- 剪輯條目和 Side Prompt 條目不會作為來源記憶使用。
+- 更新目標是既有的 `[STMB Clip]` 條目。
+- AI 草稿在保存前始終可以檢查和編輯。
+- 只有點擊**儲存主題剪輯**後，STMB 才會保存生成的草稿。
+- 如果請求較大，STMB 可能會在執行前顯示 token 警告。
+
+---
+
+---
+
 ## 👤 設定檔管理
+
+![設定檔管理](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profiles.png)
+
 
 * **設定檔:** 每個設定檔包含 API、模型、溫度 (temperature)、提示詞/預設組、標題格式和世界書設定。
 * **匯入/匯出:** 將設定檔分享為 JSON。
@@ -346,6 +549,11 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ## ⚙️ 設定與組態
 
+![主要設定面板 1](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile1.png)
+![主要設定面板 2](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile2.png)
+![主要設定面板 3](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile3.png)
+
+
 ### **全域設定 (Global Settings)**
 
 [Youtube 上的簡短影片概覽](https://youtu.be/mG2eRH_EhHs)
@@ -354,6 +562,9 @@ llama-server -m <model-path> -c <context-size> --port 8080
 * **自動建立故事書 (如果不存在):** ⭐ *v4.2.0 新功能* - 使用你的命名範本自動創建並綁定世界書。
 * **Lorebook Name Template (世界書命名範本):** ⭐ *v4.2.0 新功能* - 使用 {{char}}, {{user}}, {{chat}} 佔位符自訂自動創建的世界書名稱。
 * **Allow Scene Overlap (允許場景重疊):** 允許或防止記憶範圍重疊。
+![場景重疊警告](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/overlap.png)
+![啟用場景重疊](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/overlap2.png)
+
 * **始終使用預設設定檔:** 跳過確認彈出視窗。
 * **顯示記憶預覽:** 啟用預覽彈出視窗，在添加到世界書之前審閱和編輯記憶。
 * **顯示通知:** 切換 Toast 訊息通知。
@@ -372,6 +583,9 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ### **設定檔欄位 (Profile Fields)**
 
+![設定檔組態](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/Profile.png)
+
+
 * **Name (名稱):** 顯示名稱。
 * **API/Provider (API/提供者):** `目前 SillyTavern 設定`、openai、claude、custom、full manual 等。
 * **Model (模型):** 模型名稱 (例如：gpt-4, claude-3-opus)。
@@ -386,6 +600,10 @@ llama-server -m <model-path> -c <context-size> --port 8080
 ---
 
 ## 🏷️ 標題格式化
+
+![標題格式](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/titleformat.png)
+![標題格式列表](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/titleformats.png)
+
 
 使用強大的範本系統自訂你的世界書條目標題。
 
@@ -406,12 +624,43 @@ llama-server -m <model-path> -c <context-size> --port 8080
 
 ## 🧵 上下文記憶 (Context Memories)
 
+![帶有上下文的記憶生成](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/context.png)
+
+
 * **包含最多 7 個先前的記憶** 作為上下文，以獲得更好的連續性。
 * **Token 估算** 包含上下文記憶以確保準確性。
 
 ---
 
+<a id="optional-job-queue-chat-top-bar-required"></a>
+## 🧾 選用工作佇列（需要 Chat Top Bar）
+
+![ST Memory Books 工作佇列](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/queue.png)
+
+
+工作佇列是選用功能，但很強大。你不需要它也能使用 Memory Books。
+
+如果安裝並啟用 **Chat Top Bar** / **Chat Top Info Bar**，STMB 會在聊天頂部列加入 **記憶書任務** 按鈕。它會開啟一個佇列抽屜，讓你查看進行中、已完成、失敗、已取消，或需要審核的 Memory Books 任務。
+
+這在以下情況特別有用：
+
+- 從較長的場景建立記憶
+- 執行整合
+- 在建立記憶後執行 Side Prompts
+- 在長聊天中工作，並希望更清楚地查看進度和審核處理
+
+佇列可以顯示任務狀態、取消進行中的任務、重試失敗的任務，並隱藏已完成的任務。如果佇列中的任務需要使用者審核，STMB 可以將它標記為 **需要審核**，而不是靜默覆寫可能不安全的內容。
+
+如果未安裝或未啟用 Chat Top Bar，STMB 仍會正常運作。你只是無法使用工作佇列 UI。
+
+
+![如何安裝 Chat Top Bar](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/install.png)
+
+---
 ## 🎨 視覺回饋與無障礙設計
+
+![顯示所有視覺狀態的完整場景選擇](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/example.png)
+
 
 * **按鈕狀態:**
 * Inactive (未啟用), active (啟用), valid selection (有效選擇), in-scene (場景中), processing (處理中)。
@@ -421,7 +670,6 @@ llama-server -m <model-path> -c <context-size> --port 8080
 * 鍵盤導航、焦點指示器、ARIA 屬性、減少動態效果、行動裝置友善。
 
 
-
 ---
 
 # FAQ (常見問題)
@@ -429,6 +677,8 @@ llama-server -m <model-path> -c <context-size> --port 8080
 ### 我在 Extensions (擴充功能) 選單中找不到 Memory Books！
 
 設定位於 Extensions 選單中（輸入框左側的魔術棒圖示 🪄）。尋找 "Memory Books"。
+
+![STMB 設定位置](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/menu.png)
 
 ### 我需要運作 Vectors (向量) 嗎？
 

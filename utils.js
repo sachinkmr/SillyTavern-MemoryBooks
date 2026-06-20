@@ -35,6 +35,25 @@ export function clampInt(n, min, max) {
   return Math.min(Math.max(n, min), max);
 }
 
+export function markStmbPopup(popup) {
+    popup?.dlg?.classList?.add('stmb-popup');
+    return popup;
+}
+
+export function withGoBackButton(options = {}) {
+    return {
+        ...options,
+        customButtons: [
+            ...(Array.isArray(options.customButtons) ? options.customButtons : []),
+            {
+                text: translate('Go back', 'STMemoryBooks_GoBack'),
+                result: POPUP_RESULT.CANCELLED,
+                classes: ['menu_button'],
+            },
+        ],
+    };
+}
+
 // Centralized DOM selectors - single source of truth
 export const SELECTORS = {
     extensionsMenu: '#extensionsMenu .list-group',
@@ -63,6 +82,8 @@ export const SELECTORS = {
     modelFireworks: '#model_fireworks_select',
     modelCometapi: '#model_cometapi_select',
     modelAzureOpenai: '#model_azure_openai_select',
+    modelZai: '#model_zai_select',
+    modelChutes: '#model_chutes_select',
     tempOpenai: '#temp_openai',
     tempCounterOpenai: '#temp_counter_openai'
 };
@@ -72,7 +93,7 @@ const SUPPORTED_COMPLETION_SOURCES = [
     'openai', 'claude', 'openrouter', 'ai21', 'makersuite', 'vertexai',
     'mistralai', 'custom', 'cohere', 'perplexity', 'groq', 'nanogpt',
     'deepseek', 'electronhub', 'aimlapi', 'xai', 'pollinations',
-    'moonshot', 'fireworks', 'cometapi', 'azure_openai'
+    'moonshot', 'fireworks', 'cometapi', 'azure_openai', 'zai', 'chutes'
 ];
 
 /**
@@ -160,6 +181,8 @@ export function getApiSelectors() {
         fireworks:     `${prefix}model_fireworks_select`,
         cometapi:      `${prefix}model_cometapi_select`,
         azure_openai:  `${prefix}model_azure_openai_select`,
+        zai:           `${prefix}model_zai_select`,
+        chutes:        `${prefix}model_chutes_select`,
     };
 
     const model = modelSelectorMap[completionSource] || modelSelectorMap.openai;
@@ -567,13 +590,13 @@ export async function estimateTokens(text, options = {}) {
 
 /**
  * Resolve a profile's effective connection into a normalized shape
- * { api, model, temperature, endpoint, apiKey }.
+ * { api, model, temperature, endpoint, apiKey, reverseProxy }.
  * - Applies normalizeCompletionSource to api
  * - Clamps temperature to [0, 2] with default 0.7
- * - Passes through endpoint/apiKey if provided on the profile connection
+ * - Passes through endpoint/apiKey/reverseProxy if provided on the profile connection
  *
  * @param {Object} profile
- * @returns {{ api: string, model: string, temperature: number, endpoint?: string, apiKey?: string }}
+ * @returns {{ api: string, model: string, temperature: number, endpoint?: string, apiKey?: string, reverseProxy?: boolean }}
  */
 export function resolveEffectiveConnectionFromProfile(profile) {
     const conn = (profile?.effectiveConnection || profile?.connection || {});
@@ -585,8 +608,9 @@ export function resolveEffectiveConnectionFromProfile(profile) {
     }
     const endpoint = conn.endpoint ? String(conn.endpoint) : undefined;
     const apiKey = conn.apiKey ? String(conn.apiKey) : undefined;
+    const reverseProxy = !!conn.reverseProxy;
 
-    return { api, model, temperature, endpoint, apiKey };
+    return { api, model, temperature, endpoint, apiKey, reverseProxy };
 }
 
 
@@ -898,6 +922,63 @@ export function validateProfile(profile) {
 }
 
 /**
+ * Normalize ordered additional lorebook-entry references stored on a profile.
+ * @param {Array} refs
+ * @returns {{lorebookName: string, uid: string}[]}
+ */
+export function normalizeAdditionalContextEntries(refs) {
+    if (!Array.isArray(refs)) return [];
+
+    const seen = new Set();
+    const normalized = [];
+    for (const ref of refs) {
+        if (!ref || typeof ref !== 'object') continue;
+        const lorebookName = String(ref.lorebookName || '').trim();
+        const uid = String(ref.uid ?? '').trim();
+        if (!lorebookName || !uid) continue;
+
+        const dedupeKey = `${lorebookName}\u0000${uid}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        normalized.push({ lorebookName, uid });
+    }
+    return normalized;
+}
+
+export function generateProfileKey() {
+    return `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Get the user-facing lorebook entry title used by STMB pickers/prompts.
+ * @param {Object} entry
+ * @param {string|number} uidFallback
+ * @returns {string}
+ */
+export function getLorebookEntryDisplayName(entry, uidFallback = '') {
+    const comment = String(entry?.comment ?? '').trim();
+    if (comment) return comment;
+    const name = String(entry?.name ?? '').trim();
+    if (name) return name;
+    const uid = String(entry?.uid ?? uidFallback ?? '').trim();
+    return uid ? `Entry ${uid}` : 'Untitled entry';
+}
+
+/**
+ * Find a lorebook entry by UID, accepting either object key or entry.uid.
+ * @param {Object} lorebookData
+ * @param {string|number} uid
+ * @returns {Object|null}
+ */
+export function getLorebookEntryByUid(lorebookData, uid) {
+    const uidString = String(uid ?? '');
+    if (!uidString || !lorebookData?.entries) return null;
+    return lorebookData.entries[uidString]
+        || Object.values(lorebookData.entries).find(entry => String(entry?.uid ?? '') === uidString)
+        || null;
+}
+
+/**
  * Deep clone an object (simplified lodash.cloneDeep alternative)
  * @param {any} obj - Object to clone
  * @returns {any} Deep cloned object
@@ -991,6 +1072,31 @@ export function parseTemperature(input) {
 }
 
 /**
+ * Parse persisted boolean-like profile flags without treating non-empty strings as true.
+ * @param {boolean|string|number} input - Boolean-like input
+ * @param {boolean} fallback - Value to use when input is not boolean-like
+ * @returns {boolean} Parsed boolean value
+ */
+export function parseBooleanFlag(input, fallback = false) {
+    if (typeof input === 'boolean') {
+        return input;
+    }
+
+    if (typeof input === 'string') {
+        const normalized = input.trim().toLowerCase();
+        if (normalized === 'true' || normalized === '1') return true;
+        if (normalized === 'false' || normalized === '0') return false;
+    }
+
+    if (typeof input === 'number') {
+        if (input === 1) return true;
+        if (input === 0) return false;
+    }
+
+    return fallback;
+}
+
+/**
  * Format preset name for display
  * @param {string} presetName - Internal preset name
  * @returns {string} Display-friendly name
@@ -1019,18 +1125,27 @@ export function formatPresetDisplayName(presetName) {
  * @param {number} [data.reverseStart=9999] - Reverse ordering start (100-9999).
  * @param {boolean} [data.preventRecursion=true] - The prevent recursion flag.
  * @param {boolean} [data.delayUntilRecursion=false] - The delay until recursion flag.
+ * @param {boolean} [data.skipStructuredOutput=false] - Whether to skip provider structured-output requests.
+ * @param {boolean} [data.useChatCompletionService=false] - Whether to use SillyTavern's ChatCompletionService for eligible requests.
+ * @param {string} [data.chatCompletionPreset=''] - Optional SillyTavern chat completion preset for ChatCompletionService.processRequest.
+ * @param {boolean} [data.reverseProxy=false] - Whether this profile should use reverse proxy settings.
  * @returns {Object} A structured and validated profile object.
  */
 export function createProfileObject(data = {}) {
-    let temperature = parseTemperature(data.temperature);
+    const inputConn = (data.connection && typeof data.connection === 'object') ? data.connection : {};
+
+    let temperature = parseTemperature(data.temperature ?? inputConn.temperature);
     if (temperature === null) {
         temperature = 0.7;
     }
 
     const profile = {
+        profileKey: (typeof data.profileKey === 'string' && data.profileKey.trim())
+            ? data.profileKey.trim()
+            : generateProfileKey(),
         name: (data.name || 'New Profile').trim(),
         connection: {
-            api: data.api || 'openai',
+            api: data.api || inputConn.api || 'openai',
             temperature: temperature,
             useReasoning: !!(data.useReasoning),
         },
@@ -1049,6 +1164,7 @@ export function createProfileObject(data = {}) {
         })(),
         preventRecursion: data.preventRecursion !== undefined ? data.preventRecursion : true,
         delayUntilRecursion: data.delayUntilRecursion !== undefined ? data.delayUntilRecursion : false,
+        skipStructuredOutput: parseBooleanFlag(data.skipStructuredOutput, false),
     };
 
     // Preserve builtin marker for the STMB-required "Current SillyTavern Settings" profile.
@@ -1056,25 +1172,45 @@ export function createProfileObject(data = {}) {
         profile.isBuiltinCurrentST = true;
     }
 
+    if (!profile.isBuiltinCurrentST) {
+        const additionalContextEntries = normalizeAdditionalContextEntries(data.additionalContextEntries);
+        if (additionalContextEntries.length > 0) {
+            profile.additionalContextEntries = additionalContextEntries;
+        }
+    }
+
+    if (profile.connection.api !== 'full-manual') {
+        profile.useChatCompletionService = parseBooleanFlag(data.useChatCompletionService, false);
+        const chatCompletionPreset = String(data.chatCompletionPreset || '').trim();
+        if (profile.useChatCompletionService && chatCompletionPreset) {
+            profile.chatCompletionPreset = chatCompletionPreset;
+        }
+    }
+
     // Set titleFormat if explicitly provided, or if it's not a dynamic profile
     if (data.titleFormat || !data.isDynamicProfile) {
         profile.titleFormat = data.titleFormat || '[000] - {{title}}';
     }
 
-    const model = (data.model || '').trim();
+    const model = (data.model ?? inputConn.model ?? '').trim();
     if (model) {
         profile.connection.model = model;
     }
 
     // Add endpoint and apiKey for full-manual configuration
-    const endpoint = (data.endpoint || '').trim();
+    const endpoint = (data.endpoint ?? inputConn.endpoint ?? '').trim();
     if (endpoint) {
         profile.connection.endpoint = endpoint;
     }
 
-    const apiKey = (data.apiKey || '').trim();
+    const apiKey = (data.apiKey ?? inputConn.apiKey ?? '').trim();
     if (apiKey) {
         profile.connection.apiKey = apiKey;
+    }
+
+    const reverseProxy = data.reverseProxy ?? inputConn.reverseProxy;
+    if (reverseProxy) {
+        profile.connection.reverseProxy = true;
     }
 
     // A profile should have a preset OR a custom prompt. The custom prompt takes precedence.

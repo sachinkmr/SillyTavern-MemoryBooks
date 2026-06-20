@@ -328,7 +328,10 @@ export async function generateKeywordsForSummary(summary, conn, options = {}) {
     endpoint: conn.endpoint,
     apiKey: conn.apiKey,
     extra,
+    reverseProxy: !!conn.reverseProxy,
     signal,
+    useChatCompletionService: !!conn.useChatCompletionService,
+    chatCompletionPreset: conn.chatCompletionPreset || "",
   });
   if (runEpoch !== null) throwIfStmbStopped(runEpoch);
   try {
@@ -354,7 +357,10 @@ export async function generateKeywordsForSummary(summary, conn, options = {}) {
       endpoint: conn.endpoint,
       apiKey: conn.apiKey,
       extra,
+      reverseProxy: !!conn.reverseProxy,
       signal,
+      useChatCompletionService: !!conn.useChatCompletionService,
+      chatCompletionPreset: conn.chatCompletionPreset || "",
     });
     if (runEpoch !== null) throwIfStmbStopped(runEpoch);
     kw = parseKeywordsResponse(retry.text);
@@ -409,6 +415,7 @@ function extractNumberFromTitle(title) {
  */
 export function buildSummaryAnalysisPrompt({
   briefs,
+  lockedSummaries = [],
   previousSummary = null,
   previousOrder = null,
   promptText = null,
@@ -425,6 +432,22 @@ export function buildSummaryAnalysisPrompt({
     /y$/i.test(childTierLabel) ? `${childTierLabel.slice(0, -1)}ies` : `${childTierLabel}s`;
   const childPluralLabel = childPlural.toUpperCase();
   const lines = [];
+  const locked = Array.isArray(lockedSummaries) ? lockedSummaries : [];
+  if (locked.length > 0) {
+    lines.push(
+      `=== ACCEPTED ${targetLabel} SUMMARIES (CANON — DO NOT REWRITE, DO NOT DUPLICATE) ===`,
+    );
+    locked.forEach((item, idx) => {
+      const title = String(item?.title || `${getSummaryTierLabel(targetTier)} ${idx + 1}`).trim();
+      const summary = String(item?.summary || item?.content || "").trim();
+      if (!summary) return;
+      lines.push(`--- ${title} ---`);
+      lines.push(summary);
+      lines.push("");
+    });
+    lines.push(`=== END ACCEPTED ${targetLabel} SUMMARIES ===`);
+    lines.push("");
+  }
   if (previousSummary) {
     lines.push(
       `=== PREVIOUS ${targetLabel} (CANON — DO NOT REWRITE, DO NOT INCLUDE IN YOUR NEW SUMMARY) ===`,
@@ -460,12 +483,14 @@ export function buildSummaryAnalysisPrompt({
 
 export function buildArcAnalysisPrompt({
   briefs,
+  lockedSummaries = [],
   previousArcSummary = null,
   previousArcOrder = null,
   promptText = null,
 }) {
   return buildSummaryAnalysisPrompt({
     briefs,
+    lockedSummaries,
     previousSummary: previousArcSummary,
     previousOrder: previousArcOrder,
     promptText,
@@ -577,17 +602,25 @@ export async function runSummaryAnalysisSequential(
   const runEpoch = parentTask.epoch;
   try {
   const {
-    presetKey = "arc_default",
+    presetKey = null,
     maxItemsPerPass = 12,
     maxPasses = 10,
     minAssigned = 2,
     tokenTarget,
     targetTier = 1,
+    lockedSummaries = [],
   } = options;
   const extra = options?.extra ?? {};
+  let effectivePresetKey = String(presetKey || "").trim();
+  if (!effectivePresetKey) {
+    try {
+      effectivePresetKey = await ArcPrompts.getDefaultPresetKey();
+    } catch {}
+  }
+  if (!effectivePresetKey) effectivePresetKey = "arc_default";
 
   // Determine local max passes (single-arc preset defaults to one pass unless explicitly overridden)
-  const singleArcPreset = presetKey === "arc_alternate";
+  const singleArcPreset = effectivePresetKey === "arc_alternate";
   const maxPassesLocal = Object.prototype.hasOwnProperty.call(
     options,
     "maxPasses",
@@ -622,9 +655,12 @@ export async function runSummaryAnalysisSequential(
 
   // Resolve prompt text
   let promptText = null;
+  if (typeof options?.promptText === "string" && options.promptText.trim()) {
+    promptText = options.promptText;
+  }
   try {
-    if (presetKey && (await ArcPrompts.isValid(presetKey))) {
-      promptText = await ArcPrompts.getPrompt(presetKey);
+    if (!promptText && effectivePresetKey && (await ArcPrompts.isValid(effectivePresetKey))) {
+      promptText = await ArcPrompts.getPrompt(effectivePresetKey);
     }
   } catch {}
   if (!promptText) promptText = getDefaultArcPrompt();
@@ -676,6 +712,7 @@ export async function runSummaryAnalysisSequential(
     // Token budgeting (simple heuristic): shrink batch if needed; raise budget for single large items
     let prompt = buildSummaryAnalysisPrompt({
       briefs: batch, // use the current batch
+      lockedSummaries,
       previousSummary,
       previousOrder: previousOrderValue,
       promptText: promptText,
@@ -689,6 +726,7 @@ export async function runSummaryAnalysisSequential(
       trimmed = true;
       prompt = buildSummaryAnalysisPrompt({
         briefs: batch,
+        lockedSummaries,
         previousSummary,
         previousOrder: previousOrderValue,
         promptText: promptText,
@@ -734,7 +772,10 @@ export async function runSummaryAnalysisSequential(
           endpoint: conn.endpoint,
           apiKey: conn.apiKey,
           extra,
+          reverseProxy: !!conn.reverseProxy,
           signal: task.signal,
+          useChatCompletionService: !!conn.useChatCompletionService,
+          chatCompletionPreset: conn.chatCompletionPreset || "",
         });
         task.throwIfStopped();
         text = res.text;
@@ -763,7 +804,10 @@ export async function runSummaryAnalysisSequential(
             endpoint: conn.endpoint,
             apiKey: conn.apiKey,
             extra,
+            reverseProxy: !!conn.reverseProxy,
             signal: task.signal,
+            useChatCompletionService: !!conn.useChatCompletionService,
+            chatCompletionPreset: conn.chatCompletionPreset || "",
           });
           task.throwIfStopped();
           return res;
@@ -843,10 +887,13 @@ export async function runSummaryAnalysisSequential(
 
       // Optional per-arc membership: member_ids
       let memberIds = null;
+      let memberIdsClear = false;
       if (Array.isArray(aobj.member_ids)) {
-        memberIds = aobj.member_ids
-          .map(resolveId)
-          .filter((id) => id !== undefined);
+        const resolvedMemberIds = aobj.member_ids.map(resolveId);
+        memberIdsClear =
+          aobj.member_ids.length > 0 &&
+          resolvedMemberIds.every((id) => id !== undefined);
+        memberIds = resolvedMemberIds.filter((id) => id !== undefined);
       }
       
       if (memberIds && memberIds.length > 0) {
@@ -862,7 +909,8 @@ export async function runSummaryAnalysisSequential(
         title: aobj.title,
         summary: aobj.summary,
         keywords: Array.isArray(aobj.keywords) ? aobj.keywords : [],
-        memberIds,
+        memberIds: Array.from(new Set(memberIds.map(String))),
+        memberIdsClear,
       });
 
       memberIds.forEach((id) => consumedIdSet.add(String(id)));
@@ -974,12 +1022,13 @@ function resolveConnection(profileOrConnection) {
     const apiIsCurrentST = String(c?.api || "").toLowerCase() === "current_st";
     const apiInfo = apiIsCurrentST ? getCurrentApiInfo() : null;
     const ui = apiIsCurrentST ? getUIModelSettings() : null;
+    const api = normalizeCompletionSource(
+      apiIsCurrentST
+        ? apiInfo?.completionSource || "openai"
+        : c.api || getCurrentApiInfo().completionSource || "openai",
+    );
     return {
-      api: normalizeCompletionSource(
-        apiIsCurrentST
-          ? apiInfo?.completionSource || "openai"
-          : c.api || getCurrentApiInfo().completionSource || "openai",
-      ),
+      api,
       model: apiIsCurrentST ? ui?.model || "" : c.model || getUIModelSettings().model || "",
       temperature:
         apiIsCurrentST
@@ -989,6 +1038,12 @@ function resolveConnection(profileOrConnection) {
             : getUIModelSettings().temperature ?? 0.2,
       endpoint: c.endpoint,
       apiKey: c.apiKey,
+      reverseProxy: !!c.reverseProxy,
+      useChatCompletionService: !!profileOrConnection.useChatCompletionService && api !== "full-manual",
+      chatCompletionPreset:
+        !!profileOrConnection.useChatCompletionService && api !== "full-manual"
+          ? String(profileOrConnection.chatCompletionPreset || "").trim()
+          : "",
     };
   }
   // Fallback: current UI

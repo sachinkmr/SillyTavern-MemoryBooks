@@ -14,7 +14,7 @@ let currentSceneState = {
 
 /**
  * GROUP CHAT SUPPORT: Get current scene markers from appropriate metadata location
- * Handles both group chats (group.chat_metadata) and single character chats (chat_metadata)
+ * Handles both group chats and single character chats through SillyTavern's active chat metadata.
  */
 export function getSceneMarkers() {
     // Use SillyTavern's proper context API for both group chats and single chats
@@ -38,11 +38,11 @@ export function getSceneMarkers() {
 
 /**
  * GROUP CHAT SUPPORT: Save metadata for current context (group or single character)
- * Handles both group metadata saving and regular chat metadata saving
+ * Handles both group chat and single character chat metadata saving.
  */
 export function saveMetadataForCurrentContext() {
     // Both group chats and single chats use chat_metadata as the authoritative source
-    // SillyTavern's group system automatically persists chat_metadata to group.past_metadata
+    // SillyTavern persists it to the current chat file's metadata header.
     saveMetadataDebounced();
 }
 
@@ -518,6 +518,7 @@ export function handleMessageDeletion(deletedId, settings) {
 export function createSceneButtons(messageElement) {
     const messageId = parseInt(messageElement.getAttribute('mesid'));
     let extraButtonsContainer = messageElement.querySelector('.extraMesButtons');
+    let addedButton = false;
 
     // If the button container doesn't exist (e.g., on user messages), create and append it.
     if (!extraButtonsContainer) {
@@ -536,37 +537,35 @@ export function createSceneButtons(messageElement) {
         }
     }
     
-    // Check if buttons already exist to prevent duplication
-    if (messageElement.querySelector('.mes_stmb_start')) return;
-    
-    // Create start button
-    const startButton = document.createElement('div');
-    startButton.title = translate('Mark Scene Start', 'STMemoryBooks_MarkSceneStart');
-    startButton.classList.add('mes_stmb_start', 'mes_button', 'fa-solid', 'fa-caret-right', 'interactable');
-    startButton.setAttribute('tabindex', '0');
-    startButton.setAttribute('data-i18n', '[title]STMemoryBooks_MarkSceneStart');
+    if (!messageElement.querySelector('.mes_stmb_start')) {
+        const startButton = document.createElement('div');
+        startButton.title = translate('Mark Scene Start', 'STMemoryBooks_MarkSceneStart');
+        startButton.classList.add('mes_stmb_start', 'fa-solid', 'fa-caret-right', 'interactable');
+        startButton.setAttribute('tabindex', '0');
+        startButton.setAttribute('data-i18n', '[title]STMemoryBooks_MarkSceneStart');
+        startButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setSceneMarker(messageId, 'start');
+        });
+        extraButtonsContainer.appendChild(startButton);
+        addedButton = true;
+    }
 
-    // Create end button
-    const endButton = document.createElement('div');
-    endButton.title = translate('Mark Scene End', 'STMemoryBooks_MarkSceneEnd');
-    endButton.classList.add('mes_stmb_end', 'mes_button', 'fa-solid', 'fa-caret-left', 'interactable');
-    endButton.setAttribute('tabindex', '0');
-    endButton.setAttribute('data-i18n', '[title]STMemoryBooks_MarkSceneEnd');
-    
-    // Add event listeners
-    startButton.addEventListener('click', (e) => {
-        e.stopPropagation();
-        setSceneMarker(messageId, 'start');
-    });
+    if (!messageElement.querySelector('.mes_stmb_end')) {
+        const endButton = document.createElement('div');
+        endButton.title = translate('Mark Scene End', 'STMemoryBooks_MarkSceneEnd');
+        endButton.classList.add('mes_stmb_end', 'fa-solid', 'fa-caret-left', 'interactable');
+        endButton.setAttribute('tabindex', '0');
+        endButton.setAttribute('data-i18n', '[title]STMemoryBooks_MarkSceneEnd');
+        endButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            setSceneMarker(messageId, 'end');
+        });
+        extraButtonsContainer.appendChild(endButton);
+        addedButton = true;
+    }
 
-    endButton.addEventListener('click', (e) => {
-        e.stopPropagation();
-        setSceneMarker(messageId, 'end');
-    });
-    
-    // Append buttons
-    extraButtonsContainer.appendChild(startButton);
-    extraButtonsContainer.appendChild(endButton);
+    return addedButton;
 }
 
 /**

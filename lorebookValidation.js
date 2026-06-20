@@ -11,17 +11,17 @@ import { DOMPurify } from "../../../../lib.js";
 import { translate } from "../../../i18n.js";
 import { autoCreateLorebook } from "./autocreate.js";
 import { getSceneMarkers } from "./sceneManager.js";
-import { showLorebookSelectionPopup } from "./utils.js";
+import { markStmbPopup, showLorebookSelectionPopup } from "./utils.js";
 import { escapeHtml } from "../../../utils.js";
 
 function getDefaultRetryText(manualMode) {
   return manualMode
     ? translate(
-        "After selecting a lorebook, retry memory generation.",
+        "After selecting a lorebook, try again.",
         "STMemoryBooks_RetryAfterManualLorebookSelection",
       )
     : translate(
-        "After selecting a lorebook in SillyTavern, retry memory generation.",
+        "After selecting a lorebook in SillyTavern, try again.",
         "STMemoryBooks_RetryAfterChatLorebookSelection",
       );
 }
@@ -67,7 +67,7 @@ function getProblemText({ manualMode, lorebookName, reason }) {
 function getActionText({ manualMode, allowCreate, hasExistingLorebooks }) {
   if (allowCreate && hasExistingLorebooks) {
     return translate(
-      "Create a replacement lorebook or select an existing one, then retry memory generation.",
+      "Create a replacement lorebook or select an existing one, then try again.",
       "STMemoryBooks_CreateOrSelectChatLorebookThenRetry",
     );
   }
@@ -82,11 +82,11 @@ function getActionText({ manualMode, allowCreate, hasExistingLorebooks }) {
   if (hasExistingLorebooks) {
     return manualMode
       ? translate(
-          "Select an existing lorebook for this chat, then retry memory generation.",
+          "Select an existing lorebook for this chat, then try again.",
           "STMemoryBooks_SelectManualLorebookThenRetry",
         )
       : translate(
-          "Select an existing lorebook in SillyTavern, then retry memory generation.",
+          "Select an existing lorebook in SillyTavern, then try again.",
           "STMemoryBooks_SelectChatLorebookThenRetry",
         );
   }
@@ -152,6 +152,7 @@ async function showLorebookRecoveryPopup({
     customButtons,
     leftAlign: true,
   });
+  markStmbPopup(recoveryPopup);
   const recoveryResult = await recoveryPopup.show();
 
   if (recoveryResult === POPUP_RESULT.CUSTOM1 && allowCreate) {

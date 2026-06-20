@@ -20,12 +20,21 @@
   - [📊 Prompts Secundarios y Rastreadores Inteligentes](#-prompts-secundarios-y-rastreadores-inteligentes)
   - [📚 Colecciones de Memoria](#-colecciones-de-memoria)
 - [🎯 Elija su Estilo](#-elija-su-estilo)
+- [✂️ Clip to Memory Book](#%EF%B8%8F-clip-to-memory-book)
+  - [¿Cuándo debería usar Clips?](#cuándo-debería-usar-clips)
+  - [Cómo funciona el clipping](#cómo-funciona-el-clipping)
+  - [Crear o renombrar entradas de Clip](#crear-o-renombrar-entradas-de-clip)
+  - [Botón flotante de tijeras](#botón-flotante-de-tijeras)
+  - [Revisar entradas de Clip largas](#revisar-entradas-de-clip-largas)
+- [✂️ Clips vs Side Prompts](#️-clips-vs-side-prompts)
+- [Clip temático](#-clip-temático)
 - [🙈 Ahorro de tokens: ocultar / mostrar](#-ahorro-de-tokens-ocultar--mostrar)
   - [¿Qué significa “ocultar”?](#qué-significa-ocultar)
   - [¿Cuándo sirve?](#cuándo-sirve)
   - [Auto-hide después de crear memoria](#auto-hide-después-de-crear-memoria)
   - [Mostrar antes de generar memoria](#mostrar-antes-de-generar-memoria)
   - [Ajuste inicial recomendable](#ajuste-inicial-recomendable)
+- [🧭 Compaction vs Consolidation](#-compaction-vs-consolidation)
 - [🌈 Consolidación de resúmenes](#-consolidación-de-resúmenes)
   - [¿Qué es?](#qué-es)
   - [¿Cuándo usarlo?](#cuándo-usarlo)
@@ -41,6 +50,7 @@
   - [💬 Consejo Pro](#-consejo-pro)
   - [⌨️ Sintaxis manual /sideprompt](#-sintaxis-manual-sideprompt)
   - [🧠 Control Avanzado de Texto con la Extensión Regex](#-control-avanzado-de-texto-con-la-extensión-regex)
+- [🧹 Compactación](#-compactación)
 - [⚙️ Configuraciones que Realmente Importan](#-configuraciones-que-realmente-importan)
 - [🔧 Solución de Problemas (Cuando las Cosas No Funcionan)](#-solución-de-problemas-cuando-las-cosas-no-funcionan)
 - [🚫 Lo que ST Memory Books No Hace](#-lo-que-st-memory-books-no-hace)
@@ -192,6 +202,299 @@ Piense en ST Memory Books como su **bibliotecario personal de IA** para conversa
 
 ---
 
+## ✂️ Clip to Memory Book
+
+Use **Clip to Memory Book** cuando quiera guardar una línea o dato importante sin crear una memoria de escena completa. Resalte texto en el chat, haga clic en el botón flotante de tijeras y luego elija una entrada de Clip existente o cree una nueva.
+
+¿No sabe si esto debería ser un Clip o un Side Prompt? Consulte [Clips vs Side Prompts](#-clips-vs-side-prompts).
+
+### ¿Cuándo debería usar Clips?
+
+Los Clips son mejores para datos pequeños que quiere que la IA recuerde, por ejemplo:
+
+- una preferencia de un personaje
+- una promesa o secreto
+- un detalle de relación
+- una mascota, lugar, objeto o detalle recurrente
+- una “nota para mí” rápida que no necesita una memoria completa
+
+Para escenas más grandes, use la creación normal de Memory.
+
+### Cómo funciona el clipping
+
+1. Resalte la oración o frase que quiere guardar.
+2. Haga clic en el botón flotante de tijeras.
+3. Elija una entrada de Clip existente o cree una nueva.
+4. Revise la vista previa de la entrada.
+5. Guarde el Clip.
+
+Las entradas de Clip son entradas normales de lorebook marcadas con `[STMB Clip]`. Por ejemplo:
+
+```txt
+Seraphina Healed Me [STMB Clip]
+```
+
+Dentro de la entrada, STMB mantiene el contenido en un formato de sección limpio:
+
+```md
+=== Seraphina Healed Me ===
+
+- Seraphina healed my wounds with magic.
+
+=== END Seraphina Healed Me ===
+```
+
+### Crear o renombrar entradas de Clip
+
+Cuando crea una nueva entrada de Clip, el título de la entrada también se convierte en el encabezado de la sección. Puede renombrar la entrada mientras crea el Clip, y STMB actualizará el encabezado de la sección para que coincida.
+
+Las nuevas entradas de Clip pueden ser:
+
+- **siempre activas**, para datos que deberían estar siempre disponibles
+- **activadas por palabras clave**, para datos que solo deberían aparecer cuando surjan palabras coincidentes
+
+Use palabras clave cuando el Clip solo sea relevante para un tema, personaje, lugar, mascota, objeto o relación concretos.
+
+### Botón flotante de tijeras
+
+El botón flotante de tijeras solo aparece después de resaltar texto dentro del chat. Puede activarlo o desactivarlo en el popup principal de Memory Books.
+
+### Revisar entradas de Clip largas
+
+Si una entrada de Clip se vuelve larga, STMB puede recordarle que la revise. Puede editarla usted mismo, o usar **Compactación** para pedirle a la IA que haga una entrada de Clip, Side Prompt o Memory de STMB más eficiente en tokens antes de decidir si reemplaza la original.
+
+---
+
+## ✂️ Clips vs Side Prompts
+
+Los Clips y Side Prompts guardan información en su Memory Book, pero no sirven para el mismo trabajo.
+
+Regla simple: **los Clips guardan un dato específico. Los Side Prompts mantienen un rastreador vivo.**
+
+| **Clips** | **Side Prompts** |
+|---|---|
+| Guardan texto seleccionado del chat en una entrada de Memory Book. | Piden a la IA que revise el chat y actualice una entrada de rastreador. |
+| Son mejores para un dato claro, una línea, una promesa, una preferencia, un objeto o una nota. | Son mejores para información que cambia con el tiempo, como el estado de una relación, el progreso de una misión, inventario o hilos de trama sin resolver. |
+| Usted elige el texto exacto. STMB guarda lo que seleccionó. | La IA interpreta el chat y escribe o actualiza el rastreador. |
+| Úselos cuando el dato ya es obvio y no necesita análisis. | Úselos cuando la IA necesita comparar, resumir o actualizar estado a partir de varios mensajes. |
+| Normalmente crecen solo cuando usted añade otro Clip manualmente. | Pueden actualizarse repetidamente conforme cambia la historia. |
+| Piense: “fijar esta nota”. | Piense: “mantener esta sección actualizada”. |
+
+Ejemplos de buenos Clips:
+
+- `Aiko likes honey tea.`
+- `Andalino promised not to lie to her again.`
+- `Colt calls her Boss.`
+
+Ejemplos de buenos Side Prompts:
+
+- estado de relación
+- progreso actual de misión
+- inventario y recursos
+- directorio de NPCs
+- hilos de trama sin resolver
+
+Si solo necesita recordar un detalle, use un Clip. Si necesita un rastreador continuo, use un Side Prompt.
+
+---
+
+---
+
+## 🔎 Clip temático
+
+Clip temático sirve para crear una entrada enfocada de “sobre este tema” a partir de memorias que ya creó.
+
+Piense en ello como pedirle a STMB:
+
+> “Lee mis memorias guardadas y crea una entrada útil sobre esta persona, lugar, relación, hilo argumental, objeto, secreto o tema.”
+
+Sigue siendo una entrada de estilo Clip, pero no está recortando texto resaltado del chat. En su lugar, STMB usa entradas de memoria existentes como fuente.
+
+Regla simple: **Clip guarda texto seleccionado. Clip temático reúne detalles relacionados desde memorias guardadas. Side Prompts mantienen rastreadores con el tiempo.**
+
+### Cuándo usar Clip temático
+
+Use Clip temático cuando su Libro de Memoria ya tenga varias memorias y quiera una entrada más fácil de activar sobre un tema específico.
+
+Buenos ejemplos:
+
+- Un NPC recurrente
+- Una relación entre dos personajes
+- Un misterio o investigación
+- Un lugar
+- Una facción
+- Los poderes, heridas, promesas, secretos o preferencias de un personaje
+- Un hilo argumental que aparece en muchas escenas
+
+Temas de ejemplo:
+
+```txt
+Seraphina
+La magia de {{user}}
+La relación de Alex y Mira
+La investigación de Black Harbor
+La llave de plata
+```
+
+### Cuándo no usar Clip temático
+
+No use Clip temático cuando:
+
+- solo quiera guardar una línea resaltada del chat — use **Clip to Memory Book**
+- quiera un rastreador que se actualice automáticamente durante futuras ejecuciones de memoria — use **Side Prompts**
+- quiera acortar una entrada larga — use **Compaction**
+- quiera combinar varias memorias en un resumen de nivel superior — use **Summary Consolidation**
+
+### Cómo usar Clip temático
+
+1. Abra la ventana de Memory Books.
+2. Haga clic en **🔎 Clip temático**.
+3. Elija el **Libro de Memoria de origen**.
+4. Escriba el **Tema**.
+   - Es el asunto en el que la IA debe enfocarse.
+   - Manténgalo específico.
+5. Escriba **Palabras clave**.
+   - Estas serán las palabras clave de activación de la entrada de lorebook.
+   - Si deja las palabras clave vacías, STMB usa el tema.
+6. Elija un modo:
+   - **Crear nuevo Clip temático** crea una nueva entrada `[STMB Clip]`.
+   - **Actualizar entrada existente** actualiza una entrada de Clip existente.
+7. Elija un **Perfil de generación**.
+   - Esto controla qué conexión/modelo de IA escribe el borrador.
+8. Opcional: haga clic en **Editar prompt de Clip temático** si quiere cambiar las instrucciones enviadas a la IA.
+9. Haga clic en **Generar borrador**.
+10. Revise el borrador generado.
+11. Edite el borrador si hace falta.
+12. Haga clic en **Guardar Clip temático**.
+
+STMB no guarda el borrador automáticamente. El lorebook solo cambia después de hacer clic en **Guardar Clip temático**.
+
+### Crear un Clip temático nuevo
+
+Cuando crea un Clip temático nuevo, STMB crea una entrada de lorebook de estilo Clip.
+
+Por ejemplo, si su tema es:
+
+```txt
+Seraphina
+```
+
+el título de la entrada será algo como:
+
+```txt
+Sobre Seraphina [STMB Clip]
+```
+
+La sección visible dentro de la entrada usa el mismo estilo de contenedor que las entradas de Clip normales.
+
+### Actualizar un Clip temático existente
+
+Clip temático también puede actualizar una entrada `[STMB Clip]` existente.
+
+Esto es útil si ya tiene una entrada como:
+
+```txt
+Sobre Seraphina [STMB Clip]
+```
+
+y se han agregado nuevas memorias desde la última vez que la actualizó.
+
+Cuando una actualización de Clip temático se guarda correctamente, STMB almacena un pequeño historial de ejecución en esa entrada. Esto incluye las memorias de origen usadas durante la ejecución. En la siguiente actualización, STMB puede usar ese historial para encontrar solo memorias de origen nuevas o modificadas, en lugar de releerlo todo.
+
+Esto mantiene las actualizaciones más pequeñas y ayuda a evitar enviar las mismas memorias antiguas a la IA una y otra vez.
+
+### Reconstruir desde todas las memorias de origen
+
+Al actualizar un Clip temático existente, puede ver **Reconstruir desde todas las memorias de origen**.
+
+Déjelo desactivado para las actualizaciones normales. STMB usará solo memorias de origen nuevas o modificadas cuando pueda.
+
+Actívelo cuando:
+
+- el Clip temático existente esté muy desactualizado
+- haya cambiado el prompt de Clip temático
+- haya cambiado mucho el tema o las palabras clave
+- quiera que la IA reconsidere todas las memorias guardadas para ese tema
+- la entrada aún no tenga un historial de ejecución útil
+
+### ¿Qué entradas de origen usa?
+
+Clip temático usa entradas de memoria STMB confirmadas del Libro de Memoria seleccionado.
+
+No usa:
+
+- entradas de Clip normales
+- entradas rastreadoras de Side Prompt
+- entradas de lorebook ordinarias que no están gestionadas por STMB
+
+Esto mantiene Clip temático enfocado en memorias que STMB puede identificar de forma segura.
+
+### Buenos hábitos para Clip temático
+
+Use temas enfocados.
+
+Mejor:
+
+```txt
+La relación de Alex y Mira
+```
+
+Menos útil:
+
+```txt
+Todo sobre la historia
+```
+
+Mejor:
+
+```txt
+La llave de plata
+```
+
+Menos útil:
+
+```txt
+Objetos importantes
+```
+
+Clip temático funciona mejor cuando el tema es lo bastante estrecho para que la IA pueda distinguir qué pertenece y qué no.
+
+### Editar el prompt
+
+El prompt de Clip temático se puede editar.
+
+El prompt predeterminado indica a la IA que:
+
+- extraiga solo información relacionada con el tema
+- evite eventos no relacionados
+- conserve nombres, relaciones, preferencias, promesas, secretos, restricciones y asuntos sin resolver
+- mencione conflictos en lugar de elegir una versión en silencio
+- actualice el contenido de Clip existente sin duplicarlo
+- no invente detalles que faltan
+
+El prompt debe incluir:
+
+```txt
+{{SOURCE_MEMORIES}}
+```
+
+Sin ese marcador, STMB no sabrá dónde poner las memorias de origen.
+
+Otros marcadores compatibles incluyen:
+
+```txt
+{{MODE}}
+{{TOPIC}}
+{{KEYWORDS}}
+{{EXISTING_CLIP}}
+{{EXISTING_ENTRY_CONTENT}}
+{{SOURCE_MEMORIES}}
+```
+
+Use **Reset to Default** si su prompt personalizado deja de funcionar bien.
+
+---
+
 ## 🙈 Ahorro de tokens: ocultar / mostrar
 
 Una de las maneras más simples de reducir el desorden y ahorrar tokens en chats largos es ocultar mensajes después de convertirlos en memoria.
@@ -225,6 +528,26 @@ También puede definir cuántos mensajes recientes permanecen visibles con **Men
 * **Ocultar automáticamente solo los mensajes de la última memoria**
 * dejar **2** mensajes visibles
 * activar **Mostrar mensajes ocultos para la generación de memoria (ejecuta /unhide X-Y)** si suele rehacer memorias o necesita volver a ver rangos concretos antes de generar
+
+## 🧭 Compaction vs Consolidation
+
+Los nombres se parecen, pero hacen trabajos distintos.
+
+Regla simple: **la Compactación limpia una entrada. La Consolidación combina varios recuerdos en una recapitulación de nivel superior.**
+
+| **Compaction / Compactación** | **Consolidation / Consolidación** |
+|---|---|
+| Hace más pequeña una entrada existente gestionada por STMB. | Combina varios recuerdos o resúmenes en una recapitulación de nivel superior. |
+| Trabaja con un Clip, una entrada de Side Prompt o una entrada de Memory de STMB a la vez. | Trabaja a partir de varias entradas de memoria/resumen seleccionadas. |
+| Es mejor cuando una entrada es útil, pero demasiado larga, repetitiva o cara de mantener en contexto. | Es mejor cuando los recuerdos de escenas antiguas se acumulan y deberían convertirse en un resumen Arc, Chapter, Book, Legend, Series o Epic. |
+| Reescribe la entrada seleccionada de forma más eficiente en tokens. | Crea una nueva entrada de resumen a partir de las entradas fuente seleccionadas. |
+| Debe conservar los datos existentes y eliminar relleno. | Debe conservar el arco de continuidad mayor y reducir el detalle escena por escena. |
+| No crea una nueva memoria a partir del chat sin procesar. | No compacta por sí sola una entrada inflada. |
+| Piense: “recortar esta entrada”. | Piense: “agrupar estos recuerdos en una recapitulación”. |
+
+Ambas herramientas son de revisión previa. STMB le muestra lo que escribió la IA antes de guardar o reemplazar nada.
+
+---
 
 ## 🌈 Consolidación de resúmenes
 
@@ -371,6 +694,74 @@ ST Memory Books puede ejecutar scripts Regex seleccionados antes de generar y an
 
 ---
 
+## 🧹 Compactación
+
+La compactación ayuda cuando una entrada de lorebook gestionada por STMB sigue siendo útil, pero se ha vuelto demasiado larga o repetitiva. En lugar de recortarla manualmente, puede pedir a la IA que la reescriba de forma más eficiente en tokens.
+
+Es una herramienta de **revisión primero**. STMB muestra el original y el borrador compactado antes de reemplazar nada.
+
+### ¿Qué se puede compactar?
+
+La compactación puede mostrar estas entradas de un Libro de Memoria seleccionado:
+
+- entradas de Clip
+- entradas de tracker de Prompt Lateral
+- entradas de memoria STMB
+
+No muestra entradas ordinarias de lorebook que STMB no gestiona.
+
+### Cómo usar la compactación
+
+1. Abra el popup de Memory Books.
+2. Haga clic en **📝 Compactación**.
+3. Seleccione el **Libro de Memoria** que quiere revisar. Si el chat actual ya tiene un Libro de Memoria, puede aparecer seleccionado automáticamente.
+4. Seleccione un **Perfil de compactación**. Esto elige qué conexión/modelo de IA reescribirá la entrada.
+5. Opcional: haga clic en **Editar prompt de compactación** si quiere cambiar las instrucciones de reescritura.
+6. Busque la entrada en la tabla y haga clic en **Compactar entrada**.
+7. Revise el resultado:
+   - **Contenido original** muestra lo que está guardado actualmente.
+   - **Borrador compactado** muestra la reescritura de la IA.
+   - Ambos muestran recuentos estimados de tokens.
+8. Edite el borrador compactado si hace falta.
+9. Elija una opción:
+   - **Reemplazar con la versión compactada** para guardar el borrador sobre la entrada original.
+   - **Copiar borrador compactado** para copiarlo sin guardar.
+   - **Cancelar** para dejar la entrada sin cambios.
+
+STMB no debería reemplazar nunca el original en silencio. Si no hace clic en **Reemplazar con la versión compactada**, la entrada de lorebook se queda como estaba.
+
+### Editar el Prompt de compactación
+
+El Prompt de compactación controla cómo la IA reescribe las entradas. El prompt incorporado es deliberadamente conservador: preservar hechos importantes, nombres, pronombres, macros, encabezados envoltorio y marcadores de fin; eliminar repetición y texto de bajo valor; no inventar nada.
+
+El prompt admite estos marcadores de posición:
+
+- `{{ENTRY_CONTENT}}` — el contenido actual de la entrada. Es obligatorio.
+- `{{ENTRY_KIND}}` — el tipo de entrada, como Clip, SidePrompt o Memory.
+- `{{ENTRY_TITLE}}` — el título de la entrada.
+
+Use **Restablecer al valor predeterminado** si su prompt personalizado deja de comportarse bien.
+
+### Buenos usos
+
+Use la compactación para:
+
+- entradas de Clip largas
+- trackers de Prompt Lateral que se repiten con el tiempo
+- entradas de memoria correctas pero infladas
+- entradas siempre activas que cuestan demasiados tokens
+
+No la use para:
+
+- crear una memoria nueva desde el chat
+- añadir nuevos datos
+- arreglar continuidad ausente que nunca estuvo en la entrada
+- editar entradas normales de lorebook fuera de STMB
+
+La compactación es una herramienta de limpieza, no una herramienta de generación de memoria.
+
+---
+
 ## ⚙️ Configuraciones que Realmente Importan
 
 Para la referencia completa, consulte [readme.md](readme.md).
@@ -385,6 +776,7 @@ Controles básicos importantes:
 * **Ocultar / mostrar mensajes** ayuda a ahorrar tokens
 * **Activar Modo Manual de Lorebook** y **Crear automáticamente un lorebook si no existe** controlan dónde se guardan los recuerdos
 * **Rastreadores y Prompts secundarios** habilita los rastreadores
+* **Compactación** permite limpiar entradas largas de Clip, Prompt Lateral o memoria STMB antes de reemplazarlas
 * **Avisar para consolidar cuando una capa esté lista** solo muestra la confirmación de consolidación
 
 ---
@@ -400,6 +792,7 @@ Comprobaciones rápidas:
 * Si el auto-summary no se ejecuta, confirme que creó primero una memoria manual y que el intervalo/buffer son razonables
 * Si los recuerdos no se guardan, asegúrese de que haya un lorebook vinculado al chat o de que **Crear automáticamente un lorebook si no existe** esté activado
 * Si el comportamiento de Regex parece incorrecto, revise la selección dentro de **📐 Configurar expresiones regulares…**
+* Si no aparecen entradas en **Compactación**, seleccione un Libro de Memoria y confirme que contiene entradas STMB elegibles
 * Si la consolidación no aparece, confirme que **Avisar para consolidar cuando una capa esté lista** esté activado y que el nivel objetivo esté incluido en **Capas de auto-consolidación**
 * Si la confirmación sí aparece, recuerde que **Yes** solo abre el popup de consolidación; no ejecuta la consolidación por sí sola
 

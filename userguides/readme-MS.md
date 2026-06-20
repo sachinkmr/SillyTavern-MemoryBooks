@@ -3,9 +3,41 @@
 Sambungan SillyTavern generasi baharu untuk penciptaan memori yang automatik, berstruktur, dan boleh dipercayai. Tandakan babak dalam sembang, jana ringkasan berasaskan JSON dengan AI, dan simpan sebagai entri dalam lorebook anda. Menyokong sembang kumpulan, pengurusan profil lanjutan, prom sampingan/penjejak, dan konsolidasi memori berbilang tahap.
 
 ### ❓ Kosa Kata
-- Scene → Memori
-- Many Memories → Ringkasan / Konsolidasi
-- Always-On → Prom Sampingan (Penjejak)
+- Scene → Memori  
+- Satu fakta yang disimpan → Klip  
+- Penjejak berterusan → Prom Sampingan  
+- Banyak Memori → Ringkasan / Konsolidasi  
+- Satu entri panjang → Pemadatan
+
+### Klip vs Prom Sampingan
+
+<details>
+<summary><strong>Klip vs Prom Sampingan</strong></summary>
+
+| **Klip** | **Prom Sampingan** |
+|---|---|
+| Simpan teks sembang yang dipilih ke dalam entri Buku Memori. | Minta AI menyemak sembang dan mengemas kini entri penjejak. |
+| Paling sesuai untuk satu fakta, baris, janji, pilihan, item, atau nota yang jelas. | Paling sesuai untuk maklumat yang berubah dari semasa ke semasa. |
+| Fikirkan: “pin nota ini.” | Fikirkan: “pastikan bahagian ini dikemas kini.” |
+
+</details>
+
+Untuk penjelasan lebih panjang, lihat [Panduan Pengguna](USER_GUIDE-MS.md#-klip-vs-prom-sampingan).
+
+### Pemadatan vs Konsolidasi
+
+<details>
+<summary><strong>Pemadatan vs Konsolidasi</strong></summary>
+
+| **Pemadatan** | **Konsolidasi** |
+|---|---|
+| Memendekkan satu entri sedia ada yang diurus STMB. | Menggabungkan beberapa memori atau ringkasan menjadi satu rekap peringkat lebih tinggi. |
+| Gunakan apabila entri Klip, Prom Sampingan, atau Memori masih berguna, tetapi semakin terlalu panjang. | Gunakan apabila beberapa memori sudah bersedia menjadi Arc, Chapter, Book, atau ringkasan yang lebih besar. |
+| Fikirkan: “kemaskan satu entri ini.” | Fikirkan: “gulung memori ini menjadi rekap.” |
+
+</details>
+
+Untuk penjelasan lebih panjang, lihat [Panduan Pengguna](USER_GUIDE-MS.md#-pemadatan-vs-konsolidasi).
 
 ## ❗ Baca Saya Dahulu!
 
@@ -42,27 +74,32 @@ Pautan lain:
   - [Pratetap Terbina Dalam](#pratetap-terbina-dalam)
   - [Prom Tersuai](#prom-tersuai)
 - [📚 Integrasi Lorebook](#-integrasi-lorebook)
+- [✂️ Klip ke Buku Memori](#-klip-ke-buku-memori)
+- [Klip Topikal](#-klip-topikal)
 - [🆕 Pintasan Perintah Slash](#-pintasan-perintah-slash)
 - [👥 Sokongan Sembang Kumpulan](#-sokongan-sembang-kumpulan)
 - [🧭 Mod Operasi](#-mod-operasi)
   - [Mod Automatik (Lalai)](#mod-automatik-lalai)
   - [Mod Cipta Lorebook Automatik](#mod-cipta-lorebook-automatik)
   - [Mod Lorebook Manual](#mod-lorebook-manual)
-  - [🎡 Penjejak & Prom Sampingan](#-penjejak--prom-sampingan)
-  - [🧠 Integrasi Regex untuk Penyesuaian Lanjutan](#-integrasi-regex-untuk-penyesuaian-lanjutan)
+- [🎡 Penjejak & Prom Sampingan](#-penjejak--prom-sampingan)
+- [🧹 Pemadatan](#-pemadatan)
+- [🧠 Integrasi Regex untuk Penyesuaian Lanjutan](#-integrasi-regex-untuk-penyesuaian-lanjutan)
 - [👤 Pengurusan Profil](#-pengurusan-profil)
 - [⚙️ Tetapan & Konfigurasi](#-tetapan--konfigurasi)
   - [Tetapan Global](#tetapan-global)
   - [Medan Profil](#medan-profil)
 - [🏷️ Pemformatan Tajuk](#-pemformatan-tajuk)
 - [🧵 Memori Konteks](#-memori-konteks)
+- [🧾 Barisan Tugas Pilihan](#optional-job-queue-chat-top-bar-required)
 - [🎨 Maklum Balas Visual & Kebolehcapaian](#-maklum-balas-visual--kebolehcapaian)
+- [Soalan Lazim](#soalan-lazim)
   - [Patutkah saya menggunakan lorebook berasingan untuk memori?](#patutkah-saya-menggunakan-lorebook-berasingan-untuk-memori)
   - [Adakah saya perlu menjalankan vektor?](#adakah-saya-perlu-menjalankan-vektor)
   - [Patutkah saya menggunakan 'Tangguhkan Sehingga Rekursi' jika Memory Books ialah satu-satunya lorebook?](#patutkah-saya-menggunakan-tangguhkan-sehingga-rekursi-jika-memory-books-ialah-satu-satunya-lorebook)
-  - [Mengapa AI tidak nampak entri saya?](#mengapa-ai-tidak-nampak-entri-saya)
+- [Penyelesaian Masalah](#penyelesaian-masalah)
 - [📚 Tingkatkan Kuasa dengan Penyusunan Lorebook (STLO)](#-tingkatkan-kuasa-dengan-penyusunan-lorebook-stlo)
-- [📝 Polisi Karakter (v4.5.1+)](#-polisi-karakter-v451)
+- [📝 Polisi Karakter](#-polisi-karakter-v451)
 - [👨‍💻 Untuk Pembangun](#-untuk-pembangun)
   - [Membina Sambungan](#membina-sambungan)
   - [Git Hooks](#git-hooks)
@@ -70,7 +107,7 @@ Pautan lain:
 ## 📋 Prasyarat
 
 - **SillyTavern:** 1.14.0+ (disyorkan versi terkini)
-- **Pemilihan Babak:** Penanda mula dan tamat mesti ditetapkan, dengan `mula < tamat`
+- **Barisan Tugas Pilihan:** STMB berfungsi tanpa barisan tugas. Untuk menggunakan barisan, pasang dan aktifkan **Chat Top Bar** / **Chat Top Info Bar**, sambungan rasmi SillyTavern yang menambah bar atas pada tetingkap chat. STMB menggunakan bar itu untuk memaparkan butang dan laci **Tugas Buku Memori**.
 - **Sokongan Chat Completion:** Sokongan penuh untuk OpenAI, Claude, Anthropic, OpenRouter, atau API chat completion lain
 - **Sokongan Text Completion:** API text completion (Kobold, TextGen, dll.) disokong apabila disambungkan melalui titik akhir API Chat Completion yang serasi OpenAI. Saya syorkan menyediakan sambungan API Chat Completion mengikut tip KoboldCpp di bawah, kemudian sediakan profil STMB dan gunakan konfigurasi Tersuai (disyorkan) atau manual penuh jika perlu.
 
@@ -119,19 +156,27 @@ llama-server -m <laluan-model> -c <saiz-konteks> --port 8080
 
 ### 1. **Pasang & Muat**
 
+![Tunggu butang ini](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/startup.png)
+
+
 - Muat SillyTavern dan pilih watak atau sembang kumpulan.
 - Tunggu butang chevron (► ◄) muncul pada mesej sembang.
 
-![Tunggu butang ini](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/startup.png)
 
 ### 2. **Tandakan Babak**
+
+![Butang mula yang diklik](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-start.png)
+
+![Butang di tengah babak](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-middle.png)
+
+![Butang tamat yang diklik](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-end.png)
+
 
 - Klik ► pada mesej pertama babak anda.
 - Klik ◄ pada mesej terakhir.
 
 Butang yang ditekan akan kelihatan seperti contoh di bawah. Warna anda mungkin berbeza mengikut tema CSS.
 
-![Maklum balas visual pemilihan babak](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-start.png)
 
 ### 3. **Cipta Memori**
 
@@ -157,6 +202,9 @@ Memori babak menangkap **apa yang berlaku** dalam julat mesej tertentu.
 Ini ialah jenis memori standard yang paling biasa digunakan.
 
 ### 🌈 Konsolidasi Ringkasan
+
+![Butang konsolidasi](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-consolidate.png)
+
 
 Konsolidasi ringkasan menangkap **apa yang berubah dari masa ke masa** merentasi beberapa memori atau ringkasan.
 
@@ -246,22 +294,143 @@ Semua prom dan pratetap **mesti** mengarahkan AI untuk memulangkan hanya JSON ya
 
 ---
 
+
+## ✂️ Klip ke Buku Memori
+
+![Klip teks](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/clip.png)
+
+
+Klip ke Buku Memori adalah untuk nota cepat “ingat ini”. Serlahkan teks sembang yang penting, klik butang gunting terapung, kemudian simpan teks yang dipilih sebagai poin dalam Buku Memori tanpa membuka editor lorebook terlebih dahulu.
+
+Jika anda mahu penjejak berterusan yang dikemas kini dari semasa ke semasa, gunakan Prom Sampingan. Versi ringkas: **Klip = satu fakta yang disimpan; Prom Sampingan = penjejak berterusan.**
+
+#### Cara ia berfungsi
+- Serlahkan teks tepat yang mahu anda ingat.
+- Klik butang gunting terapung. Anda boleh menghidupkan atau mematikan butang ini dalam pop timbul Memory Books.
+- Pilih entri klip sedia ada atau cipta entri baharu.
+- Semak entri semasa dan pratonton yang dikemas kini sebelum menyimpan.
+- Namakan semula entri/bahagian jika perlu.
+
+Entri klip ialah entri lorebook biasa yang ditandakan dengan `[STMB Clip]` di hujung tajuk entri. Contoh:
+
+```txt
+Seraphina Menyembuhkan Saya [STMB Clip]
+```
+
+Bahagian yang kelihatan dalam entri menggunakan tajuk tanpa `[STMB Clip]`:
+
+```md
+=== Seraphina Menyembuhkan Saya ===
+
+- Seraphina menyembuhkan luka saya dengan sihir.
+- Seraphina, penjaga hutan ini
+
+=== END Seraphina Menyembuhkan Saya ===
+```
+
+#### Tip
+- Satu entri klip mempunyai satu bahagian. Gunakan tajuk berfokus seperti `Perkara yang {{user}} Suka`, `Nama Panggilan`, atau `Pilihan Makanan` supaya kata kunci kekal khusus.
+- Entri klip baharu boleh sentiasa aktif atau dicetuskan kata kunci. Sentiasa aktif paling mudah; kata kunci lebih baik apabila entri hanya patut muncul kadang-kadang.
+- Entri sedia ada boleh menjadi entri klip dengan menambahkan `[STMB Clip]` di hujung tajuk.
+- Entri klip yang panjang mungkin menunjukkan peringatan untuk disemak atau dipadatkan. Pemadatan boleh membantu menjadikan entri klip, Prom Sampingan, dan memori STMB lebih cekap token sebelum anda menggantikan yang asal.
+- Entri klip tidak menambah atribusi sumber. Ia hanya menyimpan teks yang anda pilih untuk diklip.
+
+---
+
+## 🔎 Klip Topikal
+
+Klip Topikal mencipta atau mengemas kini entri memori bergaya Klip yang berfokus tentang satu topik.
+
+Gunakan apabila anda sudah mempunyai memori STMB yang disimpan, tetapi mahu satu entri “tentang topik ini” yang kemas dan mengumpulkan butiran berkaitan daripada memori tersebut. Contoh:
+
+- `Tentang Seraphina`
+- `Tentang sihir {{user}}`
+- `Tentang hubungan Alex dan Mira`
+- `Tentang siasatan Black Harbor`
+
+Klip Topikal berbeza daripada Klip ke Buku Memori biasa. Klip biasa menyimpan teks chat yang diserlahkan secara terus. Klip Topikal membaca entri memori STMB sedia ada, meminta AI mengekstrak butiran tentang satu topik, kemudian memberikan draf yang boleh diedit sebelum disimpan.
+
+#### Cara ia berfungsi
+
+1. Buka Memory Books.
+2. Klik **🔎 Klip Topikal**.
+3. Pilih **Buku Memori sumber**.
+4. Masukkan **Topik**.
+5. Masukkan **Kata kunci** pengaktifan, atau biarkan kosong untuk menggunakan topik.
+6. Pilih sama ada untuk mencipta Klip Topikal baharu atau mengemas kini entri `[STMB Clip]` sedia ada.
+7. Pilih **Profil Penjanaan**.
+8. Klik **Jana Draf**.
+9. Semak dan edit draf.
+10. Klik **Simpan Klip Topikal** hanya apabila anda berpuas hati.
+
+Klip Topikal menyimpan entri sebagai entri Klip biasa yang ditandakan dengan `[STMB Clip]`. Entri baharu menggunakan tajuk seperti:
+
+```txt
+Tentang Seraphina [STMB Clip]
+```
+
+#### Mengemas kini Klip Topikal sedia ada
+
+Apabila anda mengemas kini Klip Topikal sedia ada, STMB mengingati memori sumber yang digunakan semasa larian terakhir yang berjaya. Kemas kini seterusnya biasanya hanya menggunakan memori sumber yang baharu atau berubah.
+
+Jika anda mahu membina semula keseluruhan entri daripada semua memori yang layak, hidupkan **Bina semula daripada semua memori sumber** sebelum menjana draf.
+
+#### Nota
+
+- Klip Topikal hanya menggunakan entri memori STMB yang disahkan sebagai bahan sumber.
+- Entri Klip dan entri Prom Sampingan tidak digunakan sebagai memori sumber.
+- Sasaran kemas kini ialah entri `[STMB Clip]` sedia ada.
+- Draf AI sentiasa boleh disemak dan diedit sebelum disimpan.
+- STMB tidak menyimpan draf yang dijana sehingga anda mengklik **Simpan Klip Topikal**.
+- Jika permintaan besar, STMB mungkin menunjukkan amaran token sebelum menjalankannya.
+
+---
+
 ## 🆕 Pintasan Perintah Slash
 
 - `/creatememory` - Cipta memori daripada babak yang ditandakan.
 - `/scenememory X-Y` - Tetapkan julat babak dan cipta memori, contohnya `/scenememory 10-15`.
 - `/nextmemory` - Cipta memori dari akhir memori terakhir hingga mesej semasa.
+- `/stmb-catchup interval:x start:y end:y` - Mencipta memori susulan untuk chat panjang sedia ada dengan memproses julat mesej yang dipilih dalam bahagian mengikut saiz interval.
 - `/sideprompt "Name" {{macro}}="value" [X-Y]` - Jalankan side prompt (`{{macro}}` adalah pilihan).
+- `/sideprompt-set "Set Name" [X-Y]` - Jalankan Side Prompt Set yang disimpan.
+- `/sideprompt-macroset "Set Name" {{macro}}="value" [X-Y]` - Jalankan Side Prompt Set dan bekalkan nilai makro yang boleh digunakan semula.
 - `/sideprompt-on "Name" | all` - Hidupkan side prompt mengikut nama atau semua.
 - `/sideprompt-off "Name" | all` - Matikan side prompt mengikut nama atau semua.
 - `/stmb-highest` - Kembalikan message id tertinggi bagi memori yang telah diproses dalam sembang ini.
 - `/stmb-set-highest <N|none>` - Tetapkan secara manual message id tertinggi yang telah diproses untuk sembang ini.
 - `/stmb-stop` - Hentikan semua penjanaan STMB yang sedang berjalan di mana-mana (henti kecemasan).
 
+### `/stmb-catchup`
+
+Gunakan `/stmb-catchup` apabila menukar chat panjang sedia ada kepada memori STMB.
+
+Sintaks:
+
+```txt
+/stmb-catchup interval:x start:y end:y
+```
+
+Contoh:
+
+```txt
+/stmb-catchup interval:30 start:0 end:300
+```
+
+Parameter:
+
+- `interval:x` - Anggaran bilangan mesej bagi setiap memori yang dijana.
+- `start:y` - Nombor mesej pertama yang akan disertakan.
+- `end:y` - Nombor mesej terakhir yang akan disertakan.
+
+Ini bertujuan untuk penukaran susulan, bukan penggunaan biasa secara berterusan. Selepas STMB sudah mengejar semula, gunakan ringkasan automatik atau `/nextmemory`.
+
+---
+
 ## 👥 Sokongan Sembang Kumpulan
 
 - Semua ciri berfungsi dengan sembang kumpulan.
-- Penanda babak, penciptaan memori, dan integrasi lorebook disimpan dalam metadata kumpulan.
+- Penanda babak, penciptaan memori, dan integrasi lorebook disimpan dalam metadata sembang aktif.
 - Tiada persediaan khas diperlukan. Pilih sahaja sembang kumpulan dan gunakannya seperti biasa.
 
 ---
@@ -270,11 +439,13 @@ Semua prom dan pratetap **mesti** mengarahkan AI untuk memulangkan hanya JSON ya
 
 ### **Mod Automatik (Lalai)**
 
+![Contoh pengikatan lorebook sembang](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/chatlorebook.png)
+
+
 - **Cara ia berfungsi:** Menggunakan lorebook yang terikat pada sembang semasa anda secara automatik.
 - **Terbaik untuk:** Kesederhanaan dan kelajuan. Kebanyakan pengguna harus bermula di sini.
 - **Cara guna:** Pastikan lorebook dipilih dalam menu lungsur "Chat Lorebooks" untuk watak atau sembang kumpulan anda.
 
-![Contoh pengikatan lorebook sembang](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/chatlorebook.png)
 
 ### **Mod Cipta Lorebook Automatik**
 
@@ -302,7 +473,15 @@ Semua prom dan pratetap **mesti** mengarahkan AI untuk memulangkan hanya JSON ya
 
 ### 🎡 Penjejak & Prom Sampingan
 
-Prom Sampingan boleh digunakan seperti penjejak dan akan mencipta entri side prompt yang berasingan dalam lorebook memori anda. Prom Sampingan membolehkan anda menjejak **keadaan semasa**, bukan hanya peristiwa lalu. Contohnya:
+![Tempat mencari Penjejak & Prom Sampingan](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/sp.png)
+
+
+> 📘 Side Prompts mempunyai panduan sendiri: [Side Prompts Guide](side-prompts-ms.md). Gunakan panduan itu untuk set, makro, contoh, dan penyelesaian masalah.
+> 🎡 Perlukan laluan klik yang tepat? Lihat [panduan Scribe untuk mengaktifkan Side Prompts](https://scribehow.com/viewer/How_to_Enable_Side_Prompts_in_Memory_Books__fif494uSSjCmxE2ZCmRGxQ).
+
+Side Prompts ialah larian prompt STMB yang berasingan untuk mengekalkan keadaan sembang yang sedang berjalan. Gunakannya untuk penjejak dan nota sokongan yang tidak patut mengembungkan balasan watak biasa. Jika anda hanya mahu menyimpan satu fakta yang diserlahkan, gunakan Klip ke Buku Memori sebaliknya.
+
+Gunakan Side Prompts untuk perkara seperti:
 
 - 💰 Inventori & Sumber ("Apa item yang pengguna miliki?")
 - ❤️ Status Hubungan ("Apa perasaan X terhadap Y?")
@@ -310,30 +489,91 @@ Prom Sampingan boleh digunakan seperti penjejak dan akan mencipta entri side pro
 - 🎯 Kemajuan Misi ("Apa matlamat yang aktif?")
 - 🌍 Keadaan Dunia ("Apa yang berubah dalam latar?")
 
-#### **Akses**
-Daripada tetapan Memory Books, klik `🎡 Penjejak & Prom Sampingan`.
+#### **Akses:** Daripada tetapan Memory Books, klik “🎡 Penjejak & Prom Sampingan”.
 
-#### **Ciri-ciri**
+#### **Ciri-ciri:**
+- Lihat, cipta, gandakan, edit, padam, eksport, dan import Side Prompts.
+- Jalankan Side Prompts secara manual, selepas memori, atau sebagai sebahagian daripada Side Prompt Set.
+- Gunakan makro SillyTavern standard seperti `{{user}}` dan `{{char}}`.
+- Gunakan makro runtime seperti `{{npc name}}` apabila prompt memerlukan nilai yang dibekalkan semasa dijalankan.
+- Simpan output Side Prompt sebagai entri side-prompt yang berasingan dalam lorebook memori anda.
 
-- Lihat semua prom sampingan.
-- Cipta prom baharu atau gandakan prom sedia ada untuk bereksperimen dengan gaya yang berbeza.
-- Edit atau padam mana-mana pratetap, termasuk yang terbina dalam.
-- Eksport dan import pratetap sebagai fail JSON untuk sandaran atau perkongsian.
-- Jalankan secara manual atau automatik, bergantung pada templat.
-- Gunakan makro/placeholder SillyTavern standard seperti `{{user}}` dan `{{char}}` dalam medan `Prompt`, `Response Format`, `Title`, dan `{{keyword}}` bagi side prompt.
-- Gunakan makro tersuai seperti `{{npc name}}` yang anda bekalkan apabila menjalankan `/sideprompt`.
+#### **Tip Penggunaan:**
+- Salin daripada templat terbina dalam apabila mencipta prompt baharu.
+- Side Prompts tidak perlu mengembalikan JSON. Teks biasa atau Markdown juga boleh digunakan.
+- Side Prompts biasanya dikemas kini/ditindih; memori disimpan secara berurutan.
+- Sintaks manual ialah `/sideprompt "Name" {{macro}}="value" [X-Y]`.
+- Gunakan Side Prompt Sets apabila sembang memerlukan himpunan penjejak yang tersusun.
+- Side Prompt Set yang dipilih untuk dijalankan selepas memori akan menggantikan Side Prompts individu yang dihidupkan untuk dijalankan selepas memori dalam sembang itu.
+- Pustaka Templat Side Prompts tambahan tersedia sebagai [fail JSON](../resources/SidePromptTemplateLibrary.json). Import sahaja untuk digunakan.
 
-#### **Tip Penggunaan**
+---
 
-- Apabila mencipta prom baharu, anda boleh menyalin daripada terbina dalam untuk keserasian terbaik.
-- Side prompt tidak perlu mengembalikan JSON. Ia boleh mengembalikan teks biasa.
-- Side prompt dikemas kini/ditindih. Ini membezakannya daripada memori yang disimpan secara berurutan.
-- Sintaks manual ialah `/sideprompt "Nama" {{macro}}="value" [X-Y]`.
-- Selepas anda memilih side prompt dalam autolengkap perintah, STMB akan mencadangkan makro runtime yang diperlukan untuk templat tersebut.
-- Side prompt dengan makro runtime tersuai (bukan ST default) adalah manual sahaja. STMB mematikan `On Interval` dan `On After Memory` daripada templat itu semasa simpan/import dan memaparkan amaran apabila itu berlaku.
-- Pustaka templat Side Prompts tambahan terdapat dalam [fail JSON](resources/SidePromptTemplateLibrary.json). Hanya import untuk digunakan.
+### 🧹 Pemadatan
+
+![Klik di sini untuk Menu Pemadatan](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/compaction.png)
+
+
+Pemadatan ialah aliran semak untuk menjadikan entri lorebook yang diurus oleh STMB lebih cekap token. STMB meminta AI menulis semula satu entri sedia ada, kemudian menunjukkan kandungan asal dan draf yang dipadatkan sebelum apa-apa digantikan.
+
+Ini berasingan daripada Ringkasan Konsolidasi: Pemadatan menulis semula satu entri; Konsolidasi menggabungkan beberapa memori menjadi rekap yang lebih besar.
+
+Anda boleh membukanya daripada pop timbul utama Memory Books dengan **📝 Pemadatan**. Entri Klip yang panjang juga mungkin menawarkan butang **Padatkan Entri** daripada aliran Klip.
+
+#### Entri yang layak
+
+Pemadatan menyenaraikan entri yang layak daripada Buku Memori yang dipilih:
+
+- Entri Klip yang ditandakan dengan `[STMB Clip]`
+- Entri Prom Sampingan
+- Entri memori STMB yang ditandakan oleh Memory Books
+
+Entri lorebook biasa yang tidak diurus oleh STMB tidak akan dipaparkan.
+
+#### Cara ia berfungsi
+
+1. Buka Memory Books dan klik **📝 Pemadatan**.
+2. Pilih **Buku Memori**. Jika sembang semasa sudah mempunyai Buku Memori yang sah, STMB akan memilihnya terlebih dahulu; jika tidak, pilih satu daripada menu lungsur boleh cari.
+3. Pilih **Profil Pemadatan**. Ini mengawal sambungan/model AI yang digunakan untuk permintaan pemadatan.
+4. Secara pilihan, klik **Edit Prom Pemadatan** jika anda mahu mengubah arahan yang dihantar kepada AI.
+5. Klik **Padatkan Entri** di sebelah entri yang mahu ditulis semula.
+6. Bandingkan **Kandungan asal** dan **Draf dipadatkan**. STMB menunjukkan anggaran kiraan token untuk kedua-duanya.
+7. Edit draf jika perlu, kemudian pilih **Gantikan dengan Versi Dipadatkan**, **Salin Draf Dipadatkan**, atau **Batal**.
+
+STMB **tidak** menggantikan entri asal secara automatik. Entri lorebook hanya berubah jika anda mengklik **Gantikan dengan Versi Dipadatkan**.
+
+#### Prom Pemadatan
+
+Prom Pemadatan boleh diedit. Prom lalai menyuruh AI mengekalkan fakta penting, nama, kata ganti nama, makro, tajuk pembungkus, dan penanda akhir sambil membuang pengulangan dan kata-kata bernilai rendah.
+
+Pemegang tempat prom yang disokong:
+
+- `{{ENTRY_CONTENT}}` — kandungan entri lorebook semasa. Pemegang tempat ini wajib ada.
+- `{{ENTRY_KIND}}` — jenis entri, seperti Klip, Prom Sampingan, atau Memori.
+- `{{ENTRY_TITLE}}` — tajuk entri lorebook.
+
+Gunakan **Tetapkan Semula kepada Lalai** dalam editor prom jika anda mahu memulihkan Prom Pemadatan terbina dalam.
+
+#### Sesuai digunakan untuk
+
+- entri Klip yang panjang
+- entri penjejak Prom Sampingan yang telah mengumpul nota berulang
+- entri memori STMB yang berguna tetapi terlalu bertele-tele
+- entri yang sentiasa aktif dan mula membazir konteks
+
+#### Tidak dimaksudkan untuk
+
+- menambah fakta baharu
+- meringkaskan sembang mentah
+- mencipta memori baharu
+- menulis semula entri lorebook biasa yang tidak diurus oleh STMB
+
+---
 
 ### 🧠 Integrasi Regex untuk Penyesuaian Lanjutan
+
+![Konfigurasi regex](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/regex.png)
+
 
 - **Kawalan penuh terhadap pemprosesan teks:** Memory Books kini berintegrasi dengan sambungan **Regex** SillyTavern, membolehkan anda menggunakan transformasi teks yang berkuasa pada dua peringkat utama:
   1. **Penjanaan Prom:** Ubah suai prom yang dihantar ke AI secara automatik dengan mencipta skrip regex yang menyasarkan penempatan **User Input**.
@@ -346,6 +586,9 @@ Daripada tetapan Memory Books, klik `🎡 Penjejak & Prom Sampingan`.
 
 ## 👤 Pengurusan Profil
 
+![Pengurusan Profil](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profiles.png)
+
+
 - **Profil:** Setiap profil termasuk API, model, suhu, prom/pratetap, format tajuk, dan tetapan lorebook.
 - **Import/Eksport:** Kongsi profil sebagai JSON.
 - **Penciptaan Profil:** Gunakan pop timbul pilihan lanjutan untuk menyimpan profil baharu.
@@ -356,7 +599,10 @@ Daripada tetapan Memory Books, klik `🎡 Penjejak & Prom Sampingan`.
 
 ## ⚙️ Tetapan & Konfigurasi
 
-![Panel tetapan utama](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/Main.png)
+![Panel tetapan utama 1](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile1.png)
+![Panel tetapan utama 2](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile2.png)
+![Panel tetapan utama 3](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile3.png)
+
 
 ### **Tetapan Global**
 
@@ -383,9 +629,11 @@ Daripada tetapan Memory Books, klik `🎡 Penjejak & Prom Sampingan`.
 - **Gunakan regex (lanjutan):** Mendayakan pop timbul pemilihan regex STMB untuk pemprosesan keluar/masuk.
 - **Format Tajuk Memori:** Pilih atau sesuaikan format tajuk (lihat di bawah).
 
-![Konfigurasi profil](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/Profile.png)
 
 ### **Medan Profil**
+
+![Konfigurasi profil](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/Profile.png)
+
 
 - **Nama:** Nama paparan.
 - **API/Pembekal:** `Tetapan SillyTavern Semasa`, openai, claude, custom, full manual, dan pembekal lain yang disokong.
@@ -401,6 +649,10 @@ Daripada tetapan Memory Books, klik `🎡 Penjejak & Prom Sampingan`.
 ---
 
 ## 🏷️ Pemformatan Tajuk
+
+![Format tajuk](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/titleformat.png)
+![Format-format tajuk](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/titleformats.png)
+
 
 Sesuaikan tajuk entri lorebook anda menggunakan sistem templat yang berkuasa.
 
@@ -419,19 +671,48 @@ Sesuaikan tajuk entri lorebook anda menggunakan sistem templat yang berkuasa.
 
 ## 🧵 Memori Konteks
 
+![Penjanaan memori dengan konteks](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/context.png)
+
+
 - **Sertakan sehingga 7 memori terdahulu** sebagai konteks untuk kesinambungan yang lebih baik.
 - **Anggaran token** termasuk memori konteks untuk ketepatan.
 - **Pilihan lanjutan** membolehkan anda mengatasi sementara tingkah laku prom/profil untuk satu kali penjanaan memori.
 
-![Penjanaan memori dengan konteks](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/context.png)
 
 ---
 
+<a id="optional-job-queue-chat-top-bar-required"></a>
+## 🧾 Barisan Tugas Pilihan (memerlukan Chat Top Bar)
+
+![Barisan Tugas ST Memory Books](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/queue.png)
+
+
+Barisan tugas adalah pilihan, tetapi berkuasa. Anda tidak memerlukannya untuk menggunakan Memory Books.
+
+Jika anda memasang dan mengaktifkan **Chat Top Bar** / **Chat Top Info Bar**, STMB menambah butang **Tugas Buku Memori** pada bar atas chat. Ini membuka laci barisan tempat anda boleh melihat tugas Memory Books yang aktif, selesai, gagal, dibatalkan, atau perlu disemak.
+
+Ini sangat berguna apabila anda:
+
+- mencipta memori daripada babak yang lebih panjang
+- menjalankan konsolidasi
+- menjalankan Side Prompts selepas penciptaan memori
+- bekerja dalam chat panjang dan mahukan kemajuan serta pengendalian semakan yang lebih jelas
+
+Barisan boleh menunjukkan status tugas, membatalkan tugas aktif, mencuba semula tugas yang gagal, dan menyembunyikan tugas yang selesai. Jika tugas dalam barisan memerlukan semakan pengguna, STMB boleh menandakannya sebagai **Perlu semakan** dan bukannya menulis ganti sesuatu yang tidak selamat secara senyap.
+
+Jika Chat Top Bar tidak dipasang atau tidak diaktifkan, STMB masih berfungsi seperti biasa. Anda hanya tidak akan mempunyai UI barisan tugas.
+
+
+![Cara memasang Chat Top Bar](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/install.png)
+
+---
 ## 🎨 Maklum Balas Visual & Kebolehcapaian
+
+![Pemilihan babak lengkap menunjukkan semua keadaan visual](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/example.png)
+
 
 - **Keadaan Butang:** tidak aktif, aktif, pemilihan sah, dalam babak, memproses.
 
-![Pemilihan babak lengkap menunjukkan semua keadaan visual](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/example.png)
 
 - **Kebolehcapaian:** navigasi papan kekunci, penunjuk fokus, atribut ARIA, pergerakan dikurangkan, mesra mudah alih.
 
@@ -461,10 +742,15 @@ Jika entri memang dicetuskan dan dihantar ke AI, kemungkinan anda perlu menegur 
 
 # Penyelesaian Masalah
 
+![Amaran pertindihan babak](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/overlap.png)
+![Dayakan pertindihan babak](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/overlap2.png)
+
+
 - **Saya tidak dapat mencari Memory Books dalam menu Extensions!**
   Tetapan berada dalam menu Extensions, iaitu ikon tongkat sihir 🪄 di sebelah kiri kotak input anda. Cari "Memory Books".
 
-  ![Lokasi tetapan STMB](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/menu.png)
+![Lokasi tetapan STMB](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/menu.png)
+
 
 - **Tiada lorebook tersedia atau dipilih:**
   - Dalam Mod Manual, pilih lorebook apabila diminta.
@@ -480,7 +766,6 @@ Jika entri memang dicetuskan dan dihantar ke AI, kemungkinan anda perlu menegur 
 - **Babak bertindih dengan memori sedia ada:**
   - Pilih julat yang berbeza, atau dayakan "Allow Scene Overlap" dalam tetapan.
 
-  ![Amaran pertindihan babak](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/overlap.png)
 
 - **AI gagal menjana memori yang sah:**
   - Gunakan model yang menyokong output JSON.

@@ -11,10 +11,15 @@ Need the bot to remember things, but the chat is too long for context? Want to a
 - [Quick Start](#-quick-start-5-minutes-to-your-first-memory)
 - [What ST Memory Books Actually Does](#-what-st-memory-books-actually-does)
 - [Choose Your Style](#-choose-your-style)
+- [Clip to Memory Book](#%EF%B8%8F-clip-to-memory-book)
+- [Topical Clip](#-topical-clip)
+- [Clips vs Side Prompts](#️-clips-vs-side-prompts)
 - [Token Saving: Hide/Unhide Messages](#-token-saving-hide--unhide-messages)
+- [Compaction vs Consolidation](#-compaction-vs-consolidation)
 - [Summary Consolidation](#-summary-consolidation)
 - [Trackers, Side Prompts, & Templates](#-trackers-side-prompts--templates-advanced-feature)
-- [Settings That Matter First](#-settings-that-matter-first)
+- [Compaction](#-compaction)
+- [Settings That Matter First](#️-settings-that-matter-first)
 - [Troubleshooting](#-troubleshooting-when-things-dont-work)
 - [What ST Memory Books Doesn't Do](#-what-st-memory-books-doesnt-do)
 - [Getting Help & More Info](#-getting-help--more-info)
@@ -148,6 +153,301 @@ Think of ST Memory Books as your **personal AI librarian** for chat conversation
 
 ---
 
+## ✂️ Clip to Memory Book
+
+Use **Clip to Memory Book** when you want to save one important line or fact without creating a full scene memory. Highlight text in chat, click the floating scissors button, then choose an existing clip entry or create a new one.
+
+Not sure whether this should be a clip or a side prompt? See [Clips vs Side Prompts](#-clips-vs-side-prompts).
+
+### When should I use clips?
+
+Clips are best for small facts you want the AI to remember, such as:
+
+- a character preference
+- a promise or secret
+- a relationship detail
+- a pet, place, item, or recurring detail
+- a quick “note to self” that does not need a full memory summary
+
+For larger scenes, use normal Memory creation instead.
+
+### How clipping works
+
+1. Highlight the sentence or phrase you want to save.
+2. Click the floating scissors button.
+3. Choose an existing clip entry, or create a new one.
+4. Review the entry preview.
+5. Save the clip.
+
+Clip entries are normal lorebook entries marked with `[STMB Clip]`. For example:
+
+```txt
+Seraphina Healed Me [STMB Clip]
+```
+
+Inside the entry, STMB keeps the content in a clean section format:
+
+```md
+=== Seraphina Healed Me ===
+
+- Seraphina healed my wounds with magic.
+
+=== END Seraphina Healed Me ===
+```
+
+### Creating or renaming clip entries
+
+When you create a new clip entry, the entry title also becomes the section heading. You can rename the entry while clipping, and STMB will update the section heading to match.
+
+New clip entries can be:
+
+- **always active**, for facts that should always be available
+- **keyword-triggered**, for facts that should only appear when matching words come up
+
+Use keywords when the clip is only relevant to a specific topic, character, place, pet, item, or relationship.
+
+### Floating scissors button
+
+The floating scissors button only appears after you highlight text inside the chat. You can turn this button on or off in the main Memory Books popup.
+
+### Reviewing long clip entries
+
+If a clip entry gets long, STMB may remind you to review it. You can edit it yourself, or use **Compaction** to ask the AI to make a clip, side prompt, or STMB memory entry more token-efficient before you choose whether to replace the original.
+
+---
+
+## ✂️ Clips vs Side Prompts
+
+Clips and Side Prompts both save information into your Memory Book, but they are not for the same job.
+
+Plain rule: **Clips save a specific fact. Side Prompts maintain a living tracker.**
+
+| **Clips** | **Side Prompts** |
+|---|---|
+| Save selected chat text into a Memory Book entry. | Ask the AI to review chat and update a tracker entry. |
+| Best for one clear fact, line, promise, preference, item, or note. | Best for information that changes over time, like relationship status, quest progress, inventory, or unresolved plot threads. |
+| You choose the exact text. STMB saves what you selected. | The AI interprets the chat and writes or updates the tracker. |
+| Use when the fact is already obvious and does not need analysis. | Use when the AI needs to compare, summarize, or update state from multiple messages. |
+| Usually grows only when you manually add another clip. | Can update repeatedly as the story changes. |
+| Think: “pin this note.” | Think: “keep this section updated.” |
+
+Examples of good Clips:
+
+- `Aiko likes honey tea.`
+- `Andalino promised not to lie to her again.`
+- `Colt calls her Boss.`
+
+Examples of good Side Prompts:
+
+- relationship status
+- current quest progress
+- inventory and resources
+- NPC directory
+- unresolved plot threads
+
+If you only need one remembered detail, use a Clip. If you need an ongoing tracker, use a Side Prompt.
+
+---
+
+## 🔎 Topical Clip
+
+Topical Clip is for making one focused “about this topic” memory entry from memories you already created.
+
+Think of it like asking STMB:
+
+> “Read my saved memories and make one useful entry about this person, place, relationship, plot thread, item, secret, or topic.”
+
+It is still a Clip-style entry, but you are not clipping highlighted chat text. Instead, STMB uses existing memory entries as the source.
+
+Plain rule: **Clip saves selected text. Topical Clip gathers related details from saved memories. Side Prompts maintain trackers over time.**
+
+### When to use Topical Clip
+
+Use Topical Clip when your Memory Book already has several memories and you want one easier-to-trigger entry about a specific subject.
+
+Good examples:
+
+- A recurring NPC
+- A relationship between two characters
+- A mystery or investigation
+- A location
+- A faction
+- A character’s powers, injuries, promises, secrets, or preferences
+- A plot thread that appears across many scenes
+
+Example topics:
+
+```txt
+Seraphina
+{{user}}'s magic
+Alex and Mira's relationship
+The Black Harbor investigation
+The silver key
+````
+
+### When not to use Topical Clip
+
+Do not use Topical Clip when:
+
+* you only want to save one highlighted line from chat — use **Clip to Memory Book**
+* you want a tracker that updates automatically during future memory runs — use **Side Prompts**
+* you want to shorten one long entry — use **Compaction**
+* you want to combine several memories into a higher-level recap — use **Summary Consolidation**
+
+### How to use Topical Clip
+
+1. Open the Memory Books popup.
+2. Click **🔎 Topical Clip**.
+3. Choose the **Source Memory Book**.
+4. Enter the **Topic**.
+
+   * This is the subject the AI should focus on.
+   * Keep it specific.
+5. Enter **Keywords**.
+
+   * These become the lorebook activation keywords.
+   * If you leave keywords empty, STMB uses the topic.
+6. Choose a mode:
+
+   * **Create new Topical Clip** makes a new `[STMB Clip]` entry.
+   * **Update existing entry** updates an existing Clip entry.
+7. Choose a **Generation Profile**.
+
+   * This controls which AI connection/model writes the draft.
+8. Optional: click **Edit Topical Clip Prompt** if you want to change the instructions sent to the AI.
+9. Click **Generate Draft**.
+10. Review the generated draft.
+11. Edit the draft if needed.
+12. Click **Save Topical Clip**.
+
+STMB does not save the draft automatically. The lorebook only changes after you click **Save Topical Clip**.
+
+### Creating a new Topical Clip
+
+When you create a new Topical Clip, STMB creates a Clip-style lorebook entry.
+
+For example, if your topic is:
+
+```txt
+Seraphina
+```
+
+The entry title will look like:
+
+```txt
+About Seraphina [STMB Clip]
+```
+
+The visible section inside the entry uses the same Clip wrapper style as normal Clip entries.
+
+### Updating an existing Topical Clip
+
+Topical Clip can also update an existing `[STMB Clip]` entry.
+
+This is useful when you already have an entry like:
+
+```txt
+About Seraphina [STMB Clip]
+```
+
+and new memories have been added since the last time you updated it.
+
+When a Topical Clip update saves successfully, STMB stores a small run history on that entry. This includes the source memories used during the run. On the next update, STMB can use that history to find only new or changed source memories instead of rereading everything.
+
+This keeps updates smaller and helps avoid repeatedly feeding the same old memories back into the AI.
+
+### Rebuild from all source memories
+
+When updating an existing Topical Clip, you may see **Rebuild from all source memories**.
+
+Leave this off for normal updates. STMB will use only new or changed source memories when it can.
+
+Turn it on when:
+
+* the existing Topical Clip is badly outdated
+* you changed the Topical Clip prompt
+* you changed the topic or keywords significantly
+* you want the AI to reconsider all saved memories for that topic
+* the entry has no useful run history yet
+
+### What source entries does it use?
+
+Topical Clip uses confirmed STMB memory entries from the selected Memory Book.
+
+It does not use:
+
+* normal Clip entries
+* Side Prompt tracker entries
+* ordinary lorebook entries that are not managed by STMB
+
+This keeps Topical Clip focused on memories STMB already knows how to identify safely.
+
+### Good Topical Clip habits
+
+Use focused topics.
+
+Better:
+
+```txt
+Alex and Mira's relationship
+```
+
+Less useful:
+
+```txt
+Everything about the story
+```
+
+Better:
+
+```txt
+The silver key
+```
+
+Less useful:
+
+```txt
+Important items
+```
+
+Topical Clip works best when the topic is narrow enough that the AI can tell what belongs and what does not.
+
+### Prompt editing
+
+The Topical Clip prompt is editable.
+
+The default prompt tells the AI to:
+
+* extract only information related to the topic
+* avoid unrelated events
+* preserve names, relationships, preferences, promises, secrets, constraints, and unresolved issues
+* mention conflicts instead of silently choosing one version
+* update existing Clip content without duplicating it
+* avoid inventing missing details
+
+The prompt must include:
+
+```txt
+{{SOURCE_MEMORIES}}
+```
+
+Without that placeholder, STMB will not know where to put the source memories.
+
+Other supported placeholders include:
+
+```txt
+{{MODE}}
+{{TOPIC}}
+{{KEYWORDS}}
+{{EXISTING_CLIP}}
+{{EXISTING_ENTRY_CONTENT}}
+{{SOURCE_MEMORIES}}
+```
+
+Use **Reset to Default** if your custom prompt stops working well.
+
+---
+
 ## 🙈 Token Saving: Hide / Unhide Messages
 
 One of the easiest ways to reduce clutter and save tokens in long chats is to hide messages after you have already turned them into memories.
@@ -182,6 +482,26 @@ Aiko's settings:
 - use **Auto-hide messages up to the last memory**
 - leave **2 messages unhidden**
 - turn on **Unhide hidden messages for memory generation**
+
+---
+
+## 🧭 Compaction vs Consolidation
+
+The names are similar, but they do different jobs.
+
+Plain rule: **Compaction cleans up one entry. Consolidation combines several memories into a higher-level recap.**
+
+| **Compaction** | **Consolidation** |
+|---|---|
+| Makes one existing STMB-managed entry smaller. | Combines multiple memories or summaries into one higher-level recap. |
+| Works on one Clip, Side Prompt entry, or STMB memory entry at a time. | Works from several selected memory/summary entries. |
+| Best when an entry is useful, but too long, repetitive, or expensive to keep in context. | Best when older scene memories are piling up and should become an Arc, Chapter, Book, Legend, Series, or Epic summary. |
+| Rewrites the selected entry in a more token-efficient form. | Creates a new summary entry from the selected source entries. |
+| Should preserve existing facts and remove bloat. | Should preserve the larger continuity arc and reduce scene-by-scene detail. |
+| Does not create a new memory from raw chat. | Does not compact one bloated entry by itself. |
+| Think: “trim this one entry.” | Think: “roll these memories up into a recap.” |
+
+Both tools are review-first. STMB shows you what the AI wrote before anything is saved or replaced.
 
 ---
 
@@ -235,6 +555,8 @@ For previews of these entries, enable "show previews" in your preferences.
 ## 🎨 Trackers, Side Prompts, & Templates (Advanced Feature)
 
 **Side Prompts** are background trackers that help maintain ongoing story information. They run alongside memory creation and update separate side-prompt lorebook entries over time. Think of them as **helpers that watch your story and keep certain details up to date**.
+
+If you only want to save one highlighted fact, use [Clip to Memory Book](#%EF%B8%8F-clip-to-memory-book) instead. Side Prompts are for repeated or ongoing tracking.
 
 ### 🚀 **Quick Start with Templates**
 
@@ -428,6 +750,76 @@ If your model keeps adding `(OOC: I hope this summary is helpful!)`, you can:
 4. Add that script to the **incoming** selection
 
 Now STMB will clean the response before previewing or saving it.
+
+---
+
+## 🧹 Compaction
+
+Compaction helps when an STMB-managed lorebook entry is still useful, but has become too long or repetitive. Instead of manually trimming it, you can ask the AI to rewrite the entry in a more token-efficient form.
+
+Not sure whether you want this or Summary Consolidation? Use the short version above: **Compaction cleans up one entry. Consolidation combines several memories into a higher-level recap.**
+
+This is a **review first** tool. STMB shows you the original and the compacted draft before replacing anything.
+
+### What can be compacted?
+
+Compaction can list these entries from a selected Memory Book:
+
+- Clip entries
+- Side Prompt tracker entries
+- STMB memory entries
+
+It does not show ordinary lorebook entries that STMB does not manage.
+
+### How to use Compaction
+
+1. Open the Memory Books popup.
+2. Click **📝 Compaction**.
+3. Select the **Memory Book** you want to review. If your current chat already has a Memory Book, it may be selected automatically.
+4. Select a **Compaction Profile**. This chooses which AI connection/model will rewrite the entry.
+5. Optional: click **Edit Compaction Prompt** if you want to change the rewrite instructions.
+6. Find the entry in the table and click **Compact Entry**.
+7. Review the result:
+   - **Original content** shows what is currently saved.
+   - **Compacted draft** shows the AI rewrite.
+   - Both show estimated token counts.
+8. Edit the compacted draft if needed.
+9. Choose one:
+   - **Replace with Compacted Version** to save the draft over the original entry.
+   - **Copy Compacted Draft** to copy it without saving.
+   - **Cancel** to leave the entry unchanged.
+
+STMB should never silently replace the original. If you do not click **Replace with Compacted Version**, the lorebook entry stays as it was.
+
+### Editing the Compaction Prompt
+
+The Compaction Prompt controls how the AI rewrites entries. The built-in prompt is intentionally conservative: preserve important facts, names, pronouns, macros, wrapper headings, and end markers; remove repetition and low-value wording; do not invent anything.
+
+The prompt supports these placeholders:
+
+- `{{ENTRY_CONTENT}}` — the current entry content. This is required.
+- `{{ENTRY_KIND}}` — the entry type, such as Clip, SidePrompt, or Memory.
+- `{{ENTRY_TITLE}}` — the entry title.
+
+Use **Reset to Default** if your custom prompt stops behaving well.
+
+### Good uses
+
+Use Compaction for:
+
+- long Clip entries
+- Side Prompt trackers that repeat themselves over time
+- memory entries that are correct but bloated
+- always-active entries that are costing too many tokens
+
+Do not use it for:
+
+- creating a new memory from chat
+- adding new facts
+- fixing missing continuity that was never in the entry
+- editing normal lorebook entries outside STMB
+
+Compaction is a cleanup tool, not a memory-generation tool.
 
 ---
 

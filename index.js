@@ -18,6 +18,7 @@ import { SlashCommandEnumValue } from "../../../slash-commands/SlashCommandEnumV
 import {
   ARGUMENT_TYPE,
   SlashCommandArgument,
+  SlashCommandNamedArgument,
 } from "../../../slash-commands/SlashCommandArgument.js";
 import { executeSlashCommands } from "../../../slash-commands.js";
 import {
@@ -40,6 +41,7 @@ import {
   addMemoryToLorebook,
   DEFAULT_LOREBOOK_ENTRY_SETTINGS,
   getDefaultTitleFormats,
+  getAutoHideRanges,
   identifyMemoryEntries,
   getRangeFromMemoryEntry,
   normalizeLorebookEntrySettings,
@@ -47,8 +49,8 @@ import {
 import { autoCreateLorebook } from "./autocreate.js";
 import {
   handleAutoSummaryMessageReceived,
-  handleAutoSummaryGroupFinished,
   clearAutoSummaryState,
+  retryAutoSummaryAfterJobIdle,
 } from "./autosummary.js";
 import {
   editProfile,
@@ -79,6 +81,7 @@ import {
   showConfirmationPopup,
   fetchPreviousSummaries,
   showMemoryPreviewPopup,
+  showConsolidationPreviewPopup,
   closeActiveMemoryPreviewPopups,
 } from "./confirmationPopup.js";
 import {
@@ -98,7 +101,9 @@ import {
   stmbStopAllInFlight,
   getStmbInFlightCount,
   isStmbStopError,
+  markStmbPopup,
   throwIfStmbStopped,
+  withGoBackButton,
 } from "./utils.js";
 import * as SummaryPromptManager from "./summaryPromptManager.js";
 import {
@@ -110,9 +115,32 @@ import {
   evaluateTrackers,
   runAfterMemory,
   runSidePrompt,
+  runSidePromptSet,
 } from "./sidePrompts.js";
+import {
+  DEFAULT_COMPACTION_PROMPT_TEMPLATE,
+  hideFloatingClipButton,
+  initializeFloatingClipButton,
+  refreshFloatingClipButtonSetting,
+  showStmbEntryReviewPopup,
+  showTopicalClipPopup,
+} from "./clipManager.js";
 import { showSidePromptsPopup } from "./sidePromptsPopup.js";
-import { listTemplates } from "./sidePromptsManager.js";
+import { collectSetRuntimeMacros, listSets, listTemplates } from "./sidePromptsManager.js";
+import {
+  CONTEXT_NONE_KEY,
+  getContextSetting,
+  migrateProfileAdditionalContext,
+  resolveContextSettingEntries,
+  resolveContextSettingEntriesFromRefs,
+} from "./contextSettingsManager.js";
+import {
+  clearChatContextSettingKey,
+  getChatContextSettingKey,
+  hasValidChatContextSettingSelection,
+  maybePromptForMigratedContextSetting,
+  showContextSettingsPopup,
+} from "./contextSettingsPopup.js";
 import {
   runSummaryAnalysisSequential,
   commitSummaryEntries,
@@ -142,6 +170,20 @@ import { localeData, loadLocaleJson } from "./locales.js";
 import { tr } from "./i18nHelpers.js";
 import { validateLorebookRequirement } from "./lorebookValidation.js";
 import { getRegexScripts } from "../../../extensions/regex/engine.js";
+import {
+  areStmbJobsEnabled,
+  awaitStmbJobApproval,
+  cancelAllStmbJobs,
+  enqueueStmbJob,
+  getCurrentStmbChatRef,
+  getStmbChatKey,
+  hasActiveStmbJobs,
+  initStmbJobsIfTopInfoBarEnabled,
+  registerStmbJobExecutor,
+  subscribeToStmbJobs,
+  updateHighestMemoryProcessedForChatRef,
+  withStmbWriteLane,
+} from "./stmbJobs.js";
 import {
   buildSidePromptMacroSuggestion,
   collectTemplateRuntimeMacros,
@@ -200,6 +242,7 @@ async function handleSetHighestMemoryProcessedCommand(namedArgs, unnamedArgs) {
     delete stmbData.highestMemoryProcessedManuallySet;
     saveMetadataForCurrentContext();
     await refreshPopupContent();
+    refreshMemoryBoundaryUi();
     toastr.success(
       translate(
         "Last processed message cleared (no memories processed).",
@@ -261,6 +304,7 @@ async function handleSetHighestMemoryProcessedCommand(namedArgs, unnamedArgs) {
   stmbData.highestMemoryProcessedManuallySet = true;
   saveMetadataForCurrentContext();
   await refreshPopupContent();
+  refreshMemoryBoundaryUi();
 
   toastr.success(
     tr(
@@ -279,7 +323,7 @@ async function handleSetHighestMemoryProcessedCommand(namedArgs, unnamedArgs) {
  * @returns {boolean} True if memory creation is in progress
  */
 export function isMemoryProcessing() {
-  return isProcessingMemory;
+  return isProcessingMemory || hasActiveStmbJobs(getStmbChatKey());
 }
 
 export { currentProfile };
@@ -287,6 +331,8 @@ export { currentProfile };
 const MODULE_NAME = "STMemoryBooks";
 
 let hasBeenInitialized = false;
+const deferredQueuedAutoHideRanges = new Map();
+let autoSummaryJobRetryInFlight = false;
 
 // Supported Chat Completion sources
 const SUPPORTED_COMPLETION_SOURCES = [
@@ -301,6 +347,7 @@ const SUPPORTED_COMPLETION_SOURCES = [
   "cohere",
   "perplexity",
   "groq",
+  "chutes",
   "electronhub",
   "nanogpt",
   "deepseek",
@@ -316,12 +363,29 @@ const SUPPORTED_COMPLETION_SOURCES = [
 ];
 
 const DEFAULT_MAX_TOKENS = 4000;
+const DEFAULT_TITLE_FORMAT = "[000] - {{title}}";
+const MEMORY_BOUNDARY_MODES = Object.freeze({
+  OFF: "",
+  DIVIDER: "divider",
+  BUTTON: "button",
+  BOTH: "both",
+});
+const MEMORY_BOUNDARY_MODE_VALUES = new Set(Object.values(MEMORY_BOUNDARY_MODES));
+const DEFAULT_MEMORY_BOUNDARY_MODE = MEMORY_BOUNDARY_MODES.BOTH;
+const MEMORY_BOUNDARY_BUTTON_SIZE = 36;
+const MEMORY_BOUNDARY_BUTTON_MARGIN = 12;
+const MEMORY_BOUNDARY_BUTTON_DEFAULT_BOTTOM = 112;
+const MEMORY_BOUNDARY_BUTTON_DEFAULT_RIGHT = 18;
 
 const defaultSettings = {
   moduleSettings: {
     alwaysUseDefault: true,
     showMemoryPreviews: false,
+    showConsolidationPreviews: false,
     showNotifications: true,
+    showFloatingClipButton: true,
+    memoryBoundaryMode: DEFAULT_MEMORY_BOUNDARY_MODE,
+    memoryBoundaryButtonPosition: null,
     unhideBeforeMemory: false,
     refreshEditor: true,
     maxTokens: DEFAULT_MAX_TOKENS,
@@ -339,6 +403,8 @@ const defaultSettings = {
     autoConsolidationTargetTiers: [1],
     autoCreateLorebook: false,
     lorebookNameTemplate: "LTM - {{char}} - {{chat}}",
+    compactionPromptTemplate: DEFAULT_COMPACTION_PROMPT_TEMPLATE,
+    compactionProfileIndex: 0,
     useRegex: false,
     selectedRegexOutgoing: [],
     selectedRegexIncoming: [],
@@ -361,7 +427,7 @@ const defaultSettings = {
       6: 5,
     },
   },
-  titleFormat: "[000] - {{title}}",
+  titleFormat: DEFAULT_TITLE_FORMAT,
   profiles: [], // Will be populated dynamically with current ST settings
   defaultProfile: 0,
   migrationVersion: 4,
@@ -380,6 +446,284 @@ let lastFailedAIContext = null;
 let lastFailedArcError = null;
 let lastArcFailureToast = null;
 let lastFailedArcContext = null;
+let memoryBoundaryButton = null;
+let memoryBoundaryButtonDragState = null;
+
+function normalizeMemoryBoundaryMode(mode) {
+  const value = String(mode ?? DEFAULT_MEMORY_BOUNDARY_MODE);
+  return MEMORY_BOUNDARY_MODE_VALUES.has(value) ? value : DEFAULT_MEMORY_BOUNDARY_MODE;
+}
+
+function isMemoryBoundaryDividerEnabled(mode = null) {
+  const normalized = normalizeMemoryBoundaryMode(mode ?? extension_settings?.STMemoryBooks?.moduleSettings?.memoryBoundaryMode);
+  return normalized === MEMORY_BOUNDARY_MODES.DIVIDER || normalized === MEMORY_BOUNDARY_MODES.BOTH;
+}
+
+function isMemoryBoundaryButtonEnabled(mode = null) {
+  const normalized = normalizeMemoryBoundaryMode(mode ?? extension_settings?.STMemoryBooks?.moduleSettings?.memoryBoundaryMode);
+  return normalized === MEMORY_BOUNDARY_MODES.BUTTON || normalized === MEMORY_BOUNDARY_MODES.BOTH;
+}
+
+function getMemoryBoundaryModeOptions(selectedMode) {
+  const selected = normalizeMemoryBoundaryMode(selectedMode);
+  return [
+    {
+      value: MEMORY_BOUNDARY_MODES.OFF,
+      label: translate("Off", "STMemoryBooks_MemoryBoundaryModeOff"),
+      isSelected: selected === MEMORY_BOUNDARY_MODES.OFF,
+    },
+    {
+      value: MEMORY_BOUNDARY_MODES.DIVIDER,
+      label: translate("Memory boundary", "STMemoryBooks_MemoryBoundaryModeDivider"),
+      isSelected: selected === MEMORY_BOUNDARY_MODES.DIVIDER,
+    },
+    {
+      value: MEMORY_BOUNDARY_MODES.BUTTON,
+      label: translate("Jump button", "STMemoryBooks_MemoryBoundaryModeButton"),
+      isSelected: selected === MEMORY_BOUNDARY_MODES.BUTTON,
+    },
+    {
+      value: MEMORY_BOUNDARY_MODES.BOTH,
+      label: translate("Memory boundary + jump button", "STMemoryBooks_MemoryBoundaryModeBoth"),
+      isSelected: selected === MEMORY_BOUNDARY_MODES.BOTH,
+    },
+  ];
+}
+
+function getMemoryBoundaryTargetId() {
+  const highest = getHighestMemoryProcessed();
+  if (!Number.isFinite(highest)) {
+    return null;
+  }
+
+  const nextId = highest + 1;
+  if (chat[nextId]) {
+    return nextId;
+  }
+
+  if (chat[highest]) {
+    return highest;
+  }
+
+  return null;
+}
+
+function getRenderedMessageElement(messageId) {
+  if (!Number.isFinite(messageId)) return null;
+  return document.querySelector(`#chat .mes[mesid="${messageId}"]`);
+}
+
+function clearMemoryBoundaryDivider() {
+  document.querySelectorAll(".stmb_memory_boundary_divider").forEach((element) => element.remove());
+  document.querySelectorAll(".stmb_memory_boundary_target").forEach((element) => {
+    element.classList.remove("stmb_memory_boundary_target");
+  });
+}
+
+function refreshMemoryBoundaryDivider() {
+  clearMemoryBoundaryDivider();
+
+  if (!isMemoryBoundaryDividerEnabled()) {
+    return;
+  }
+
+  const targetId = getMemoryBoundaryTargetId();
+  const targetElement = getRenderedMessageElement(targetId);
+  if (!targetElement) {
+    return;
+  }
+
+  const divider = document.createElement("div");
+  divider.classList.add("stmb_memory_boundary_divider");
+  divider.setAttribute("data-i18n", "STMemoryBooks_MemoryBoundaryLabel");
+  divider.textContent = translate("Memory Books boundary", "STMemoryBooks_MemoryBoundaryLabel");
+  targetElement.classList.add("stmb_memory_boundary_target");
+  targetElement.prepend(divider);
+}
+
+function clampMemoryBoundaryButtonPosition(position = {}) {
+  const maxLeft = Math.max(MEMORY_BOUNDARY_BUTTON_MARGIN, window.innerWidth - MEMORY_BOUNDARY_BUTTON_SIZE - MEMORY_BOUNDARY_BUTTON_MARGIN);
+  const maxTop = Math.max(MEMORY_BOUNDARY_BUTTON_MARGIN, window.innerHeight - MEMORY_BOUNDARY_BUTTON_SIZE - MEMORY_BOUNDARY_BUTTON_MARGIN);
+  const fallbackLeft = window.innerWidth - MEMORY_BOUNDARY_BUTTON_SIZE - MEMORY_BOUNDARY_BUTTON_DEFAULT_RIGHT;
+  const fallbackTop = window.innerHeight - MEMORY_BOUNDARY_BUTTON_SIZE - MEMORY_BOUNDARY_BUTTON_DEFAULT_BOTTOM;
+  const rawLeft = Number.isFinite(Number(position.left)) ? Number(position.left) : fallbackLeft;
+  const rawTop = Number.isFinite(Number(position.top)) ? Number(position.top) : fallbackTop;
+
+  return {
+    left: Math.round(clampInt(rawLeft, MEMORY_BOUNDARY_BUTTON_MARGIN, maxLeft)),
+    top: Math.round(clampInt(rawTop, MEMORY_BOUNDARY_BUTTON_MARGIN, maxTop)),
+  };
+}
+
+function applyMemoryBoundaryButtonPosition() {
+  if (!memoryBoundaryButton) return;
+  const settings = initializeSettings();
+  const position = clampMemoryBoundaryButtonPosition(settings.moduleSettings.memoryBoundaryButtonPosition || {});
+  memoryBoundaryButton.style.left = `${position.left}px`;
+  memoryBoundaryButton.style.top = `${position.top}px`;
+}
+
+function saveMemoryBoundaryButtonPosition(position) {
+  const settings = initializeSettings();
+  settings.moduleSettings.memoryBoundaryButtonPosition = clampMemoryBoundaryButtonPosition(position);
+  saveSettingsDebounced();
+}
+
+function showNoMemoryBoundaryToast() {
+  toastr.info(
+    translate(
+      "No memories have been processed for this chat yet.",
+      "STMemoryBooks_NoMemoriesProcessedYet",
+    ),
+    translate("STMemoryBooks", "index.toast.title"),
+  );
+}
+
+function scrollToMemoryBoundaryTarget() {
+  const highest = getHighestMemoryProcessed();
+  const targetId = getMemoryBoundaryTargetId();
+
+  if (!Number.isFinite(highest) || !Number.isFinite(targetId)) {
+    showNoMemoryBoundaryToast();
+    return;
+  }
+
+  const targetElement = getRenderedMessageElement(targetId);
+  if (targetElement) {
+    targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  const chatContainer = document.getElementById("chat");
+  if (chatContainer) {
+    chatContainer.scrollTop = 0;
+  }
+  toastr.info(
+    tr(
+      "STMemoryBooks_TargetNotRendered",
+      "Highest memory is #{{messageId}}. Scroll up or load more messages to reach it.",
+      { messageId: highest },
+    ),
+    translate("STMemoryBooks", "index.toast.title"),
+  );
+}
+
+function handleMemoryBoundaryButtonPointerMove(event) {
+  if (!memoryBoundaryButtonDragState || !memoryBoundaryButton) return;
+
+  const position = clampMemoryBoundaryButtonPosition({
+    left: event.clientX - memoryBoundaryButtonDragState.offsetX,
+    top: event.clientY - memoryBoundaryButtonDragState.offsetY,
+  });
+
+  if (
+    Math.abs(position.left - memoryBoundaryButtonDragState.startLeft) > 2 ||
+    Math.abs(position.top - memoryBoundaryButtonDragState.startTop) > 2
+  ) {
+    memoryBoundaryButtonDragState.moved = true;
+  }
+
+  memoryBoundaryButton.style.left = `${position.left}px`;
+  memoryBoundaryButton.style.top = `${position.top}px`;
+}
+
+function handleMemoryBoundaryButtonPointerUp() {
+  if (!memoryBoundaryButtonDragState || !memoryBoundaryButton) return;
+
+  const moved = memoryBoundaryButtonDragState.moved;
+  const position = {
+    left: parseInt(memoryBoundaryButton.style.left, 10),
+    top: parseInt(memoryBoundaryButton.style.top, 10),
+  };
+
+  document.removeEventListener("pointermove", handleMemoryBoundaryButtonPointerMove);
+  document.removeEventListener("pointerup", handleMemoryBoundaryButtonPointerUp);
+  memoryBoundaryButtonDragState = null;
+  saveMemoryBoundaryButtonPosition(position);
+
+  if (moved) {
+    memoryBoundaryButton.dataset.stmbDragged = "true";
+    setTimeout(() => {
+      if (memoryBoundaryButton) {
+        delete memoryBoundaryButton.dataset.stmbDragged;
+      }
+    }, 0);
+  }
+}
+
+function createMemoryBoundaryButton() {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = "stmb-memory-boundary-jump";
+  button.classList.add("stmb_memory_boundary_button", "interactable");
+  button.title = translate("Jump to first unprocessed message", "STMemoryBooks_JumpToUnprocessedMemory");
+  button.setAttribute("data-i18n", "[title]STMemoryBooks_JumpToUnprocessedMemory");
+  button.innerHTML = '<i class="fa-solid fa-angles-up" aria-hidden="true"></i>';
+
+  button.addEventListener("pointerdown", (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = button.getBoundingClientRect();
+    memoryBoundaryButtonDragState = {
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      startLeft: rect.left,
+      startTop: rect.top,
+      moved: false,
+    };
+    document.addEventListener("pointermove", handleMemoryBoundaryButtonPointerMove);
+    document.addEventListener("pointerup", handleMemoryBoundaryButtonPointerUp);
+  });
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (button.dataset.stmbDragged === "true") {
+      return;
+    }
+    scrollToMemoryBoundaryTarget();
+  });
+
+  document.body.appendChild(button);
+  applyLocale(button);
+  return button;
+}
+
+function refreshMemoryBoundaryButton() {
+  if (!isMemoryBoundaryButtonEnabled()) {
+    memoryBoundaryButton?.remove();
+    memoryBoundaryButton = null;
+    return;
+  }
+
+  if (!memoryBoundaryButton) {
+    memoryBoundaryButton = createMemoryBoundaryButton();
+  }
+
+  applyMemoryBoundaryButtonPosition();
+  memoryBoundaryButton.style.display = "inline-flex";
+}
+
+function refreshMemoryBoundaryUi() {
+  refreshMemoryBoundaryDivider();
+  refreshMemoryBoundaryButton();
+}
+
+function getDefaultProfileTitleFormat(settings) {
+  const defaultProfile = settings?.profiles?.[settings.defaultProfile];
+  return defaultProfile?.titleFormat || settings?.titleFormat || DEFAULT_TITLE_FORMAT;
+}
+
+function setDefaultProfileTitleFormat(settings, titleFormat) {
+  const nextTitleFormat = titleFormat || DEFAULT_TITLE_FORMAT;
+  const defaultProfile = settings?.profiles?.[settings.defaultProfile];
+  if (defaultProfile) {
+    defaultProfile.titleFormat = nextTitleFormat;
+  }
+  settings.titleFormat = nextTitleFormat;
+  return nextTitleFormat;
+}
 
 /* Settings cache for restoration */
 let cachedSettings = null;
@@ -398,8 +742,7 @@ function processNodeForMessages(node) {
 
   // If the node itself is a message element
   if (node.matches && node.matches("#chat .mes[mesid]")) {
-    if (!node.querySelector(".mes_stmb_start")) {
-      createSceneButtons(node);
+    if (createSceneButtons(node)) {
       processedMessages.push(node);
     }
   }
@@ -407,8 +750,7 @@ function processNodeForMessages(node) {
   else if (node.querySelectorAll) {
     const newMessages = node.querySelectorAll("#chat .mes[mesid]");
     newMessages.forEach((mes) => {
-      if (!mes.querySelector(".mes_stmb_start")) {
-        createSceneButtons(mes);
+      if (createSceneButtons(mes)) {
         processedMessages.push(mes);
       }
     });
@@ -473,6 +815,7 @@ function initializeChatObserver() {
         try {
           // Use partial update for new messages only
           updateNewMessageButtonStates(newlyProcessedMessages);
+          refreshMemoryBoundaryUi();
         } catch (error) {
           console.error(
             translate(
@@ -547,6 +890,38 @@ function sanitizeHighestMemoryProcessed() {
   }
 }
 
+let lastContextPromptChatKey = null;
+let contextPromptInFlightChatKey = null;
+
+async function maybePromptContextSettingForChatOpen() {
+  let chatKey = null;
+  try {
+    chatKey = getStmbChatKeySafe();
+    if (
+      !chatKey ||
+      lastContextPromptChatKey === chatKey ||
+      contextPromptInFlightChatKey === chatKey
+    ) return;
+    contextPromptInFlightChatKey = chatKey;
+
+    if (await hasValidChatContextSettingSelection()) {
+      lastContextPromptChatKey = chatKey;
+      return;
+    }
+    const settings = initializeSettings();
+    const profile = settings.profiles?.[settings.defaultProfile] || null;
+    if (!profile) return;
+    await maybePromptForMigratedContextSetting(profile, { blocking: false });
+    lastContextPromptChatKey = chatKey;
+  } catch (error) {
+    console.warn("STMemoryBooks: Context setting chat-open prompt failed:", error);
+  } finally {
+    if (contextPromptInFlightChatKey === chatKey) {
+      contextPromptInFlightChatKey = null;
+    }
+  }
+}
+
 function handleChatChanged() {
   console.log(
     translate(
@@ -554,14 +929,29 @@ function handleChatChanged() {
       "index.log.chatChanged",
     ),
   );
+  if (hasActiveStmbJobs()) {
+    toastr.warning(
+      translate(
+        "Memory Books jobs are still active. Auto-memory and auto-consolidation prompts may not run until you return or another trigger occurs.",
+        "STMemoryBooks_Jobs_ChatChangedActiveWarning",
+      ),
+      translate("STMemoryBooks", "index.toast.title"),
+    );
+  }
+  hideFloatingClipButton();
+  refreshMemoryBoundaryUi();
   updateSceneStateCache();
   validateAndCleanupSceneMarkers();
   sanitizeHighestMemoryProcessed();
+  void maybePromptContextSettingForChatOpen();
 
   setTimeout(() => {
     try {
       // Full update needed for chat changes
       processExistingMessages();
+      flushDeferredQueuedAutoHideRanges().catch((error) => {
+        console.warn("STMemoryBooks: deferred auto-hide flush failed:", error);
+      });
     } catch (error) {
       console.error(
         translate(
@@ -600,6 +990,7 @@ function validateAndCleanupSceneMarkers() {
 async function handleMessageReceived() {
   try {
     setTimeout(validateSceneMarkers, SCENE_MANAGEMENT.VALIDATION_DELAY_MS);
+    setTimeout(refreshMemoryBoundaryUi, SCENE_MANAGEMENT.VALIDATION_DELAY_MS);
     await handleAutoSummaryMessageReceived();
     await evaluateTrackers();
   } catch (error) {
@@ -613,20 +1004,18 @@ async function handleMessageReceived() {
   }
 }
 
-async function handleGroupWrapperFinished() {
-  try {
-    setTimeout(validateSceneMarkers, SCENE_MANAGEMENT.VALIDATION_DELAY_MS);
-    await handleAutoSummaryGroupFinished();
-    await evaluateTrackers();
-  } catch (error) {
-    console.error(
-      translate(
-        "STMemoryBooks: Error in handleGroupWrapperFinished:",
-        "index.error.handleGroupWrapperFinished",
-      ),
-      error,
-    );
-  }
+function handleStmbJobStateChanged() {
+  if (autoSummaryJobRetryInFlight) return;
+  if (hasActiveStmbJobs(getStmbChatKey())) return;
+
+  autoSummaryJobRetryInFlight = true;
+  retryAutoSummaryAfterJobIdle()
+    .catch((error) => {
+      console.warn("STMemoryBooks: auto-summary retry after job idle failed:", error);
+    })
+    .finally(() => {
+      autoSummaryJobRetryInFlight = false;
+    });
 }
 
 /**
@@ -656,6 +1045,183 @@ async function handleCreateMemoryCommand(namedArgs, unnamedArgs) {
 
   initiateMemoryCreation();
   return "";
+}
+
+function parseRequiredIntegerArg(namedArgs, name) {
+  const value = namedArgs?.[name];
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && Number.isInteger(parsed) ? parsed : null;
+}
+
+function validateSceneMemoryRange(startId, endId) {
+  // Validate range logic (start = end is valid for single message)
+  if (startId > endId) {
+    toastr.error(
+      translate(
+        "Start message cannot be greater than end message",
+        "STMemoryBooks_StartGreaterThanEnd",
+      ),
+      translate("STMemoryBooks", "index.toast.title"),
+    );
+    return false;
+  }
+
+  // IMPORTANT: Use the global chat array for validation to match compileScene()
+  const activeChat = chat;
+
+  // Validate message IDs exist in current chat
+  if (startId < 0 || endId >= activeChat.length) {
+    toastr.error(
+      __st_t_tag`Message IDs out of range. Valid range: 0-${activeChat.length - 1}`,
+      translate("STMemoryBooks", "index.toast.title"),
+    );
+    return false;
+  }
+
+  // check if messages actually exist
+  if (!activeChat[startId] || !activeChat[endId]) {
+    toastr.error(
+      translate(
+        "One or more specified messages do not exist",
+        "STMemoryBooks_MessagesDoNotExist",
+      ),
+      translate("STMemoryBooks", "index.toast.title"),
+    );
+    return false;
+  }
+
+  return true;
+}
+
+async function runSceneMemoryRange(startId, endId, options = {}) {
+  const { showSceneToast = true } = options;
+
+  if (!validateSceneMemoryRange(startId, endId)) {
+    return false;
+  }
+
+  // Atomically set both scene markers for /scenememory
+  setSceneRange(startId, endId);
+
+  if (showSceneToast) {
+    const context = getCurrentMemoryBooksContext();
+    const contextMsg = context.isGroupChat
+      ? ` in group "${context.groupName}"`
+      : "";
+    toastr.info(
+      __st_t_tag`Scene set: messages ${startId}-${endId}${contextMsg}`,
+      translate("STMemoryBooks", "index.toast.title"),
+    );
+  }
+
+  return (await initiateMemoryCreation()) === true;
+}
+
+function compileSceneForCatchupPreflight(sceneRequest, unhideBeforeMemory) {
+  if (!unhideBeforeMemory) {
+    return compileScene(sceneRequest);
+  }
+
+  const restoredMessages = [];
+
+  try {
+    for (let i = sceneRequest.sceneStart; i <= sceneRequest.sceneEnd; i++) {
+      const message = chat[i];
+      if (message?.is_system) {
+        restoredMessages.push(message);
+        message.is_system = false;
+      }
+    }
+
+    return compileScene(sceneRequest);
+  } finally {
+    for (const message of restoredMessages) {
+      message.is_system = true;
+    }
+  }
+}
+
+async function validateStmbCatchupNonInteractive(settings, chunks) {
+  const moduleSettings = settings?.moduleSettings || {};
+
+  if (!moduleSettings.alwaysUseDefault) {
+    return translate(
+      "/stmb-catchup is non-interactive. Enable 'Always use default profile' before running it.",
+      "STMemoryBooks_CatchupRequiresAlwaysUseDefault",
+    );
+  }
+
+  if (moduleSettings.showMemoryPreviews) {
+    return translate(
+      "/stmb-catchup is non-interactive. Disable memory previews before running it.",
+      "STMemoryBooks_CatchupRequiresNoPreviews",
+    );
+  }
+
+  const defaultMemoryCount = clampInt(moduleSettings.defaultMemoryCount ?? 0, 0, 7);
+  if (defaultMemoryCount > 0) {
+    return __st_t_tag`/stmb-catchup is non-interactive. Set Default Previous Memories Count to "None (0 memories)" before running it.`;
+  }
+
+  const isManualMode = !!moduleSettings.manualModeEnabled;
+  const stmbData = isManualMode ? getSceneMarkers() || {} : null;
+  const lorebookName = isManualMode
+    ? stmbData?.manualLorebook ?? null
+    : chat_metadata?.[METADATA_KEY] || null;
+  const canAutoCreateLorebook =
+    !isManualMode && !!moduleSettings.autoCreateLorebook;
+
+  if (!lorebookName && !canAutoCreateLorebook) {
+    return __st_t_tag`/stmb-catchup is non-interactive. Select a valid ${isManualMode ? "manual" : "chat-bound"} lorebook before running it.`;
+  }
+
+  if (lorebookName) {
+    try {
+      const lorebookData = await loadWorldInfo(lorebookName);
+      if (!lorebookData) {
+        return __st_t_tag`/stmb-catchup is non-interactive. The selected lorebook "${lorebookName}" could not be loaded.`;
+      }
+      if (
+        Array.isArray(world_names) &&
+        world_names.length > 0 &&
+        !world_names.includes(lorebookName)
+      ) {
+        return __st_t_tag`/stmb-catchup is non-interactive. Select a valid ${isManualMode ? "manual" : "chat-bound"} lorebook before running it.`;
+      }
+    } catch (error) {
+      return __st_t_tag`/stmb-catchup is non-interactive. The selected lorebook "${lorebookName}" could not be loaded: ${error.message}`;
+    }
+  }
+
+  const tokenThreshold = moduleSettings.tokenWarningThreshold ?? 30000;
+
+  for (const chunk of chunks) {
+    try {
+      const sceneRequest = createSceneRequest(chunk.start, chunk.end);
+      const compiledScene = compileSceneForCatchupPreflight(
+        sceneRequest,
+        !!moduleSettings.unhideBeforeMemory,
+      );
+      const validation = validateCompiledScene(compiledScene);
+      if (!validation.valid) {
+        return __st_t_tag`/stmb-catchup cannot run non-interactively because chunk ${chunk.start}-${chunk.end} cannot be compiled: ${validation.errors.join(", ")}`;
+      }
+
+      const stats = await getSceneStats(compiledScene);
+      const estimatedTokens = Number(stats?.estimatedTokens ?? 0);
+      if (estimatedTokens > tokenThreshold) {
+        return __st_t_tag`/stmb-catchup is non-interactive. Chunk ${chunk.start}-${chunk.end} is estimated at ${estimatedTokens} tokens, above the token warning threshold (${tokenThreshold}). Increase the threshold or use a smaller interval.`;
+      }
+    } catch (error) {
+      return __st_t_tag`/stmb-catchup cannot run non-interactively because chunk ${chunk.start}-${chunk.end} cannot be compiled: ${error.message}`;
+    }
+  }
+
+  return null;
 }
 
 async function handleSceneMemoryCommand(namedArgs, unnamedArgs) {
@@ -699,55 +1265,174 @@ async function handleSceneMemoryCommand(namedArgs, unnamedArgs) {
     return "";
   }
 
-  // Validate range logic (start = end is valid for single message)
-  if (startId > endId) {
-    toastr.error(
-      translate(
-        "Start message cannot be greater than end message",
-        "STMemoryBooks_StartGreaterThanEnd",
-      ),
+  await runSceneMemoryRange(startId, endId);
+
+  return "";
+}
+
+async function handleStmbCatchupCommand(namedArgs) {
+  try {
+    if (isProcessingMemory) {
+      toastr.info(
+        translate(
+          "Memory creation is already in progress",
+          "STMemoryBooks_MemoryAlreadyInProgress",
+        ),
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    const interval = parseRequiredIntegerArg(namedArgs, "interval");
+    const startId = parseRequiredIntegerArg(namedArgs, "start");
+    const endId = parseRequiredIntegerArg(namedArgs, "end");
+
+    if (interval === null || startId === null || endId === null) {
+      toastr.error(
+        translate(
+          "Missing or invalid arguments. Use: /stmb-catchup interval:<chunk size> start:<message id> end:<message id>",
+          "STMemoryBooks_CatchupUsage",
+        ),
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    const context = getCurrentMemoryBooksContext();
+    if (context.isGroupChat) {
+      if (!context.groupId || !context.groupName) {
+        toastr.error(
+          translate(
+            "Group chat data not available, please wait a few seconds and try again.",
+            "STMemoryBooks_GroupChatDataUnavailable",
+          ),
+          translate("STMemoryBooks", "index.toast.title"),
+        );
+        return "";
+      }
+    } else if (!characters || characters.length === 0 || !characters[this_chid]) {
+      toastr.error(
+        translate(
+          "This command can only be run in an active chat.",
+          "STMemoryBooks_CatchupRequiresChat",
+        ),
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    const lastIndex = chat.length - 1;
+    if (lastIndex < 0) {
+      toastr.error(
+        translate(
+          "There are no messages in this chat yet.",
+          "STMemoryBooks_SetHighest_NoMessages",
+        ),
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    if (interval <= 0) {
+      toastr.error(
+        translate(
+          "Interval must be a positive whole number.",
+          "STMemoryBooks_CatchupInvalidInterval",
+        ),
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    if (startId < 0 || endId < 0) {
+      toastr.error(
+        __st_t_tag`Message IDs out of range. Valid range: 0-${lastIndex}`,
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    if (startId > endId) {
+      toastr.error(
+        translate(
+          "Start message cannot be greater than end message",
+          "STMemoryBooks_StartGreaterThanEnd",
+        ),
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    if (endId > lastIndex) {
+      toastr.error(
+        __st_t_tag`Message IDs out of range. Valid range: 0-${lastIndex}`,
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    const chunks = [];
+    for (let chunkStart = startId; chunkStart <= endId; chunkStart += interval) {
+      const chunkEnd = Math.min(chunkStart + interval - 1, endId);
+      if (!chat[chunkStart] || !chat[chunkEnd]) {
+        toastr.error(
+          __st_t_tag`Cannot run catch-up chunk ${chunkStart}-${chunkEnd}: one or more boundary messages do not exist.`,
+          translate("STMemoryBooks", "index.toast.title"),
+        );
+        return "";
+      }
+      chunks.push({ start: chunkStart, end: chunkEnd });
+    }
+
+    const settings = initializeSettings();
+    const interactiveBlocker = await validateStmbCatchupNonInteractive(
+      settings,
+      chunks,
+    );
+    if (interactiveBlocker) {
+      toastr.error(
+        interactiveBlocker,
+        translate("STMemoryBooks", "index.toast.title"),
+      );
+      return "";
+    }
+
+    toastr.info(
+      __st_t_tag`STMB catch-up started: ${chunks.length} chunk${chunks.length === 1 ? "" : "s"}.`,
       translate("STMemoryBooks", "index.toast.title"),
     );
-    return "";
-  }
 
-  // IMPORTANT: Use the global chat array for validation to match compileScene()
-  const activeChat = chat;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      toastr.info(
+        __st_t_tag`Creating catch-up memory ${i + 1}/${chunks.length}: messages ${chunk.start}-${chunk.end}`,
+        translate("STMemoryBooks", "index.toast.title"),
+      );
 
-  // Validate message IDs exist in current chat
-  if (startId < 0 || endId >= activeChat.length) {
-    toastr.error(
-      __st_t_tag`Message IDs out of range. Valid range: 0-${activeChat.length - 1}`,
+      const success = await runSceneMemoryRange(chunk.start, chunk.end, {
+        showSceneToast: false,
+      });
+
+      if (!success) {
+        toastr.error(
+          __st_t_tag`STMB catch-up stopped at messages ${chunk.start}-${chunk.end}.`,
+          translate("STMemoryBooks", "index.toast.title"),
+        );
+        return "";
+      }
+    }
+
+    toastr.success(
+      __st_t_tag`STMB catch-up complete: ${chunks.length} chunk${chunks.length === 1 ? "" : "s"} processed.`,
       translate("STMemoryBooks", "index.toast.title"),
     );
-    return "";
-  }
-
-  // check if messages actually exist
-  if (!activeChat[startId] || !activeChat[endId]) {
+  } catch (error) {
+    console.error("STMemoryBooks: /stmb-catchup failed:", error);
     toastr.error(
-      translate(
-        "One or more specified messages do not exist",
-        "STMemoryBooks_MessagesDoNotExist",
-      ),
+      __st_t_tag`Failed to run /stmb-catchup: ${error.message}`,
       translate("STMemoryBooks", "index.toast.title"),
     );
-    return "";
   }
-
-  // Atomically set both scene markers for /scenememory
-  setSceneRange(startId, endId);
-
-  const context = getCurrentMemoryBooksContext();
-  const contextMsg = context.isGroupChat
-    ? ` in group "${context.groupName}"`
-    : "";
-  toastr.info(
-    __st_t_tag`Scene set: messages ${startId}-${endId}${contextMsg}`,
-    translate("STMemoryBooks", "index.toast.title"),
-  );
-
-  initiateMemoryCreation();
 
   return "";
 }
@@ -845,13 +1530,14 @@ async function handleNextMemoryCommand(namedArgs, unnamedArgs) {
 async function handleStmbStopCommand(namedArgs, unnamedArgs) {
   const before = getStmbInFlightCount();
   const { stoppedCount } = stmbStopAllInFlight();
+  const canceledJobs = cancelAllStmbJobs();
 
   // Force-reset local "busy" flags so STMB returns to idle immediately.
   isProcessingMemory = false;
   isProcessingArc = false;
 
   const msg =
-    stoppedCount > 0 || before > 0
+    stoppedCount > 0 || before > 0 || canceledJobs > 0
       ? translate(
           "STMB generation manually stopped by user.",
           "STMemoryBooks_Stop_Stopped",
@@ -861,7 +1547,7 @@ async function handleStmbStopCommand(namedArgs, unnamedArgs) {
           "STMemoryBooks_Stop_None",
         );
 
-  if (stoppedCount > 0 || before > 0) {
+  if (stoppedCount > 0 || before > 0 || canceledJobs > 0) {
     try {
       toastr.clear();
     } catch (e) {
@@ -900,6 +1586,36 @@ async function handleSidePromptCommand(namedArgs, unnamedArgs) {
     raw = raw.replace(/\s-debug\b/i, '').trim();
   }
   return runSidePrompt(raw, { debug });
+}
+
+async function handleSidePromptSetCommand(namedArgs, unnamedArgs) {
+  const raw = String(unnamedArgs || "").trim();
+  if (!raw) {
+    toastr.info(
+      translate(
+        'SidePrompt set guide: Choose a quoted set name. Usage: /sideprompt-set "Name" [X-Y].',
+        "STMemoryBooks_SidePromptSetGuide",
+      ),
+      translate("STMemoryBooks", "index.toast.title"),
+    );
+    return "";
+  }
+  return runSidePromptSet(raw, { macroMode: false });
+}
+
+async function handleSidePromptMacroSetCommand(namedArgs, unnamedArgs) {
+  const raw = String(unnamedArgs || "").trim();
+  if (!raw) {
+    toastr.info(
+      translate(
+        'SidePrompt macroset guide: Choose a quoted set name, then fill any prompted macros. Usage: /sideprompt-macroset "Name" {{macro}}="value" [X-Y].',
+        "STMemoryBooks_SidePromptMacroSetGuide",
+      ),
+      translate("STMemoryBooks", "index.toast.title"),
+    );
+    return "";
+  }
+  return runSidePromptSet(raw, { macroMode: true });
 }
 
 /**
@@ -994,6 +1710,7 @@ async function handleSidePromptOffCommand(namedArgs, unnamedArgs) {
  * Side Prompt cache for autocomplete
  */
 let sidePromptNameCache = [];
+let sidePromptSetNameCache = [];
 
 function isManualSidePromptEnabled(template) {
   const cmds = template?.triggers?.commands;
@@ -1012,6 +1729,24 @@ async function refreshSidePromptCache() {
         runtimeMacros: collectTemplateRuntimeMacros(t),
         manualEnabled: isManualSidePromptEnabled(t),
       }));
+    const sets = await listSets();
+    const settledSets = await Promise.allSettled((sets || []).map(async (set) => ({
+      name: set.name,
+      runtimeMacros: await collectSetRuntimeMacros(set),
+    })));
+    sidePromptSetNameCache = settledSets
+      .filter((result) => {
+        if (result.status === "fulfilled") return true;
+        console.warn(
+          translate(
+            "STMemoryBooks: side prompt cache refresh failed",
+            "index.warn.sidePromptCacheRefreshFailed",
+          ),
+          result.reason,
+        );
+        return false;
+      })
+      .map((result) => result.value);
   } catch (e) {
     console.warn(
       translate(
@@ -1035,6 +1770,11 @@ function findCachedSidePromptByName(name, entries = sidePromptNameCache) {
   return entries.find((entry) => entry.name.toLowerCase() === target) || null;
 }
 
+function findCachedSidePromptSetByName(name, entries = sidePromptSetNameCache) {
+  const target = String(name || "").toLowerCase();
+  return entries.find((entry) => entry.name.toLowerCase() === target) || null;
+}
+
 function buildSidePromptNameSuggestions(rawInput, options = {}) {
   const { manualOnly = false } = options;
   const input = String(rawInput || "").trimStart();
@@ -1052,6 +1792,24 @@ function buildSidePromptNameSuggestions(rawInput, options = {}) {
         : "No required runtime macros",
       "name",
       "📝",
+      () => !filter || entry.name.toLowerCase().includes(filter),
+    ),
+  );
+}
+
+function buildSidePromptSetNameSuggestions(rawInput) {
+  const input = String(rawInput || "").trimStart();
+  const filter = input.startsWith('"') || input.startsWith("'")
+    ? input.slice(1).toLowerCase()
+    : input.toLowerCase();
+  return sidePromptSetNameCache.map((entry) =>
+    new SlashCommandEnumValue(
+      formatQuotedSidePromptName(entry.name),
+      entry.runtimeMacros.length
+        ? `Required macros: ${entry.runtimeMacros.join(", ")}`
+        : "No required runtime macros",
+      "name",
+      "📚",
       () => !filter || entry.name.toLowerCase().includes(filter),
     ),
   );
@@ -1096,6 +1854,19 @@ const manualSidePromptTemplateEnumProvider = (executor) =>
 
 const allSidePromptTemplateEnumProvider = (executor) =>
   sidePromptTemplateEnumProvider(executor, { manualOnly: false });
+
+const sidePromptSetEnumProvider = (executor, options = {}) => {
+  const { includeMacros = false } = options;
+  const rawInput = String(executor?.unnamedArgumentList?.[0]?.value || "");
+  const draft = parseSidePromptCommandInput(rawInput, { allowIncomplete: true });
+  if (includeMacros && draft.nameClosed) {
+    const entry = findCachedSidePromptSetByName(draft.name);
+    if (entry) {
+      return buildSidePromptMacroSuggestions(rawInput, draft, entry);
+    }
+  }
+  return buildSidePromptSetNameSuggestions(rawInput);
+};
 
 /**
  * Helper: build triggers badges for prompt picker
@@ -1173,16 +1944,6 @@ function initializeSettings() {
       );
     }
 
-    // Clean up any existing dynamic profiles that may have titleFormat
-    extension_settings.STMemoryBooks.profiles.forEach((profile) => {
-      if (profile.useDynamicSTSettings && profile.titleFormat) {
-        delete profile.titleFormat;
-        console.log(
-          __st_t_tag`${MODULE_NAME}: Removed static titleFormat from dynamic profile`,
-        );
-      }
-    });
-
     // Update migration version
     extension_settings.STMemoryBooks.migrationVersion = 4;
     saveSettingsDebounced();
@@ -1256,12 +2017,13 @@ function validateSettings(settings) {
   }
 
   // Validate maxTokens and fall back to the app default when unset or invalid.
+  // A value of 0 is intentional: it means "inherit SillyTavern's Chat Completion setting".
   if (settings.moduleSettings.maxTokens === undefined || settings.moduleSettings.maxTokens === null) {
     settings.moduleSettings.maxTokens = DEFAULT_MAX_TOKENS;
   } else {
     const mt = Number.parseInt(settings.moduleSettings.maxTokens, 10);
     settings.moduleSettings.maxTokens =
-      Number.isFinite(mt) && mt > 0 ? mt : DEFAULT_MAX_TOKENS;
+      Number.isFinite(mt) && mt >= 0 ? mt : DEFAULT_MAX_TOKENS;
   }
 
   if (
@@ -1294,6 +2056,24 @@ function validateSettings(settings) {
   if (settings.moduleSettings.autoConsolidationPromptEnabled === undefined) {
     settings.moduleSettings.autoConsolidationPromptEnabled = false;
   }
+  if (settings.moduleSettings.showConsolidationPreviews === undefined) {
+    settings.moduleSettings.showConsolidationPreviews = false;
+  }
+  if (settings.moduleSettings.showFloatingClipButton === undefined) {
+    settings.moduleSettings.showFloatingClipButton = true;
+  }
+  settings.moduleSettings.memoryBoundaryMode = normalizeMemoryBoundaryMode(
+    settings.moduleSettings.memoryBoundaryMode,
+  );
+  if (
+    settings.moduleSettings.memoryBoundaryButtonPosition !== null &&
+    (
+      typeof settings.moduleSettings.memoryBoundaryButtonPosition !== "object" ||
+      Array.isArray(settings.moduleSettings.memoryBoundaryButtonPosition)
+    )
+  ) {
+    settings.moduleSettings.memoryBoundaryButtonPosition = null;
+  }
   settings.moduleSettings.autoConsolidationTargetTiers =
     normalizeAutoConsolidationTargetTiers(
       settings.moduleSettings.autoConsolidationTargetTiers ??
@@ -1315,6 +2095,22 @@ function validateSettings(settings) {
   if (!settings.moduleSettings.lorebookNameTemplate) {
     settings.moduleSettings.lorebookNameTemplate = "LTM - {{char}} - {{chat}}";
   }
+
+  if (
+    typeof settings.moduleSettings.compactionPromptTemplate !== "string" ||
+    !settings.moduleSettings.compactionPromptTemplate.trim()
+  ) {
+    settings.moduleSettings.compactionPromptTemplate = DEFAULT_COMPACTION_PROMPT_TEMPLATE;
+  }
+
+  settings.moduleSettings.compactionProfileIndex = clampInt(
+    readIntInput(
+      { value: settings.moduleSettings.compactionProfileIndex },
+      settings.defaultProfile ?? 0,
+    ),
+    0,
+    Math.max(0, settings.profiles.length - 1),
+  );
 
   const legacyOrderMode =
     settings.moduleSettings.summaryOrderMode ??
@@ -1472,8 +2268,14 @@ async function showAndGetMemorySettings(
       return null; // User cancelled
     }
   } else {
-    // Use default profile without confirmation
-    const selectedProfile = getProfileSafe(settings, settings.defaultProfile);
+    // Use the selected profile when provided; otherwise use the default
+    // profile without confirmation. getProfileSafe applies the fork's
+    // out-of-range index guard.
+    const profileIndex =
+      selectedProfileIndex !== null
+        ? selectedProfileIndex
+        : settings.defaultProfile;
+    const selectedProfile = getProfileSafe(settings, profileIndex);
     confirmationResult = {
       confirmed: true,
       profileSettings: {
@@ -1732,6 +2534,14 @@ async function executeMemoryGeneration(
       );
     }
 
+    const additionalContextSnapshot = await resolveAdditionalContextSnapshot(profileSettings, {
+      blockingPrompt: true,
+    });
+    if (additionalContextSnapshot.cancelled) {
+      return false;
+    }
+    compiledScene.additionalContextEntries = additionalContextSnapshot.entries;
+
     // Fetch previous memories if requested
     let previousMemories = [];
     memoryFetchResult = {
@@ -1812,7 +2622,7 @@ async function executeMemoryGeneration(
 
       if (previewResult.action === "cancel") {
         // User cancelled, abort the process
-        return;
+        return false;
       } else if (previewResult.action === "retry") {
         // User wants to retry - limit user-initiated retries to prevent infinite loops
         const maxUserRetries = 3; // Allow up to 3 user-initiated retries
@@ -1824,7 +2634,7 @@ async function executeMemoryGeneration(
             __st_t_tag`Maximum retry attempts (${maxUserRetries}) reached`,
             "STMemoryBooks",
           );
-          return { action: "cancel" };
+          return false;
         }
 
         toastr.info(
@@ -1859,7 +2669,7 @@ async function executeMemoryGeneration(
             ),
             "STMemoryBooks",
           );
-          return;
+          return false;
         }
 
         // Validate that edited memory data has required fields
@@ -1877,7 +2687,7 @@ async function executeMemoryGeneration(
             ),
             "STMemoryBooks",
           );
-          return;
+          return false;
         }
 
         finalMemoryResult = previewResult.memoryData;
@@ -1968,6 +2778,7 @@ async function executeMemoryGeneration(
         stmbData.highestMemoryProcessed = sceneData.sceneEnd;
         delete stmbData.highestMemoryProcessedManuallySet;
         saveMetadataForCurrentContext();
+        refreshMemoryBoundaryUi();
       }
     } catch (e) {
       console.warn(
@@ -1996,10 +2807,14 @@ async function executeMemoryGeneration(
       __st_t_tag`Memory "${addResult.entryTitle}" created successfully${contextMsg}${retryMsg}!`,
       "STMemoryBooks",
     );
-    await maybePromptAutoConsolidation(1, lorebookValidation);
+    await maybePromptSelectedAutoConsolidation({
+      minTargetTier: 1,
+      lorebookValidation,
+    });
+    return true;
   } catch (error) {
     if (isStmbStopError(error)) {
-      return;
+      return false;
     }
     console.error("STMemoryBooks: Error creating memory:", error);
 
@@ -2020,7 +2835,7 @@ async function executeMemoryGeneration(
       try {
         await sleepWithAbort(MEMORY_GENERATION.RETRY_DELAY_MS, stmbTask.signal);
       } catch (e) {
-        if (isStmbStopError(e)) return;
+        if (isStmbStopError(e)) return false;
         throw e;
       }
 
@@ -2099,11 +2914,722 @@ async function executeMemoryGeneration(
         "STMemoryBooks",
       );
     }
+    return false;
   } finally {
     if (ownsTask) {
       stmbTask.finish();
     }
   }
+}
+
+function showSkippedAdditionalContextWarning(skipped = []) {
+  if (!Array.isArray(skipped) || skipped.length === 0) return;
+  toastr.warning(
+    translate(
+      "Some additional context entries could not be loaded and were skipped.",
+      "STMemoryBooks_Profile_AlsoIncludeSkipped",
+    ),
+    "STMemoryBooks",
+    { preventDuplicates: true },
+  );
+}
+
+async function resolveAdditionalContextSnapshot(profileSettings, options = {}) {
+  const selectedKey = getChatContextSettingKey();
+  let missingSelectedKey = false;
+  if (selectedKey) {
+    if (selectedKey === CONTEXT_NONE_KEY) {
+      return { cancelled: false, entries: [], source: "none" };
+    }
+
+    const setting = await getContextSetting(selectedKey);
+    if (!setting) {
+      clearChatContextSettingKey(selectedKey);
+      missingSelectedKey = true;
+    } else {
+      const resolved = await resolveContextSettingEntries(setting);
+      showSkippedAdditionalContextWarning(resolved.skipped);
+      return { cancelled: false, entries: resolved.entries, source: "context-setting" };
+    }
+  }
+
+  const promptResult = await maybePromptForMigratedContextSetting(profileSettings, {
+    blocking: !!options.blockingPrompt,
+  });
+  if (!promptResult?.proceed) {
+    return { cancelled: true, entries: [], source: "cancelled" };
+  }
+
+  const selectedAfterPrompt = getChatContextSettingKey();
+  if (selectedAfterPrompt) {
+    return await resolveAdditionalContextSnapshot(profileSettings, {
+      ...options,
+      blockingPrompt: false,
+    });
+  }
+
+  if (Array.isArray(profileSettings?.additionalContextEntries) && profileSettings.additionalContextEntries.length > 0) {
+    toastr.warning(
+      translate(
+        "Using legacy profile Additional Context for this run. It will be migrated to Context Settings when possible.",
+        "STMemoryBooks_ContextSettings_LegacyProfileWarning",
+      ),
+      "STMemoryBooks",
+      { preventDuplicates: true },
+    );
+    try {
+      const settings = initializeSettings();
+      const migrationResult = await migrateProfileAdditionalContext(settings);
+      if (migrationResult.removedLegacy > 0) {
+        saveSettingsDebounced();
+      }
+    } catch (error) {
+      console.warn("STMemoryBooks: Legacy Additional Context migration attempt failed:", error);
+    }
+    const resolved = await resolveContextSettingEntriesFromRefs(profileSettings.additionalContextEntries);
+    showSkippedAdditionalContextWarning(resolved.skipped);
+    return { cancelled: false, entries: resolved.entries, source: "legacy-profile" };
+  }
+
+  if (missingSelectedKey) {
+    toastr.warning(
+      translate(
+        "Selected context setting was not found. Continuing without Additional Context.",
+        "STMemoryBooks_ContextSettings_MissingSelectedWarning",
+      ),
+      "STMemoryBooks",
+      { preventDuplicates: true },
+    );
+  }
+
+  return { cancelled: false, entries: [], source: "none" };
+}
+
+async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSettings) {
+  const { profileSettings, summaryCount, tokenThreshold, settings } = effectiveSettings;
+  const sceneRequest = createSceneRequest(sceneData.sceneStart, sceneData.sceneEnd);
+  const compiledScene = compileScene(sceneRequest);
+  const validation = validateCompiledScene(compiledScene);
+  if (!validation.valid) {
+    throw new Error(`Scene compilation failed: ${validation.errors.join(", ")}`);
+  }
+
+  let memoryFetchResult = { summaries: [], actualCount: 0, requestedCount: 0 };
+  if (summaryCount > 0) {
+    memoryFetchResult = await fetchPreviousSummaries(summaryCount, settings, chat_metadata);
+  }
+  compiledScene.previousSummariesContext = Array.isArray(memoryFetchResult?.summaries)
+    ? memoryFetchResult.summaries
+    : [];
+
+  const profileSnapshot = deepClone(profileSettings);
+  const additionalContextSnapshot = await resolveAdditionalContextSnapshot(profileSnapshot, {
+    blockingPrompt: true,
+  });
+  if (additionalContextSnapshot.cancelled) {
+    return null;
+  }
+  compiledScene.additionalContextEntries = deepClone(additionalContextSnapshot.entries);
+  profileSnapshot.prompt = await getEffectivePromptAsync(profileSnapshot);
+  const chatRef = getCurrentStmbChatRef();
+  const lorebookName = String(lorebookValidation?.name || "").trim();
+
+  return {
+    type: "memory",
+    title: translate("Memory", "STMemoryBooks_Jobs_Memory"),
+    detail: `Messages ${sceneData.sceneStart}-${sceneData.sceneEnd}`,
+    chatRef,
+    chatKey: getStmbChatKey(chatRef),
+    lorebookName,
+    range: {
+      sceneStart: sceneData.sceneStart,
+      sceneEnd: sceneData.sceneEnd,
+    },
+    payload: {
+      sceneData: deepClone(sceneData),
+      compiledScene: deepClone(compiledScene),
+      lorebookName,
+      profileSettings: profileSnapshot,
+      summaryCount,
+      tokenThreshold,
+      settings: deepClone(settings),
+      memoryFetchResult: deepClone(memoryFetchResult),
+    },
+  };
+}
+
+function findOverlappingMemoryInLorebook(lorebookData, sceneData) {
+  const allMemories = identifyMemoryEntries(lorebookData);
+  const ns = Number(sceneData.sceneStart);
+  const ne = Number(sceneData.sceneEnd);
+  for (const mem of allMemories) {
+    const existingRange = getRangeFromMemoryEntry(mem.entry);
+    if (!existingRange || existingRange.start === null || existingRange.end === null) continue;
+    const s = Number(existingRange.start);
+    const e = Number(existingRange.end);
+    if (ns <= e && ne >= s) {
+      return { title: mem.title, start: s, end: e };
+    }
+  }
+  return null;
+}
+
+function getStmbChatKeySafe(chatRef = null) {
+  try {
+    return String(getStmbChatKey(chatRef)).trim();
+  } catch {
+    return "";
+  }
+}
+
+function isStmbJobChatCurrent(chatRef) {
+  const targetKey = getStmbChatKeySafe(chatRef);
+  const currentKey = getStmbChatKeySafe();
+  return Boolean(targetKey && currentKey && targetKey === currentKey);
+}
+
+function normalizeAutoHideRanges(ranges) {
+  return (Array.isArray(ranges) ? ranges : [])
+    .map((range) => ({
+      start: Math.trunc(Number(range?.start)),
+      end: Math.trunc(Number(range?.end)),
+    }))
+    .filter((range) => Number.isInteger(range.start) && Number.isInteger(range.end) && range.start >= 0 && range.end >= range.start);
+}
+
+function queueDeferredQueuedAutoHideRanges(chatRef, ranges) {
+  const chatKey = getStmbChatKeySafe(chatRef);
+  const safeRanges = normalizeAutoHideRanges(ranges);
+  if (!chatKey || safeRanges.length === 0) return;
+
+  const pending = deferredQueuedAutoHideRanges.get(chatKey) || [];
+  for (const range of safeRanges) {
+    if (!pending.some((existing) => existing.start === range.start && existing.end === range.end)) {
+      pending.push(range);
+    }
+  }
+  deferredQueuedAutoHideRanges.set(chatKey, pending);
+}
+
+async function runAutoHideRangesForCurrentChat(ranges) {
+  for (const range of normalizeAutoHideRanges(ranges)) {
+    await executeSlashCommands(`/hide ${range.start}-${range.end}`);
+  }
+}
+
+async function applyQueuedAutoHideRanges(chatRef, ranges) {
+  const safeRanges = normalizeAutoHideRanges(ranges);
+  if (safeRanges.length === 0) return;
+
+  if (!isStmbJobChatCurrent(chatRef)) {
+    queueDeferredQueuedAutoHideRanges(chatRef, safeRanges);
+    return;
+  }
+
+  try {
+    await runAutoHideRangesForCurrentChat(safeRanges);
+  } catch (error) {
+    console.warn("STMemoryBooks: queued auto-hide failed:", error);
+  }
+}
+
+async function flushDeferredQueuedAutoHideRanges() {
+  const chatKey = getStmbChatKeySafe();
+  const ranges = chatKey ? deferredQueuedAutoHideRanges.get(chatKey) : null;
+  if (!ranges?.length) return;
+
+  try {
+    await runAutoHideRangesForCurrentChat(ranges);
+    deferredQueuedAutoHideRanges.delete(chatKey);
+  } catch (error) {
+    console.warn("STMemoryBooks: deferred queued auto-hide failed:", error);
+  }
+}
+
+async function applyQueuedMemoryAutoHide(job, memoryResult, settings) {
+  const autoHidePlan = getAutoHideRanges(memoryResult, settings?.moduleSettings || {});
+  if (autoHidePlan.mode === "none") return;
+
+  if (autoHidePlan.invalidRange) {
+    console.warn(
+      "STMemoryBooks: queued auto-hide skipped - invalid scene range:",
+      autoHidePlan.rawRange,
+    );
+    toastr.warning(
+      translate(
+        "Auto-hide skipped: invalid scene range metadata",
+        "addlore.toast.autohideInvalidRange",
+      ),
+      translate("STMemoryBooks", "addlore.toast.title"),
+    );
+    return;
+  }
+
+  await applyQueuedAutoHideRanges(job.chatRef, autoHidePlan.ranges);
+}
+
+async function executeQueuedMemoryJob(job, jobContext) {
+  const payload = job?.payload || {};
+  const sceneData = payload.sceneData;
+  const compiledScene = payload.compiledScene;
+  const profileSettings = payload.profileSettings;
+  const settings = payload.settings || initializeSettings();
+  const lorebookName = String(payload.lorebookName || job.lorebookName || "").trim();
+  if (!sceneData || !compiledScene || !profileSettings || !lorebookName) {
+    throw new Error("Memory job snapshot is incomplete.");
+  }
+
+  jobContext.setState("generating", { detail: profileSettings.name || "Memory" });
+  const memoryResult = await createMemory(compiledScene, profileSettings, {
+    tokenWarningThreshold: payload.tokenThreshold,
+    signal: jobContext.signal,
+  });
+  jobContext.throwIfCancelled();
+
+  let finalMemoryResult = memoryResult;
+  if (settings.moduleSettings?.showMemoryPreviews) {
+    const approval = await awaitStmbJobApproval(
+      jobContext,
+      {
+        kind: "memoryApproval",
+        title: "Memory",
+        detail: job.detail,
+        open: async () => {
+          const result = await showMemoryPreviewPopup(memoryResult, sceneData, profileSettings);
+          if (result?.action === "cancel") return { decision: "cancel" };
+          if (result?.action === "retry") return { decision: "retry" };
+          if (result?.action === "edit") return { decision: "accept", editedData: result.memoryData };
+          return { decision: "accept" };
+        },
+      },
+      { detail: job.detail },
+    );
+    if (approval?.decision === "cancel" || approval?.decision === "reject") {
+      jobContext.patch({ state: "canceled", detail: "Canceled in approval" });
+      return;
+    }
+    if (approval?.decision === "retry") {
+      throw new Error("Retry requested; use the job retry action to run the original snapshot again.");
+    }
+    if (approval?.editedData) {
+      finalMemoryResult = approval.editedData;
+    }
+  }
+
+  jobContext.throwIfCancelled();
+  jobContext.setState("saving", { detail: lorebookName });
+  let addResult = null;
+  let latestLorebookData = null;
+  await withStmbWriteLane({ type: "lorebook", name: lorebookName }, async () => {
+    const freshLorebook = await loadWorldInfo(lorebookName);
+    if (!freshLorebook?.entries) {
+      throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
+    }
+    if (!settings.moduleSettings?.allowSceneOverlap) {
+      const overlap = findOverlappingMemoryInLorebook(freshLorebook, sceneData);
+      if (overlap) {
+        const error = new Error(`Scene overlaps with existing memory: "${overlap.title}" (messages ${overlap.start}-${overlap.end})`);
+        error.name = "StmbJobNeedsReview";
+        throw error;
+      }
+    }
+    addResult = await addMemoryToLorebook(
+      finalMemoryResult,
+      { valid: true, name: lorebookName, data: freshLorebook },
+      {
+        autoHide: false,
+        refreshEditor: getStmbChatKey(job.chatRef) === getStmbChatKey(),
+        updateHighestMemoryProcessed: false,
+      },
+    );
+    if (!addResult?.success) {
+      throw new Error(addResult?.error || "Failed to add memory to lorebook");
+    }
+    latestLorebookData = freshLorebook;
+  });
+
+  jobContext.throwIfCancelled();
+  await applyQueuedMemoryAutoHide(job, finalMemoryResult, settings);
+  jobContext.throwIfCancelled();
+  await updateHighestMemoryProcessedForChatRef(job.chatRef, sceneData.sceneEnd);
+  jobContext.setResult({
+    lorebookName,
+    entryTitle: addResult?.entryTitle || "",
+  });
+
+  try {
+    jobContext.setState("post_save", { detail: "Running after-memory side prompts" });
+    await runAfterMemory(compiledScene, profileSettings, {
+      chatRef: job.chatRef,
+      chatKey: job.chatKey,
+      lorebookName,
+    });
+  } catch (error) {
+    console.warn("STMemoryBooks: queued after-memory side prompts failed:", error);
+  }
+
+  jobContext.throwIfCancelled();
+  if (isStmbJobChatCurrent(job.chatRef)) {
+    clearAutoSummaryState();
+    await maybePromptSelectedAutoConsolidation({
+      minTargetTier: 1,
+      lorebookValidation: {
+        valid: true,
+        name: lorebookName,
+        data: latestLorebookData,
+      },
+    });
+  }
+}
+
+function fingerprintLorebookEntry(entry) {
+  if (!entry || typeof entry !== "object") return "";
+  return JSON.stringify({
+    uid: entry.uid,
+    comment: entry.comment || "",
+    content: entry.content || "",
+    disable: !!entry.disable,
+    stmemorybooks: !!entry.stmemorybooks,
+    stmbSummary: !!entry.stmbSummary,
+    stmbSummaryTier: entry.stmbSummaryTier ?? null,
+    type: entry.type ?? null,
+  });
+}
+
+function verifyConsolidationSourceFingerprints(lorebookData, expected, sourceIds = null) {
+  const expectedEntries = expected && typeof expected === "object" ? expected : {};
+  const idsToCheck = sourceIds
+    ? Array.from(new Set(Array.from(sourceIds).map(String)))
+    : Object.keys(expectedEntries);
+  if (idsToCheck.length === 0) return;
+
+  const entries = Object.values(lorebookData?.entries || {});
+  for (const uid of idsToCheck) {
+    const fingerprint = expectedEntries[String(uid)];
+    if (!fingerprint) continue;
+    const freshEntry = entries.find((entry) => String(entry?.uid) === String(uid));
+    if (!freshEntry || fingerprintLorebookEntry(freshEntry) !== fingerprint) {
+      const error = new Error("A consolidation source entry changed before commit. Review the job before overwriting.");
+      error.name = "StmbJobNeedsReview";
+      throw error;
+    }
+  }
+}
+
+function getEntryUid(entry) {
+  const uid = entry?.uid;
+  return uid === undefined || uid === null ? null : String(uid);
+}
+
+function collectSummaryMemberIds(candidates) {
+  const ids = new Set();
+  for (const candidate of candidates || []) {
+    for (const id of candidate?.memberIds || []) {
+      ids.add(String(id));
+    }
+  }
+  return ids;
+}
+
+function getEntriesById(selectedEntries, ids) {
+  const wanted = new Set(Array.from(ids || []).map(String));
+  return (selectedEntries || []).filter((entry) => {
+    const uid = getEntryUid(entry);
+    return uid !== null && wanted.has(uid);
+  });
+}
+
+function hasAmbiguousMultiSummaryAssignments(summaryCandidates, selectedEntries) {
+  const candidates = Array.isArray(summaryCandidates) ? summaryCandidates : [];
+  if (candidates.length <= 1) return false;
+
+  const sourceIds = new Set(
+    (selectedEntries || [])
+      .map(getEntryUid)
+      .filter((uid) => uid !== null),
+  );
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const memberIds = Array.isArray(candidate?.memberIds)
+      ? candidate.memberIds.map(String)
+      : [];
+    if (!candidate?.memberIdsClear || memberIds.length === 0) {
+      return true;
+    }
+    for (const id of memberIds) {
+      if (!sourceIds.has(id) || seen.has(id)) {
+        return true;
+      }
+      seen.add(id);
+    }
+  }
+  return false;
+}
+
+async function runConsolidationPreviewWorkflow({
+  initialAnalysis,
+  selectedEntries,
+  targetTier,
+  sourceLabel,
+  targetLabel,
+  generateAnalysis,
+  commitCandidates,
+  throwIfCancelled = null,
+}) {
+  const originalEntries = Array.isArray(selectedEntries) ? selectedEntries : [];
+  const pendingIds = new Set(
+    originalEntries
+      .map(getEntryUid)
+      .filter((uid) => uid !== null),
+  );
+  const committedCandidates = [];
+  const committedResults = [];
+  let analysis = initialAnalysis || {};
+
+  while (pendingIds.size > 0) {
+    if (typeof throwIfCancelled === "function") throwIfCancelled();
+    const summaryCandidates = Array.isArray(analysis?.summaryCandidates)
+      ? analysis.summaryCandidates
+      : [];
+    if (summaryCandidates.length === 0) {
+      return {
+        canceled: false,
+        created: committedResults.length,
+        leftovers: Array.from(pendingIds),
+      };
+    }
+
+    const pendingEntries = getEntriesById(originalEntries, pendingIds);
+    const ambiguousAssignments = hasAmbiguousMultiSummaryAssignments(
+      summaryCandidates,
+      pendingEntries,
+    );
+    const acceptedByDefaultIds = collectSummaryMemberIds(summaryCandidates);
+    const pendingAfterAcceptAll = new Set(pendingIds);
+    for (const id of acceptedByDefaultIds) {
+      pendingAfterAcceptAll.delete(String(id));
+    }
+
+    const previewResult = await showConsolidationPreviewPopup({
+      summaryCandidates,
+      selectedEntries: pendingEntries,
+      targetLabel,
+      sourceLabel,
+      ambiguousAssignments,
+      lockedCount: committedCandidates.length,
+      pendingCount: pendingAfterAcceptAll.size,
+    });
+    if (typeof throwIfCancelled === "function") throwIfCancelled();
+
+    if (previewResult?.action === "cancel") {
+      return {
+        canceled: true,
+        created: committedResults.length,
+        leftovers: Array.from(pendingIds),
+      };
+    }
+
+    if (previewResult?.action === "retryAll") {
+      analysis = await generateAnalysis(pendingEntries, committedCandidates);
+      continue;
+    }
+
+    const acceptedCandidates = Array.isArray(previewResult?.acceptedCandidates)
+      ? previewResult.acceptedCandidates
+      : [];
+    if (acceptedCandidates.length > 0) {
+      const commitResult = await commitCandidates(acceptedCandidates);
+      const results = Array.isArray(commitResult?.results) ? commitResult.results : [];
+      committedResults.push(...results);
+      committedCandidates.push(...acceptedCandidates);
+      for (const id of collectSummaryMemberIds(acceptedCandidates)) {
+        pendingIds.delete(String(id));
+      }
+    }
+
+    if (pendingIds.size === 0) break;
+
+    const nextPendingEntries = getEntriesById(originalEntries, pendingIds);
+    if (nextPendingEntries.length === 0) break;
+    analysis = await generateAnalysis(nextPendingEntries, committedCandidates);
+  }
+
+  return {
+    canceled: false,
+    created: committedResults.length,
+    leftovers: Array.from(pendingIds),
+  };
+}
+
+async function executeQueuedConsolidationJob(job, jobContext) {
+  const payload = job?.payload || {};
+  const lorebookName = String(payload.lorebookName || job.lorebookName || "").trim();
+  const targetTier = clampInt(Number(payload.targetTier), 1, 6);
+  const selectedEntries = Array.isArray(payload.selectedEntries) ? payload.selectedEntries : [];
+  if (!lorebookName || selectedEntries.length === 0) {
+    throw new Error("Consolidation job snapshot is incomplete.");
+  }
+
+  jobContext.setState("generating", {
+    detail: `${getSummaryTierLabel(getSourceTierForTarget(targetTier))} -> ${getSummaryTierLabel(targetTier)}`,
+  });
+  const analysis = await runSummaryAnalysisSequential(
+    selectedEntries,
+    {
+      presetKey: payload.presetKey,
+      targetTier,
+      maxItemsPerPass: payload.maxItemsPerPass,
+      maxPasses: payload.maxPasses,
+      minAssigned: payload.minAssigned,
+      tokenTarget: payload.tokenTarget,
+      promptText: payload.promptText,
+    },
+    payload.profileSettings || null,
+  );
+  jobContext.throwIfCancelled();
+  const summaryCandidates = Array.isArray(analysis?.summaryCandidates)
+    ? analysis.summaryCandidates
+    : [];
+  if (summaryCandidates.length === 0) {
+    throw new Error("Summary analysis produced no usable summaries.");
+  }
+
+  const liveSettings = initializeSettings();
+  if (liveSettings.moduleSettings?.showConsolidationPreviews) {
+    let latestCommittedLorebookData = null;
+    const approval = await awaitStmbJobApproval(
+      jobContext,
+      {
+        kind: "consolidationApproval",
+        title: getSummaryTierLabel(targetTier),
+        detail: job.detail,
+        open: async () => {
+          const previewResult = await runConsolidationPreviewWorkflow({
+            initialAnalysis: analysis,
+            selectedEntries,
+            targetTier,
+            sourceLabel: getSummaryTierLabel(getSourceTierForTarget(targetTier)),
+            targetLabel: getSummaryTierLabel(targetTier),
+            throwIfCancelled: () => jobContext.throwIfCancelled(),
+            generateAnalysis: async (entries, lockedSummaries) => {
+              jobContext.setState("generating", {
+                detail: `${getSummaryTierLabel(getSourceTierForTarget(targetTier))} -> ${getSummaryTierLabel(targetTier)}`,
+              });
+              return await runSummaryAnalysisSequential(
+                entries,
+                {
+                  presetKey: payload.presetKey,
+                  targetTier,
+                  maxItemsPerPass: payload.maxItemsPerPass,
+                  maxPasses: payload.maxPasses,
+                  minAssigned: payload.minAssigned,
+                  tokenTarget: payload.tokenTarget,
+                  promptText: payload.promptText,
+                  lockedSummaries,
+                },
+                payload.profileSettings || null,
+              );
+            },
+            commitCandidates: async (candidates) => {
+              jobContext.setState("saving", { detail: lorebookName });
+              let result = null;
+              await withStmbWriteLane({ type: "lorebook", name: lorebookName }, async () => {
+                const freshLorebook = await loadWorldInfo(lorebookName);
+                if (!freshLorebook?.entries) {
+                  throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
+                }
+                verifyConsolidationSourceFingerprints(
+                  freshLorebook,
+                  payload.sourceFingerprints || {},
+                  collectSummaryMemberIds(candidates),
+                );
+                result = await commitSummaryEntries({
+                  lorebookName,
+                  lorebookData: freshLorebook,
+                  summaryCandidates: candidates,
+                  targetTier,
+                  disableOriginals: !!payload.disableOriginals,
+                  summaryEntrySettings: payload.summaryEntrySettings,
+                  orderMode: payload.summaryOrderMode,
+                  orderValue: payload.summaryOrderValue,
+                  reverseStart: payload.summaryReverseStart,
+                });
+                latestCommittedLorebookData = freshLorebook;
+              });
+              return result;
+            },
+          });
+          return { decision: "accept", previewResult };
+        },
+      },
+      { detail: job.detail },
+    );
+    if (approval?.decision === "cancel" || approval?.decision === "reject") {
+      jobContext.patch({ state: "canceled", detail: "Canceled in approval" });
+      return;
+    }
+    if (approval?.decision === "error") {
+      throw approval.error || new Error("Consolidation approval failed.");
+    }
+    const previewResult = approval?.previewResult;
+    const created = Number(previewResult?.created || 0);
+    if (previewResult?.canceled && !previewResult.created) {
+      jobContext.patch({ state: "canceled", detail: "Canceled in approval" });
+      return;
+    }
+    jobContext.setResult({
+      lorebookName,
+      targetTier,
+      created,
+      leftovers: Array.isArray(previewResult?.leftovers)
+        ? previewResult.leftovers.length
+        : 0,
+    });
+    await runPostConsolidationCommitFlow({
+      created,
+      targetTier,
+      lorebookName,
+      lorebookData: latestCommittedLorebookData,
+      chatRef: job.chatRef,
+    });
+    return;
+  }
+
+  jobContext.setState("saving", { detail: lorebookName });
+  let created = 0;
+  let latestCommittedLorebookData = null;
+  await withStmbWriteLane({ type: "lorebook", name: lorebookName }, async () => {
+    const freshLorebook = await loadWorldInfo(lorebookName);
+    if (!freshLorebook?.entries) {
+      throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
+    }
+    verifyConsolidationSourceFingerprints(freshLorebook, payload.sourceFingerprints || {});
+    const result = await commitSummaryEntries({
+      lorebookName,
+      lorebookData: freshLorebook,
+      summaryCandidates,
+      targetTier,
+      disableOriginals: !!payload.disableOriginals,
+      summaryEntrySettings: payload.summaryEntrySettings,
+      orderMode: payload.summaryOrderMode,
+      orderValue: payload.summaryOrderValue,
+      reverseStart: payload.summaryReverseStart,
+    });
+    created = Array.isArray(result?.results) ? result.results.length : summaryCandidates.length;
+    latestCommittedLorebookData = freshLorebook;
+    jobContext.setResult({
+      lorebookName,
+      targetTier,
+      created,
+    });
+  });
+  await runPostConsolidationCommitFlow({
+    created,
+    targetTier,
+    lorebookName,
+    lorebookData: latestCommittedLorebookData,
+    chatRef: job.chatRef,
+  });
 }
 
 async function initiateMemoryCreation(selectedProfileIndex = null) {
@@ -2120,7 +3646,7 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
         ),
         "STMemoryBooks",
       );
-      return;
+      return false;
     }
   }
   // For group chats, check that we have group data
@@ -2133,13 +3659,13 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
         ),
         "STMemoryBooks",
       );
-      return;
+      return false;
     }
   }
 
   // RACE CONDITION FIX: Check and set flag atomically
   if (isProcessingMemory) {
-    return;
+    return false;
   }
 
   // Set processing flag IMMEDIATELY after validation to prevent race conditions
@@ -2171,7 +3697,7 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
         "STMemoryBooks",
       );
       isProcessingMemory = false;
-      return;
+      return false;
     }
 
     const lorebookValidation = await validateLorebook();
@@ -2190,7 +3716,7 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
         );
       }
       isProcessingMemory = false;
-      return;
+      return false;
     }
 
     const allMemories = identifyMemoryEntries(lorebookValidation.data);
@@ -2223,7 +3749,7 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
               "STMemoryBooks",
             );
             isProcessingMemory = false;
-            return;
+            return false;
           }
         }
       }
@@ -2236,7 +3762,7 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
     );
     if (!effectiveSettings) {
       isProcessingMemory = false;
-      return; // User cancelled
+      return false; // User cancelled
     }
 
     // Close settings popup if open
@@ -2245,8 +3771,25 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
       currentPopupInstance = null;
     }
 
+    if (areStmbJobsEnabled()) {
+      const job = await buildQueuedMemoryJob(
+        sceneData,
+        lorebookValidation,
+        effectiveSettings,
+      );
+      if (!job) {
+        return false;
+      }
+      enqueueStmbJob(job);
+      toastr.info(
+        translate("Memory job queued.", "STMemoryBooks_Jobs_MemoryQueued"),
+        "STMemoryBooks",
+      );
+      return true;
+    }
+
     // Execute the main process with retry logic
-    await executeMemoryGeneration(
+    return await executeMemoryGeneration(
       sceneData,
       lorebookValidation,
       effectiveSettings,
@@ -2260,6 +3803,7 @@ async function initiateMemoryCreation(selectedProfileIndex = null) {
       __st_t_tag`An unexpected error occurred: ${error.message}`,
       "STMemoryBooks",
     );
+    return false;
   } finally {
     // ALWAYS reset the flag, no matter how we exit
     isProcessingMemory = false;
@@ -2706,6 +4250,60 @@ function populateInlineButtons() {
         }
       },
     },
+    {
+      text: "📎 " + translate("Context Settings", "STMemoryBooks_ContextSettings_Title"),
+      id: "stmb-context-settings",
+      action: async () => {
+        try {
+          await showContextSettingsPopup();
+        } catch (error) {
+          console.error(`${MODULE_NAME}: Error opening Context Settings:`, error);
+          toastr.error(
+            translate(
+              "Failed to open Context Settings",
+              "STMemoryBooks_ContextSettings_OpenFailed",
+            ),
+            "STMemoryBooks",
+          );
+        }
+      },
+    },
+    {
+      text: "📝 " + translate("Compaction", "STMemoryBooks_Compaction_Title"),
+      id: "stmb-compact-review",
+      action: async () => {
+        try {
+          await showStmbEntryReviewPopup({ showGoBack: true });
+        } catch (error) {
+          console.error(`${MODULE_NAME}: Error opening Compaction:`, error);
+          toastr.error(
+            translate(
+              "Failed to open Compaction",
+              "STMemoryBooks_FailedToOpenCompactReview",
+            ),
+            "STMemoryBooks",
+          );
+        }
+      },
+    },
+    {
+      text: "🔎 " + translate("Topical Clip", "STMemoryBooks_TopicalClip_Title"),
+      id: "stmb-topical-clip",
+      action: async () => {
+        try {
+          await showTopicalClipPopup({ showGoBack: true });
+        } catch (error) {
+          console.error(`${MODULE_NAME}: Error opening Topical Clip:`, error);
+          toastr.error(
+            translate(
+              "Failed to open Topical Clip",
+              "STMemoryBooks_TopicalClip_OpenFailed",
+            ),
+            "STMemoryBooks",
+          );
+        }
+      },
+    },
   ];
 
   // Clear containers and populate with buttons
@@ -2797,13 +4395,13 @@ async function showPromptManagerPopup() {
     content +=
       '<input type="file" id="stmb-pm-import-file" accept=".json" style="display: none;" />';
 
-    const popup = new Popup(content, POPUP_TYPE.TEXT, "", {
+    const popup = new Popup(content, POPUP_TYPE.TEXT, "", withGoBackButton({
       wide: true,
       large: true,
       allowVerticalScrolling: true,
       okButton: false,
       cancelButton: translate("Close", "STMemoryBooks_Close"),
-    });
+    }));
 
     // Attach handlers before showing the popup to ensure interactivity
     setupPromptManagerEventHandlers(popup);
@@ -3111,10 +4709,10 @@ async function createNewPreset(popup) {
         </div>
     `;
 
-  const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", {
+  const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", withGoBackButton({
     okButton: translate("Create", "STMemoryBooks_Create"),
     cancelButton: translate("Cancel", "STMemoryBooks_Cancel"),
-  });
+  }));
 
   const result = await editPopup.show();
 
@@ -3194,10 +4792,10 @@ async function editPreset(popup, presetKey) {
             </div>
         `;
 
-    const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", {
+    const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", withGoBackButton({
       okButton: translate("Save", "STMemoryBooks_Save"),
       cancelButton: translate("Cancel", "STMemoryBooks_Cancel"),
-    });
+    }));
 
     const result = await editPopup.show();
 
@@ -3406,6 +5004,7 @@ async function showArcPromptManagerPopup() {
 
     // Get list of arc presets
     const presets = await ArcPrompts.listPresets();
+    const defaultPresetKey = await ArcPrompts.getDefaultPresetKey();
 
     // Build the popup content
     let content =
@@ -3414,6 +5013,17 @@ async function showArcPromptManagerPopup() {
     content +=
       '<p data-i18n="STMemoryBooks_ArcPromptManager_Desc">Manage your Consolidation Analysis prompts. All presets are editable.</p>';
     content += "</div>";
+
+    content += '<div class="world_entry_form_control">';
+    content += `<label for="stmb-apm-default"><strong>${escapeHtml(translate("Set Default", "STMemoryBooks_ArcPromptManager_SetDefault"))}:</strong> `;
+    content += '<select id="stmb-apm-default" class="text_pole">';
+    for (const p of presets) {
+      const key = String(p.key || "");
+      const name = String(p.displayName || key);
+      const selected = key === defaultPresetKey ? " selected" : "";
+      content += `<option value="${escapeHtml(key)}"${selected}>${escapeHtml(name)}</option>`;
+    }
+    content += "</select></label></div>";
 
     // Search/filter box
     content += '<div class="world_entry_form_control">';
@@ -3442,13 +5052,13 @@ async function showArcPromptManagerPopup() {
     content +=
       '<input type="file" id="stmb-apm-import-file" accept=".json" style="display: none;" />';
 
-    const popup = new Popup(content, POPUP_TYPE.TEXT, "", {
+    const popup = new Popup(content, POPUP_TYPE.TEXT, "", withGoBackButton({
       wide: true,
       large: true,
       allowVerticalScrolling: true,
       okButton: false,
       cancelButton: translate("Close", "STMemoryBooks_Close"),
-    });
+    }));
 
     // Attach handlers before showing the popup
     setupArcPromptManagerEventHandlers(popup);
@@ -3543,6 +5153,32 @@ function setupArcPromptManagerEventHandlers(popup) {
     });
   });
 
+  dlg.querySelector("#stmb-apm-default")?.addEventListener("change", async (e) => {
+    const key = String(e.target.value || "").trim();
+    try {
+      await ArcPrompts.setDefaultPresetKey(key);
+      const displayName = await ArcPrompts.getDisplayName(key);
+      toastr.success(
+        tr(
+          "STMemoryBooks_ArcPromptManager_DefaultSaved",
+          '"{{name}}" is now the default consolidation prompt.',
+          { name: displayName },
+        ),
+        "STMemoryBooks",
+      );
+      window.dispatchEvent(new CustomEvent("stmb-arc-presets-updated"));
+    } catch (error) {
+      console.error("STMemoryBooks: Error setting default arc preset:", error);
+      toastr.error(
+        translate(
+          "Failed to set default consolidation prompt",
+          "STMemoryBooks_ArcPromptManager_DefaultSaveFailed",
+        ),
+        "STMemoryBooks",
+      );
+    }
+  });
+
   // Buttons
   dlg.querySelector("#stmb-apm-new")?.addEventListener("click", async () => {
     await createNewArcPreset(popup);
@@ -3635,10 +5271,10 @@ async function createNewArcPreset(popup) {
             </label>
         </div>
     `;
-  const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", {
+  const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", withGoBackButton({
     okButton: translate("Create", "STMemoryBooks_Create"),
     cancelButton: translate("Cancel", "STMemoryBooks_Cancel"),
-  });
+  }));
   const result = await editPopup.show();
   if (result === POPUP_RESULT.AFFIRMATIVE) {
     const displayName = editPopup.dlg
@@ -3702,10 +5338,10 @@ async function editArcPreset(popup, presetKey) {
                 </label>
             </div>
         `;
-    const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", {
+    const editPopup = new Popup(content, POPUP_TYPE.TEXT, "", withGoBackButton({
       okButton: translate("Save", "STMemoryBooks_Save"),
       cancelButton: translate("Cancel", "STMemoryBooks_Cancel"),
-    });
+    }));
     const result = await editPopup.show();
     if (result === POPUP_RESULT.AFFIRMATIVE) {
       const newDisplayName = editPopup.dlg
@@ -3925,10 +5561,17 @@ function getAutoConsolidationTierOptions() {
 }
 
 async function maybePromptAutoConsolidation(targetTier, lorebookValidation = null) {
+  const emptyResult = {
+    checked: false,
+    ready: false,
+    prompted: false,
+    alreadyPrompted: false,
+  };
+
   try {
     const settings = initializeSettings();
     if (!settings?.moduleSettings?.autoConsolidationPromptEnabled) {
-      return;
+      return emptyResult;
     }
 
     const normalizedTargetTier = clampInt(Number(targetTier), 1, 6);
@@ -3937,7 +5580,7 @@ async function maybePromptAutoConsolidation(targetTier, lorebookValidation = nul
         settings.moduleSettings.autoConsolidationTargetTier,
     );
     if (!configuredTargetTiers.includes(normalizedTargetTier)) {
-      return;
+      return emptyResult;
     }
 
     const sourceTier = getSourceTierForTarget(normalizedTargetTier);
@@ -3946,7 +5589,7 @@ async function maybePromptAutoConsolidation(targetTier, lorebookValidation = nul
         ? lorebookValidation
         : await validateLorebook(true);
     if (!lorebookState?.valid || !lorebookState?.data) {
-      return;
+      return { ...emptyResult, checked: true, targetTier: normalizedTargetTier };
     }
 
     const lorebookData = lorebookState.data;
@@ -3962,13 +5605,27 @@ async function maybePromptAutoConsolidation(targetTier, lorebookValidation = nul
       isEligibleSummarySourceEntry(entry, sourceTier),
     ).length;
     if (eligibleCount < requiredMin) {
-      return;
+      return {
+        ...emptyResult,
+        checked: true,
+        targetTier: normalizedTargetTier,
+        eligibleCount,
+        requiredMin,
+      };
     }
 
     const stmbData = getSceneMarkers() || {};
     const promptKey = `${normalizedTargetTier}:${eligibleCount}`;
     if (stmbData.autoConsolidationLastPromptKey === promptKey) {
-      return;
+      return {
+        checked: true,
+        ready: true,
+        prompted: false,
+        alreadyPrompted: true,
+        targetTier: normalizedTargetTier,
+        eligibleCount,
+        requiredMin,
+      };
     }
     stmbData.autoConsolidationLastPromptKey = promptKey;
     saveMetadataForCurrentContext();
@@ -4009,11 +5666,46 @@ async function maybePromptAutoConsolidation(targetTier, lorebookValidation = nul
     if (result === POPUP_RESULT.AFFIRMATIVE) {
       await showSummaryConsolidationPopup({
         initialTargetTier: normalizedTargetTier,
+        lorebookValidation: lorebookState,
       });
     }
+    return {
+      checked: true,
+      ready: true,
+      prompted: true,
+      alreadyPrompted: false,
+      targetTier: normalizedTargetTier,
+      eligibleCount,
+      requiredMin,
+    };
   } catch (error) {
     console.error("STMemoryBooks: Auto-consolidation prompt check failed:", error);
+    return { ...emptyResult, error };
   }
+}
+
+async function maybePromptSelectedAutoConsolidation({
+  minTargetTier = 1,
+  lorebookValidation = null,
+} = {}) {
+  const settings = initializeSettings();
+  if (!settings?.moduleSettings?.autoConsolidationPromptEnabled) {
+    return null;
+  }
+
+  const minimumTier = clampInt(Number(minTargetTier), 1, 5);
+  const configuredTargetTiers = normalizeAutoConsolidationTargetTiers(
+    settings.moduleSettings.autoConsolidationTargetTiers ??
+      settings.moduleSettings.autoConsolidationTargetTier,
+  ).filter((tier) => tier >= minimumTier && tier <= 5);
+
+  for (const targetTier of configuredTargetTiers) {
+    const result = await maybePromptAutoConsolidation(targetTier, lorebookValidation);
+    if (result?.ready || result?.error) {
+      return result;
+    }
+  }
+  return null;
 }
 
 function clearAutoConsolidationPromptState(targetTier) {
@@ -4028,11 +5720,44 @@ function clearAutoConsolidationPromptState(targetTier) {
   }
 }
 
+async function runPostConsolidationCommitFlow({
+  created,
+  targetTier,
+  lorebookName,
+  lorebookData,
+  chatRef = null,
+} = {}) {
+  if (Number(created || 0) <= 0) return;
+  if (chatRef && !isStmbJobChatCurrent(chatRef)) return;
+
+  const normalizedTargetTier = clampInt(Number(targetTier), 1, 6);
+  clearAutoConsolidationPromptState(normalizedTargetTier);
+  if (normalizedTargetTier < 6) {
+    await maybePromptSelectedAutoConsolidation({
+      minTargetTier: normalizedTargetTier + 1,
+      lorebookValidation: {
+        valid: true,
+        name: lorebookName,
+        data: lorebookData,
+      },
+    });
+  }
+}
+
 /**
  * Show summary consolidation popup
  */
 async function showSummaryConsolidationPopup(popupOptions = {}) {
   try {
+    // Upstream guard: allow a pre-resolved validation to short-circuit when
+    // it has already handled the path (e.g. auto-create was declined).
+    const lorebookValidation = popupOptions?.lorebookValidation?.valid
+      ? popupOptions.lorebookValidation
+      : null;
+    if (lorebookValidation?.handled) {
+      return;
+    }
+
     // Load ALL effective lorebooks; allow UI to render even if none assigned
     const allLorebookNames = await getEffectiveLorebookNames();
     const validLorebookPairs = []; // [{ name, data }]
@@ -4056,6 +5781,11 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
       );
     }
 
+    // Upstream: migrate the primary lorebook's summary schema if needed.
+    if (lorebookName && migrateLorebookSummarySchema(lorebookData)) {
+      await saveWorldInfo(lorebookName, lorebookData, true);
+    }
+
     // Merge entries from ALL lorebooks so all memories appear as candidates
     const allEntries = validLorebookPairs.flatMap(({ data }) => Object.values(data.entries || {}));
     const parseOrder = (t) => {
@@ -4074,7 +5804,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     // Presets for Arc Analysis
     await ArcPrompts.firstRunInitIfMissing(extension_settings?.STMemoryBooks);
     const presets = await ArcPrompts.listPresets();
-    const defaultPresetKey = "arc_default";
+    const defaultPresetKey = await ArcPrompts.getDefaultPresetKey();
 
     // Get current chat context for chat-filter toggle
     const arcContext = getCurrentMemoryBooksContext();
@@ -4244,9 +5974,10 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     }
 
     // Entries checklist
-    content += `<div class="world_entry_form_control"><div id="stmb-summary-lock-status" class="opacity70p marginBot5"></div><div class="flex-container flexGap10 marginBot5">`;
-    content += `<button id="stmb-arc-select-all" class="menu_button">${escapeHtml(translate("Select All", "STMemoryBooks_SelectAll"))}</button>`;
-    content += `<button id="stmb-arc-deselect-all" class="menu_button">${escapeHtml(translate("Deselect All", "STMemoryBooks_DeselectAll"))}</button>`;
+    content += `<div class="world_entry_form_control"><div id="stmb-summary-lock-status" class="opacity70p marginBot5"></div>`;
+    content += `<div class="stmb-button-row marginBot5">`;
+    content += `<button id="stmb-arc-select-all" class="menu_button stmb-nowrap-button">${escapeHtml(translate("Select All", "STMemoryBooks_SelectAll"))}</button>`;
+    content += `<button id="stmb-arc-deselect-all" class="menu_button stmb-nowrap-button">${escapeHtml(translate("Deselect All", "STMemoryBooks_DeselectAll"))}</button>`;
     content += `</div>`;
     content += `<div id="stmb-arc-list" style="max-height:300px; overflow-y:auto; border:1px solid var(--SmartHover2); padding:6px">`;
     for (const e of candidates) {
@@ -4298,7 +6029,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
       return hasChanges;
     };
 
-    popup = new Popup(DOMPurify.sanitize(content), POPUP_TYPE.TEXT, "", {
+    const summaryPopupOptions = {
       wide: true,
       large: true,
       allowVerticalScrolling: true,
@@ -4314,7 +6045,13 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
           );
         }
       },
-    });
+    };
+    popup = new Popup(
+      DOMPurify.sanitize(content),
+      POPUP_TYPE.TEXT,
+      "",
+      popupOptions.showGoBack ? withGoBackButton(summaryPopupOptions) : summaryPopupOptions,
+    );
 
     // Attach handlers before show
     const dlg = popup.dlg;
@@ -4593,7 +6330,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
             ) {
               selEl.value = selectedBefore;
             } else {
-              selEl.value = defaultPresetKey;
+              selEl.value = await ArcPrompts.getDefaultPresetKey();
             }
           }
 
@@ -4672,7 +6409,7 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     const targetLorebookPairs = validLorebookPairs.filter(({ name }) => targetLorebookNames.includes(name));
 
     const presetKey = String(
-      dlg.querySelector("#stmb-arc-preset")?.value || "arc_default",
+      dlg.querySelector("#stmb-arc-preset")?.value || defaultPresetKey,
     );
     const options = {
       presetKey,
@@ -4731,6 +6468,51 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
     const selectedEntries = selected
       .map((id) => entryMap.get(String(id)))
       .filter(Boolean);
+    const selectedSourceFingerprints = Object.fromEntries(
+      selectedEntries.map((entry) => [String(entry.uid), fingerprintLorebookEntry(entry)]),
+    );
+
+    if (areStmbJobsEnabled()) {
+      const chatRef = getCurrentStmbChatRef();
+      const profileSettings = deepClone(settings.profiles?.[settings.defaultProfile] || null);
+      if (profileSettings) {
+        profileSettings.prompt = await getEffectivePromptAsync(profileSettings);
+        profileSettings.effectiveConnection = profileSettings.connection
+          ? { ...profileSettings.connection }
+          : profileSettings.effectiveConnection;
+      }
+      enqueueStmbJob({
+        type: "consolidation",
+        title: targetLabel,
+        detail: `${sourceLabel} -> ${targetLabel}`,
+        chatRef,
+        chatKey: getStmbChatKey(chatRef),
+        lorebookName,
+        payload: {
+          lorebookName,
+          targetTier,
+          selectedEntries: deepClone(selectedEntries),
+          sourceFingerprints: selectedSourceFingerprints,
+          presetKey,
+          promptText: await ArcPrompts.getPrompt(presetKey),
+          profileSettings,
+          maxItemsPerPass: options.maxItemsPerPass,
+          maxPasses: options.maxPasses,
+          minAssigned: requiredMin,
+          tokenTarget: options.tokenTarget,
+          disableOriginals,
+          summaryEntrySettings: chosenSummaryEntrySettings,
+          summaryOrderMode: normalizedArcOrderMode,
+          summaryOrderValue: chosenArcOrderValue,
+          summaryReverseStart: chosenArcReverseStart,
+        },
+      });
+      toastr.info(
+        translate("Consolidation job queued.", "STMemoryBooks_Jobs_ConsolidationQueued"),
+        "STMemoryBooks",
+      );
+      return;
+    }
 
     toastr.info(
       `Consolidating ${sourcePlural.toLowerCase()} into ${pluralizeSummaryLabel(
@@ -4847,6 +6629,93 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
       return;
     }
 
+    if (settings.moduleSettings?.showConsolidationPreviews) {
+      try {
+        let latestCommittedLorebookData = null;
+        const previewResult = await runConsolidationPreviewWorkflow({
+          initialAnalysis: analysis,
+          selectedEntries,
+          targetTier,
+          sourceLabel,
+          targetLabel,
+          throwIfCancelled: null,
+          generateAnalysis: async (entries, lockedSummaries) => {
+            return await runSummaryAnalysisSequential(
+              entries,
+              {
+                ...options,
+                lockedSummaries,
+              },
+              null,
+            );
+          },
+          commitCandidates: async (candidates) => {
+            let result = null;
+            await withStmbWriteLane({ type: "lorebook", name: lorebookName }, async () => {
+              const freshLorebook = await loadWorldInfo(lorebookName);
+              if (!freshLorebook?.entries) {
+                throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
+              }
+              verifyConsolidationSourceFingerprints(
+                freshLorebook,
+                selectedSourceFingerprints,
+                collectSummaryMemberIds(candidates),
+              );
+              result = await commitSummaryEntries({
+                lorebookName,
+                lorebookData: freshLorebook,
+                summaryCandidates: candidates,
+                targetTier,
+                disableOriginals,
+                summaryEntrySettings: chosenSummaryEntrySettings,
+                orderMode: normalizedArcOrderMode,
+                orderValue: chosenArcOrderValue,
+                reverseStart: chosenArcReverseStart,
+              });
+              latestCommittedLorebookData = freshLorebook;
+            });
+            return result;
+          },
+        });
+        const created = Number(previewResult?.created || 0);
+        if (created > 0) {
+          const createdLabel =
+            created === 1
+              ? targetLabel.toLowerCase()
+              : pluralizeSummaryLabel(targetLabel).toLowerCase();
+          const leftoverCount = Array.isArray(previewResult?.leftovers)
+            ? previewResult.leftovers.length
+            : 0;
+          let msg = `Created ${created} ${createdLabel}${leftoverCount ? `, ${leftoverCount} leftover` : ""}.`;
+          if (previewResult?.canceled) {
+            msg += " Remaining consolidation canceled.";
+          }
+          toastr.success(__st_t_tag`${msg}`, "STMemoryBooks");
+          await runPostConsolidationCommitFlow({
+            created,
+            targetTier,
+            lorebookName,
+            lorebookData: latestCommittedLorebookData || lorebookData,
+          });
+        }
+        lastFailedArcError = null;
+        lastFailedArcContext = null;
+        try {
+          toastr.clear(lastArcFailureToast);
+        } catch (e) {}
+        lastArcFailureToast = null;
+      } catch (e) {
+        if (isStmbStopError(e)) {
+          return;
+        }
+        toastr.error(
+          __st_t_tag`Summary preview failed: ${e.message || e}`,
+          "STMemoryBooks",
+        );
+      }
+      return;
+    }
+
     try {
       // Commit arcs to every selected target lorebook
       let totalCreated = 0;
@@ -4906,14 +6775,12 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
         toastr.clear(lastArcFailureToast);
       } catch (e) {}
       lastArcFailureToast = null;
-      clearAutoConsolidationPromptState(targetTier);
-      if (targetTier < 6) {
-        await maybePromptAutoConsolidation(targetTier + 1, {
-          valid: true,
-          name: lorebookName,
-          data: lorebookData,
-        });
-      }
+      await runPostConsolidationCommitFlow({
+        created,
+        targetTier,
+        lorebookName,
+        lorebookData,
+      });
     } catch (e) {
       if (isStmbStopError(e)) {
         return;
@@ -5007,6 +6874,8 @@ async function showSettingsPopup() {
     console.warn("STMemoryBooks: Failed to enumerate Regex scripts for UI", e);
   }
   const selectedProfile = getProfileSafe(settings, settings.defaultProfile);
+  const defaultProfileTitleFormat = getDefaultProfileTitleFormat(settings);
+  const isCustomTitleFormat = !getDefaultTitleFormats().includes(defaultProfileTitleFormat);
   const sceneMarkers = getSceneMarkers();
 
   // Get current lorebook information
@@ -5024,15 +6893,17 @@ async function showSettingsPopup() {
       !!sceneMarkers?.highestMemoryProcessedManuallySet,
     alwaysUseDefault: settings.moduleSettings.alwaysUseDefault,
     showMemoryPreviews: settings.moduleSettings.showMemoryPreviews,
+    showConsolidationPreviews: settings.moduleSettings.showConsolidationPreviews,
     showNotifications: settings.moduleSettings.showNotifications,
+    showFloatingClipButton: settings.moduleSettings.showFloatingClipButton !== false,
+    memoryBoundaryMode: normalizeMemoryBoundaryMode(settings.moduleSettings.memoryBoundaryMode),
+    memoryBoundaryModeOptions: getMemoryBoundaryModeOptions(settings.moduleSettings.memoryBoundaryMode),
     unhideBeforeMemory: settings.moduleSettings.unhideBeforeMemory || false,
     refreshEditor: settings.moduleSettings.refreshEditor,
     allowSceneOverlap: settings.moduleSettings.allowSceneOverlap,
     manualModeEnabled: settings.moduleSettings.manualModeEnabled,
     maxTokens:
-      (settings.moduleSettings.maxTokens ?? DEFAULT_MAX_TOKENS) > 0
-        ? settings.moduleSettings.maxTokens
-        : DEFAULT_MAX_TOKENS,
+      settings.moduleSettings.maxTokens ?? DEFAULT_MAX_TOKENS,
 
     // Lorebook status information
     lorebookMode: isManualMode ? "Manual" : "Automatic (Chat-bound)",
@@ -5077,7 +6948,7 @@ async function showSettingsPopup() {
           : profile.name,
       isDefault: index === settings.defaultProfile,
     })),
-    titleFormat: settings.titleFormat,
+    titleFormat: defaultProfileTitleFormat,
     // Regex selection UI
     useRegex: settings.moduleSettings.useRegex || false,
     regexOptions,
@@ -5085,9 +6956,10 @@ async function showSettingsPopup() {
     selectedRegexIncoming,
     titleFormats: getDefaultTitleFormats().map((format) => ({
       value: format,
-      isSelected: format === settings.titleFormat,
+      isSelected: format === defaultProfileTitleFormat,
     })),
-    showCustomInput: !getDefaultTitleFormats().includes(settings.titleFormat),
+    isCustomTitleFormat,
+    showCustomInput: isCustomTitleFormat,
     selectedProfile: {
       ...selectedProfile,
       connection:
@@ -5110,7 +6982,7 @@ async function showSettingsPopup() {
                   ? selectedProfile.connection.temperature
                   : 0.7,
             },
-      titleFormat: selectedProfile.titleFormat || settings.titleFormat,
+      titleFormat: selectedProfile.titleFormat || defaultProfileTitleFormat,
       effectivePrompt:
         selectedProfile.prompt && selectedProfile.prompt.trim()
           ? selectedProfile.prompt
@@ -5171,10 +7043,9 @@ async function showSettingsPopup() {
           "Consolidate Memories",
           "STMemoryBooks_ConsolidateArcsButton",
         ),
-      result: null,
       classes: ["menu_button"],
       action: async () => {
-        await showSummaryConsolidationPopup();
+        await showSummaryConsolidationPopup({ showGoBack: true });
       },
     }),
     customButtons.push({
@@ -5206,6 +7077,7 @@ async function showSettingsPopup() {
       "",
       popupOptions,
     );
+    markStmbPopup(currentPopupInstance);
     setupSettingsEventListeners();
     populateInlineButtons();
     initializeSettingsPopupSelect2();
@@ -5258,9 +7130,29 @@ function setupSettingsEventListeners() {
       return;
     }
 
+    if (e.target.matches("#stmb-show-consolidation-previews")) {
+      settings.moduleSettings.showConsolidationPreviews = e.target.checked;
+      saveSettingsDebounced();
+      return;
+    }
+
     if (e.target.matches("#stmb-show-notifications")) {
       settings.moduleSettings.showNotifications = e.target.checked;
       saveSettingsDebounced();
+      return;
+    }
+
+    if (e.target.matches("#stmb-show-floating-clip-button")) {
+      settings.moduleSettings.showFloatingClipButton = e.target.checked;
+      saveSettingsDebounced();
+      refreshFloatingClipButtonSetting();
+      return;
+    }
+
+    if (e.target.matches("#stmb-memory-boundary-mode")) {
+      settings.moduleSettings.memoryBoundaryMode = normalizeMemoryBoundaryMode(e.target.value);
+      saveSettingsDebounced();
+      refreshMemoryBoundaryUi();
       return;
     }
 
@@ -5483,7 +7375,7 @@ function setupSettingsEventListeners() {
         // Title format is profile-specific
         if (summaryTitle)
           summaryTitle.textContent =
-            selectedProfile.titleFormat || settings.titleFormat;
+            selectedProfile.titleFormat || getDefaultProfileTitleFormat(settings);
         if (summaryPrompt)
           summaryPrompt.textContent =
             await getEffectivePromptAsync(selectedProfile);
@@ -5502,12 +7394,17 @@ function setupSettingsEventListeners() {
         customInput.focus();
       } else {
         customInput.classList.add("displayNone");
-        settings.titleFormat = e.target.value;
+        setDefaultProfileTitleFormat(settings, e.target.value);
         saveSettingsDebounced();
 
         // Update the preview
         if (summaryTitle) {
-          summaryTitle.textContent = e.target.value;
+          const profileSelect = popupElement.querySelector("#stmb-profile-select");
+          const selectedIndex = clampInt(readIntInput(profileSelect, settings.defaultProfile), 0, settings.profiles.length - 1);
+          summaryTitle.textContent =
+            selectedIndex === settings.defaultProfile
+              ? e.target.value
+              : settings.profiles[selectedIndex]?.titleFormat || getDefaultProfileTitleFormat(settings);
         }
       }
       return;
@@ -5582,7 +7479,7 @@ function setupSettingsEventListeners() {
     if (e.target.matches("#stmb-max-tokens")) {
       const value = readIntInput(e.target, DEFAULT_MAX_TOKENS);
       settings.moduleSettings.maxTokens =
-        Number.isFinite(value) && value > 0 ? value : DEFAULT_MAX_TOKENS;
+        Number.isFinite(value) && value >= 0 ? value : DEFAULT_MAX_TOKENS;
       saveSettingsDebounced();
       return;
     }
@@ -5614,12 +7511,17 @@ function setupSettingsEventListeners() {
     if (e.target.matches("#stmb-custom-title-format")) {
       const value = e.target.value.trim();
       if (value && value.includes("000")) {
-        settings.titleFormat = value;
+        setDefaultProfileTitleFormat(settings, value);
         saveSettingsDebounced();
 
         const summaryTitle = popupElement.querySelector("#stmb-summary-title");
         if (summaryTitle) {
-          summaryTitle.textContent = value;
+          const profileSelect = popupElement.querySelector("#stmb-profile-select");
+          const selectedIndex = clampInt(readIntInput(profileSelect, settings.defaultProfile), 0, settings.profiles.length - 1);
+          summaryTitle.textContent =
+            selectedIndex === settings.defaultProfile
+              ? value
+              : settings.profiles[selectedIndex]?.titleFormat || getDefaultProfileTitleFormat(settings);
         }
       }
     }
@@ -5637,7 +7539,12 @@ function setupSettingsEventListeners() {
 
     const summaryTitle = popupElement.querySelector("#stmb-summary-title");
     if (summaryTitle) {
-      summaryTitle.textContent = value;
+      const settings = initializeSettings();
+      const profileSelect = popupElement.querySelector("#stmb-profile-select");
+      const selectedIndex = clampInt(readIntInput(profileSelect, settings.defaultProfile), 0, settings.profiles.length - 1);
+      if (selectedIndex === settings.defaultProfile) {
+        summaryTitle.textContent = value;
+      }
     }
   });
 }
@@ -5659,9 +7566,19 @@ function persistMainPopupSettings(popupElement) {
   const showMemoryPreviews =
     popupElement.querySelector("#stmb-show-memory-previews")?.checked ??
     settings.moduleSettings.showMemoryPreviews;
+  const showConsolidationPreviews =
+    popupElement.querySelector("#stmb-show-consolidation-previews")?.checked ??
+    settings.moduleSettings.showConsolidationPreviews;
   const showNotifications =
     popupElement.querySelector("#stmb-show-notifications")?.checked ??
     settings.moduleSettings.showNotifications;
+  const showFloatingClipButton =
+    popupElement.querySelector("#stmb-show-floating-clip-button")?.checked ??
+    (settings.moduleSettings.showFloatingClipButton !== false);
+  const memoryBoundaryMode = normalizeMemoryBoundaryMode(
+    popupElement.querySelector("#stmb-memory-boundary-mode")?.value ??
+      settings.moduleSettings.memoryBoundaryMode,
+  );
   const unhideBeforeMemory =
     popupElement.querySelector("#stmb-unhide-before-memory")?.checked ??
     settings.moduleSettings.unhideBeforeMemory;
@@ -5729,7 +7646,7 @@ function persistMainPopupSettings(popupElement) {
     DEFAULT_MAX_TOKENS,
   );
   const maxTokensNormalized =
-    Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : DEFAULT_MAX_TOKENS;
+    Number.isFinite(maxTokens) && maxTokens >= 0 ? maxTokens : DEFAULT_MAX_TOKENS;
 
   if (alwaysUseDefault !== settings.moduleSettings.alwaysUseDefault) {
     settings.moduleSettings.alwaysUseDefault = alwaysUseDefault;
@@ -5741,8 +7658,29 @@ function persistMainPopupSettings(popupElement) {
     hasChanges = true;
   }
 
+  if (
+    showConsolidationPreviews !==
+    settings.moduleSettings.showConsolidationPreviews
+  ) {
+    settings.moduleSettings.showConsolidationPreviews =
+      showConsolidationPreviews;
+    hasChanges = true;
+  }
+
   if (showNotifications !== settings.moduleSettings.showNotifications) {
     settings.moduleSettings.showNotifications = showNotifications;
+    hasChanges = true;
+  }
+
+  if (showFloatingClipButton !== (settings.moduleSettings.showFloatingClipButton !== false)) {
+    settings.moduleSettings.showFloatingClipButton = showFloatingClipButton;
+    refreshFloatingClipButtonSetting();
+    hasChanges = true;
+  }
+
+  if (memoryBoundaryMode !== normalizeMemoryBoundaryMode(settings.moduleSettings.memoryBoundaryMode)) {
+    settings.moduleSettings.memoryBoundaryMode = memoryBoundaryMode;
+    refreshMemoryBoundaryUi();
     hasChanges = true;
   }
 
@@ -5854,7 +7792,7 @@ function persistMainPopupSettings(popupElement) {
   const customTitleFormat = popupElement
     .querySelector("#stmb-custom-title-format")
     ?.value?.trim();
-  let nextTitleFormat = settings.titleFormat;
+  let nextTitleFormat = getDefaultProfileTitleFormat(settings);
   if (titleFormatSelect?.value === "custom") {
     if (customTitleFormat && customTitleFormat.includes("000")) {
       nextTitleFormat = customTitleFormat;
@@ -5863,8 +7801,11 @@ function persistMainPopupSettings(popupElement) {
     nextTitleFormat = titleFormatSelect.value;
   }
 
-  if (nextTitleFormat !== settings.titleFormat) {
-    settings.titleFormat = nextTitleFormat;
+  if (
+    nextTitleFormat !== settings.titleFormat ||
+    nextTitleFormat !== settings.profiles?.[settings.defaultProfile]?.titleFormat
+  ) {
+    setDefaultProfileTitleFormat(settings, nextTitleFormat);
     hasChanges = true;
   }
 
@@ -5907,6 +7848,8 @@ async function refreshPopupContent() {
     const settings = initializeSettings();
     const sceneData = await getSceneData();
     const selectedProfile = getProfileSafe(settings, settings.defaultProfile);
+    const defaultProfileTitleFormat = getDefaultProfileTitleFormat(settings);
+    const isCustomTitleFormat = !getDefaultTitleFormats().includes(defaultProfileTitleFormat);
     const sceneMarkers = getSceneMarkers();
 
     // Get current lorebook information
@@ -5926,15 +7869,17 @@ async function refreshPopupContent() {
         !!sceneMarkers?.highestMemoryProcessedManuallySet,
       alwaysUseDefault: settings.moduleSettings.alwaysUseDefault,
       showMemoryPreviews: settings.moduleSettings.showMemoryPreviews,
+      showConsolidationPreviews: settings.moduleSettings.showConsolidationPreviews,
       showNotifications: settings.moduleSettings.showNotifications,
+      showFloatingClipButton: settings.moduleSettings.showFloatingClipButton !== false,
+      memoryBoundaryMode: normalizeMemoryBoundaryMode(settings.moduleSettings.memoryBoundaryMode),
+      memoryBoundaryModeOptions: getMemoryBoundaryModeOptions(settings.moduleSettings.memoryBoundaryMode),
       unhideBeforeMemory: settings.moduleSettings.unhideBeforeMemory || false,
       refreshEditor: settings.moduleSettings.refreshEditor,
       allowSceneOverlap: settings.moduleSettings.allowSceneOverlap,
       manualModeEnabled: settings.moduleSettings.manualModeEnabled,
       maxTokens:
-        (settings.moduleSettings.maxTokens ?? DEFAULT_MAX_TOKENS) > 0
-          ? settings.moduleSettings.maxTokens
-          : DEFAULT_MAX_TOKENS,
+        settings.moduleSettings.maxTokens ?? DEFAULT_MAX_TOKENS,
 
       // Lorebook status information
       lorebookMode: isManualMode ? "Manual" : "Automatic (Chat-bound)",
@@ -5979,12 +7924,13 @@ async function refreshPopupContent() {
             : profile.name,
         isDefault: index === settings.defaultProfile,
       })),
-      titleFormat: settings.titleFormat,
+      titleFormat: defaultProfileTitleFormat,
       titleFormats: getDefaultTitleFormats().map((format) => ({
         value: format,
-        isSelected: format === settings.titleFormat,
+        isSelected: format === defaultProfileTitleFormat,
       })),
-      showCustomInput: !getDefaultTitleFormats().includes(settings.titleFormat),
+      isCustomTitleFormat,
+      showCustomInput: isCustomTitleFormat,
       selectedProfile: {
         ...selectedProfile,
         connection:
@@ -6004,7 +7950,7 @@ async function refreshPopupContent() {
                 model: selectedProfile.connection?.model || "gpt-4.1",
                 temperature: selectedProfile.connection?.temperature ?? 0.7,
               },
-        titleFormat: selectedProfile.titleFormat || settings.titleFormat,
+        titleFormat: selectedProfile.titleFormat || defaultProfileTitleFormat,
         effectivePrompt:
           selectedProfile.prompt && selectedProfile.prompt.trim()
             ? selectedProfile.prompt
@@ -6030,6 +7976,7 @@ async function refreshPopupContent() {
     }
 
     const requiredClasses = [
+      "stmb-popup",
       "wide_dialogue_popup",
       "large_dialogue_popup",
       "vertical_scrolling_dialogue_popup",
@@ -6055,9 +8002,7 @@ function processExistingMessages() {
   if (messageElements.length > 0) {
     let buttonsAdded = 0;
     messageElements.forEach((messageElement) => {
-      // Check if buttons are already there to prevent duplication
-      if (!messageElement.querySelector(".mes_stmb_start")) {
-        createSceneButtons(messageElement);
+      if (createSceneButtons(messageElement)) {
         buttonsAdded++;
       }
     });
@@ -6065,6 +8010,8 @@ function processExistingMessages() {
     // Full update needed for chat loads
     updateAllButtonStates();
   }
+
+  refreshMemoryBoundaryUi();
 }
 
 /**
@@ -6108,6 +8055,44 @@ function registerSlashCommands() {
     ),
   });
 
+  const stmbCatchupCmd = SlashCommand.fromProps({
+    name: "stmb-catchup",
+    callback: handleStmbCatchupCommand,
+    helpString: translate(
+      "Create scene memories over a message range in chunks. Usage: /stmb-catchup interval:50 start:0 end:600",
+      "STMemoryBooks_Slash_Catchup_Help",
+    ),
+    namedArgumentList: [
+      SlashCommandNamedArgument.fromProps({
+        name: "interval",
+        description: translate(
+          "How many memories per chunk?",
+          "STMemoryBooks_Slash_Catchup_ArgIntervalDesc",
+        ),
+        typeList: [ARGUMENT_TYPE.NUMBER],
+        isRequired: true,
+      }),
+      SlashCommandNamedArgument.fromProps({
+        name: "start",
+        description: translate(
+          "start from which message id?",
+          "STMemoryBooks_Slash_Catchup_ArgStartDesc",
+        ),
+        typeList: [ARGUMENT_TYPE.NUMBER],
+        isRequired: true,
+      }),
+      SlashCommandNamedArgument.fromProps({
+        name: "end",
+        description: translate(
+          "End at which message id?",
+          "STMemoryBooks_Slash_Catchup_ArgEndDesc",
+        ),
+        typeList: [ARGUMENT_TYPE.NUMBER],
+        isRequired: true,
+      }),
+    ],
+  });
+
   const sidePromptCmd = SlashCommand.fromProps({
     name: "sideprompt",
     callback: handleSidePromptCommand,
@@ -6125,6 +8110,48 @@ function registerSlashCommands() {
         typeList: [ARGUMENT_TYPE.STRING],
         isRequired: true,
         enumProvider: manualSidePromptTemplateEnumProvider,
+      }),
+    ],
+  });
+
+  const sidePromptSetCmd = SlashCommand.fromProps({
+    name: "sideprompt-set",
+    callback: handleSidePromptSetCommand,
+    rawQuotes: true,
+    helpString: translate(
+      'Run side prompt set. Usage: /sideprompt-set "Name" [X-Y]',
+      "STMemoryBooks_Slash_SidePromptSet_Help",
+    ),
+    unnamedArgumentList: [
+      SlashCommandArgument.fromProps({
+        description: translate(
+          'Quoted set name, optionally followed by X-Y range',
+          "STMemoryBooks_Slash_SidePromptSet_ArgDesc",
+        ),
+        typeList: [ARGUMENT_TYPE.STRING],
+        isRequired: true,
+        enumProvider: sidePromptSetEnumProvider,
+      }),
+    ],
+  });
+
+  const sidePromptMacroSetCmd = SlashCommand.fromProps({
+    name: "sideprompt-macroset",
+    callback: handleSidePromptMacroSetCommand,
+    rawQuotes: true,
+    helpString: translate(
+      'Run side prompt set with runtime macros. Usage: /sideprompt-macroset "Name" {{macro}}="value" [X-Y]',
+      "STMemoryBooks_Slash_SidePromptMacroSet_Help",
+    ),
+    unnamedArgumentList: [
+      SlashCommandArgument.fromProps({
+        description: translate(
+          'Quoted set name, then any required {{macro}}="value" assignments, optionally followed by X-Y range',
+          "STMemoryBooks_Slash_SidePromptMacroSet_ArgDesc",
+        ),
+        typeList: [ARGUMENT_TYPE.STRING],
+        isRequired: true,
+        enumProvider: (executor) => sidePromptSetEnumProvider(executor, { includeMacros: true }),
       }),
     ],
   });
@@ -6217,7 +8244,10 @@ function registerSlashCommands() {
   SlashCommandParser.addCommandObject(createMemoryCmd);
   SlashCommandParser.addCommandObject(sceneMemoryCmd);
   SlashCommandParser.addCommandObject(nextMemoryCmd);
+  SlashCommandParser.addCommandObject(stmbCatchupCmd);
   SlashCommandParser.addCommandObject(sidePromptCmd);
+  SlashCommandParser.addCommandObject(sidePromptSetCmd);
+  SlashCommandParser.addCommandObject(sidePromptMacroSetCmd);
   SlashCommandParser.addCommandObject(sidePromptOnCmd);
   SlashCommandParser.addCommandObject(sidePromptOffCmd);
   SlashCommandParser.addCommandObject(highestMemCmd);
@@ -6261,12 +8291,9 @@ function setupEventListeners() {
   eventSource.on(event_types.MESSAGE_DELETED, (deletedId) => {
     const settings = initializeSettings();
     handleMessageDeletion(deletedId, settings);
+    refreshMemoryBoundaryUi();
   });
   eventSource.on(event_types.MESSAGE_RECEIVED, handleMessageReceived);
-  eventSource.on(
-    event_types.GROUP_WRAPPER_FINISHED,
-    handleGroupWrapperFinished,
-  );
 
   // Track dry-run state for generation events
   eventSource.on(event_types.GENERATION_STARTED, (type, options, dryRun) => {
@@ -6311,6 +8338,7 @@ function setupEventListeners() {
         cohere: "cohere",
         perplexity: "perplexity",
         groq: "groq",
+        chutes: "chutes",
         nanogpt: "nanogpt",
         deepseek: "deepseek",
         electronhub: "electronhub",
@@ -6342,6 +8370,7 @@ function setupEventListeners() {
   });
 
   window.addEventListener("beforeunload", cleanupChatObserver);
+  window.addEventListener("resize", refreshMemoryBoundaryButton);
 }
 
 /**
@@ -6489,10 +8518,7 @@ async function applyManualFixedJson(correctedRaw) {
         version: "2.0",
       },
       suggestedKeys: cleanKeywords,
-      titleFormat:
-        profile.useDynamicSTSettings || profile?.connection?.api === "current_st"
-          ? extension_settings.STMemoryBooks?.titleFormat || "[000] - {{title}}"
-          : profile.titleFormat || "[000] - {{title}}",
+      titleFormat: profile.titleFormat || DEFAULT_TITLE_FORMAT,
       lorebookSettings: {
         constVectMode: profile.constVectMode,
         position: profile.position,
@@ -6593,6 +8619,7 @@ async function applyManualFixedJson(correctedRaw) {
         stmbData.highestMemoryProcessed = context.sceneData.sceneEnd;
         delete stmbData.highestMemoryProcessedManuallySet;
         saveMetadataForCurrentContext();
+        refreshMemoryBoundaryUi();
       }
     } catch (e) {
       console.warn(
@@ -6835,14 +8862,12 @@ async function applyManualFixedSummaryJson(correctedRaw) {
       toastr.clear(lastArcFailureToast);
     } catch (e) {}
     lastArcFailureToast = null;
-    clearAutoConsolidationPromptState(targetTier);
-    if (targetTier < 6) {
-      await maybePromptAutoConsolidation(targetTier + 1, {
-        valid: true,
-        name: context.lorebookName,
-        data: context.lorebookData,
-      });
-    }
+    await runPostConsolidationCommitFlow({
+      created,
+      targetTier,
+      lorebookName: context.lorebookName,
+      lorebookData: context.lorebookData,
+    });
   } catch (e) {
     if (isStmbStopError(e)) {
       return;
@@ -7290,9 +9315,22 @@ async function init() {
     }
   }
 
+  try {
+    const migrationResult = await migrateProfileAdditionalContext(settings);
+    if (migrationResult.removedLegacy > 0) {
+      saveSettingsDebounced();
+    }
+    if (migrationResult.migrated > 0) {
+      console.log("STMemoryBooks: Migrated profile Additional Context into context settings:", migrationResult);
+    }
+  } catch (error) {
+    console.warn("STMemoryBooks: Failed to migrate Additional Context into context settings; legacy profile entries remain available.", error);
+  }
+
   // Initialize scene state
   updateSceneStateCache();
   validateAndCleanupSceneMarkers();
+  initializeFloatingClipButton();
 
   // Initialize chat observer
   try {
@@ -7311,6 +9349,10 @@ async function init() {
 
   // Setup event listeners
   setupEventListeners();
+  registerStmbJobExecutor("memory", executeQueuedMemoryJob);
+  registerStmbJobExecutor("consolidation", executeQueuedConsolidationJob);
+  subscribeToStmbJobs(handleStmbJobStateChanged);
+  initStmbJobsIfTopInfoBarEnabled();
 
   // Preload side prompt names cache for autocomplete
   await refreshSidePromptCache();
@@ -7323,6 +9365,7 @@ async function init() {
   // This handles cases where a chat is already loaded when the extension initializes
   try {
     processExistingMessages();
+    void maybePromptContextSettingForChatOpen();
     console.log(
       "STMemoryBooks: Processed existing messages during initialization",
     );

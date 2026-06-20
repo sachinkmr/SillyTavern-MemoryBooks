@@ -9,6 +9,9 @@ import { isMemoryProcessing } from './index.js';
 import { translate } from '../../../i18n.js';
 import { validateLorebookRequirement } from './lorebookValidation.js';
 
+let autoSummarySkippedForProcessing = false;
+let autoSummarySkippedMarkersRef = null;
+
 /**
  * i18n helper: translate with Mustache-style {{var}} interpolation
  * Use like i18n('KEY', 'Fallback {{var}}', { var: 'value' })
@@ -110,7 +113,7 @@ async function validateLorebookForAutoSummary() {
             createContext: 'auto-summary',
             manualMode: true,
             lorebookName,
-            retryText: i18n('STMemoryBooks_AutoSummaryRetryAfterSelection', 'After selecting a lorebook, retry memory generation.'),
+            retryText: i18n('STMemoryBooks_AutoSummaryRetryAfterSelection', 'After selecting a lorebook, try again.'),
         });
     }
 
@@ -118,7 +121,7 @@ async function validateLorebookForAutoSummary() {
         createContext: 'auto-summary',
         manualMode: false,
         lorebookName: chat_metadata?.[METADATA_KEY] || null,
-        retryText: i18n('STMemoryBooks_AutoSummaryRetryAfterSelection', 'After selecting a lorebook, retry memory generation.'),
+        retryText: i18n('STMemoryBooks_AutoSummaryRetryAfterSelection', 'After selecting a lorebook, try again.'),
     });
 }
 
@@ -148,6 +151,8 @@ async function checkAutoSummaryTrigger() {
 
         // Check if memory creation is in progress
         if (isMemoryProcessing()) {
+            autoSummarySkippedForProcessing = true;
+            autoSummarySkippedMarkersRef = stmbData;
             console.log(i18n('autosummary.log.skippedInProgress', 'STMemoryBooks: Auto-summary skipped - memory creation in progress'));
             return;
         }
@@ -217,22 +222,16 @@ async function checkAutoSummaryTrigger() {
 }
 
 /**
- * Handle auto-summary for single character chats on message received
+ * Handle auto-summary on message received
  * @returns {Promise<void>}
  */
 export async function handleAutoSummaryMessageReceived() {
     try {
-        const context = getCurrentMemoryBooksContext();
-
-        // Only check auto-summary for single character chats on MESSAGE_RECEIVED
-        // Group chats will be handled by GROUP_WRAPPER_FINISHED event
-        if (!context.isGroupChat && extension_settings.STMemoryBooks.moduleSettings.autoSummaryEnabled) {
+        if (extension_settings.STMemoryBooks?.moduleSettings?.autoSummaryEnabled) {
             const currentMessageCount = chat.length;
-            console.log(i18n('autosummary.log.messageReceivedSingle', 'STMemoryBooks: Message received (single chat) - auto-summary enabled, current count: {{count}}', { count: currentMessageCount }));
+            console.log(i18n('autosummary.log.messageReceivedSingle', 'STMemoryBooks: Message received - auto-summary enabled, current count: {{count}}', { count: currentMessageCount }));
 
             await checkAutoSummaryTrigger();
-        } else if (context.isGroupChat) {
-            console.log(i18n('autosummary.log.messageReceivedGroup', 'STMemoryBooks: Message received in group chat - deferring to GROUP_WRAPPER_FINISHED'));
         }
     } catch (error) {
         console.error(i18n('autosummary.log.messageHandlerError', 'STMemoryBooks: Error in auto-summary message received handler:'), error);
@@ -240,21 +239,25 @@ export async function handleAutoSummaryMessageReceived() {
 }
 
 /**
- * Handle auto-summary for group chats when all members have finished speaking
+ * Retry an auto-summary check that was skipped while memory/job processing was active.
  * @returns {Promise<void>}
  */
-export async function handleAutoSummaryGroupFinished() {
-    try {
-        if (extension_settings.STMemoryBooks.moduleSettings.autoSummaryEnabled) {
-            const currentMessageCount = chat.length;
-            console.log(i18n('autosummary.log.groupFinished', 'STMemoryBooks: Group conversation finished - auto-summary enabled, current count: {{count}}', { count: currentMessageCount }));
-
-            // Check auto-summary trigger after all group members have finished speaking
-            await checkAutoSummaryTrigger();
-        }
-    } catch (error) {
-        console.error(i18n('autosummary.log.groupHandlerError', 'STMemoryBooks: Error in auto-summary group finished handler:'), error);
+export async function retryAutoSummaryAfterJobIdle() {
+    if (!autoSummarySkippedForProcessing) {
+        return;
     }
+    if (isMemoryProcessing()) {
+        return;
+    }
+    if (autoSummarySkippedMarkersRef && autoSummarySkippedMarkersRef !== getSceneMarkers()) {
+        autoSummarySkippedForProcessing = false;
+        autoSummarySkippedMarkersRef = null;
+        return;
+    }
+
+    autoSummarySkippedForProcessing = false;
+    autoSummarySkippedMarkersRef = null;
+    await checkAutoSummaryTrigger();
 }
 
 /**

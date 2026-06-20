@@ -2,6 +2,98 @@
 
 **← [Back to README](readme.md)**
 
+## v7.2.0 (June 18, 2026)
+- Added Memory Books boundary and chat jump button.
+
+## v7.1.0 (June 14, 2026)
+- Added side prompt additional context selection. 
+
+## v7.0.1 (June 14, 2026)
+- Added Topical Clip memory selection.
+- Fixed selection appearance.
+
+## v7.0.0 (June 13, 2026)
+- BREAKING/MIGRATION: Additional Context has moved from profiles to reusable Context Settings with per-chat selection. Existing profile Additional Context is migrated automatically.
+
+## v6.12.0 (June 10, 2026)
+- NEW FEATURE: Additional Context allows you to add context to memories. You must create a profile (you cannot add them to "Current SillyTavern Settings".)
+
+## v6.11.2 (June 8, 2026)
+- Tweak: Compaction layout tweaks.
+
+## v6.11.1 (June 6, 2026)
+- Tweak: Add Chat Top Bar install info.
+
+## v6.11.0 (June 2, 2026)
+- Enhancement: Optional per-profile SillyTavern ChatCompletionService routing.
+- Tweak: Fix profile save normalization.
+
+## v6.10.2 (May 31, 2026)
+- Enhancement/Bugfix: SSE streaming format support (AT LAST).
+
+## v6.10.1 (May 29, 2026)
+- Bugfix: Consolidation manual lorebook fix.
+
+## v6.10.0 (May 29, 2026)
+- NEW FEATURE: Topical Clip extracts and creates topical entries from existing STMB memories/Clips.
+- Tweak: json_schema request toggle per profile.
+- Bugfix: auto-prompting with job queue.
+
+## v6.9.3 (May 27, 2026)
+- Bugfix: Memory title formats now consistently use selected profile setting.
+- Tweak: Add Chutes provider.
+- Bugfix: Reverse proxy checkbox added.
+
+## v6.9.2 (May 25, 2026)
+- Enhancement: Google Vertex added (thank you @TwinkleStar1029 on Github!).
+
+## v6.9.1 (May 24, 2026)
+- Bugfix: Group chat processing fixed.
+
+## v6.9.0 (May 20, 2026)
+- Enhancement: Added consolidation previews. 
+- Bugfix: Sideprompt batch processing fixed.
+
+## v6.8.1 (May 18, 2026)
+- Tweak: Added back button. :D 
+- Tweak: Added default consolidation prompt selector.
+- Bugfix: Sideprompt batching with job queue.
+- Bugfix: Autohide with job queue.
+
+## v6.8.0 (May 17, 2026)
+- NEW FEATURE: Job Queue allows for better control and visibility into what is currently processing. This feature requires the extension Chat Top Bar (Extension-TopInfoBar) to work. STMB will continue to function without it, but I recommend that you install it (it's an amazing extension).
+
+## v6.7.0 (May 17, 2026)
+- Enhancement: Reverse proxy support now added (thank you @siberys (Discord) for the explanation on how reverse proxies should work in STMB 💖) Please note that this works the same way as ST's current reverse proxying works--I cannot diagnose your proxies unless you give me proxy information (please don't). 
+
+## v6.6.2 (May 15, 2026)
+- Tweak: Switched "summarize" to "process".
+
+## v6.6.1 (May 6, 2026)
+- Bugfix: Flex row on buttons.
+- Tweak: Z.ai now picks up choice of endpoint from ST base.
+
+## v6.6.0 (May 5, 2026)
+**New Feature: Clip to Memory Book**
+You can now highlight chat text and use the floating scissors button to save it as a bullet in a Memory Book entry marked with `[STMB Clip]`. Clip entries can be created, renamed, keyword-triggered or always active, and reviewed/compacted when they get long.
+
+**New Feature: Compaction**
+Clip entries and Side Prompt entries can grow over time. Compaction sends the selected entry to the AI with instructions to make it more token-efficient while preserving as much useful information as possible.
+
+## v6.5.0 (May 2, 2026)
+- Add side prompt sets. 
+- Add specific side prompt documentation.
+
+## v6.4.0 (May 1, 2026)
+- Add per-side prompt lorebook overrides.
+- Add `/stmb-catchup interval:x start:y end:y` for converting existing long chats into STMB memories in interval-sized chunks.
+
+## v6.3.5 (April 22, 2026)
+- Updated WI saving to match 1.17.0 defaults.
+- Updated group chat metadata wording to match SillyTavern's current chat-file metadata format.
+
+## v6.3.4 (April 17, 2026)
+- Bugfix: Max tokens ignored 0. Now fixed.
 ## v6.3.3 (April 8, 2026)
 - Bugfix: Sideprompt interval runs now use message range correctly.
 
@@ -602,7 +694,7 @@ Tweaks:
   - Per-profile API, model, temperature, prompt/preset settings
   - Profile-specific title formats and lorebook settings
 - **Enhanced DOM Handling:** Fixed various DOM-related issues for group chats
-- **Metadata Improvements:** Better handling of chat and group metadata
+- **Metadata Improvements:** Better handling of chat metadata for single and group chats
 
 ## v3.2.x Series (2025)
 - **Title Formatting System:** Comprehensive title customization
@@ -615,7 +707,7 @@ Tweaks:
 ## v3.1.x Series (2025)
 - **Group Chat Support:** Full implementation of group chat functionality
   - Scene markers, memory creation, and lorebook integration for groups
-  - Group metadata storage and management
+  - Chat metadata storage and management for group chats
   - Specialized group chat DOM handling
 - **Scene Memory Command:** Added `/scenememory x-y` command for creating memories from specific message ranges
 - **Token Estimation:** Enhanced token counting for better memory size management

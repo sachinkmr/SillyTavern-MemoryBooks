@@ -8,44 +8,24 @@ Vous voulez que le bot se souvienne de ce qui s'est passé, mais votre chat est 
 
 ## 📑 Table des matières
 
-- [🚀 Démarrage rapide (5 minutes pour votre première mémoire)](#-démarrage-rapide-5-minutes-pour-votre-première-mémoire)
-  - [Étape 1 : trouver l'extension](#étape-1--trouver-lextension)
-  - [Étape 2 : activer l'auto-magie](#étape-2--activer-lauto-magie)
-  - [Étape 3 : discuter normalement](#étape-3--discuter-normalement)
-- [💡 Ce que fait réellement ST Memory Books](#-ce-que-fait-réellement-st-memory-books)
-  - [🤖 Résumés automatiques](#-résumés-automatiques)
-  - [✋ Création manuelle de mémoire](#-création-manuelle-de-mémoire)
-  - [📊 Prompts secondaires et trackers intelligents](#-prompts-secondaires-et-trackers-intelligents)
-  - [📚 Collections de mémoires](#-collections-de-mémoires)
-- [🎯 Choisir votre style](#-choisir-votre-style)
-- [🙈 Économie de tokens : masquer / afficher](#-économie-de-tokens--masquer--afficher)
-  - [Que signifie « masquer » ?](#que-signifie--masquer--)
-  - [Pourquoi utiliser cela ?](#pourquoi-utiliser-cela-)
-  - [Masquage automatique après création de mémoire](#masquage-automatique-après-création-de-mémoire)
-  - [Afficher avant la génération](#afficher-avant-la-génération)
-  - [Réglage simple pour commencer](#réglage-simple-pour-commencer)
-- [🌈 Consolidation des résumés](#-consolidation-des-résumés)
-  - [Q : Qu'est-ce que la consolidation des résumés ?](#q--quest-ce-que-la-consolidation-des-résumés-)
-  - [Q : Pourquoi s'en servir ?](#q--pourquoi-sen-servir-)
-  - [Q : Est-ce automatique ?](#q--est-ce-automatique-)
-  - [Q : Comment s'en servir ?](#q--comment-sen-servir-)
-  - [Que consolide-t-on, et que ne consolide-t-on pas ?](#que-consolide-t-on-et-que-ne-consolide-t-on-pas-)
-  - [Pourquoi est-ce important ?](#pourquoi-est-ce-important-)
-  - [Règle simple](#règle-simple)
-- [🎨 Trackers, prompts secondaires et modèles (fonction avancée)](#-trackers-prompts-secondaires-et-modèles-fonction-avancée)
-  - [🚀 Démarrage rapide avec des modèles](#-démarrage-rapide-avec-des-modèles)
-  - [⚙️ Comment fonctionnent les prompts secondaires](#-comment-fonctionnent-les-prompts-secondaires)
-  - [🛠️ Gérer les prompts secondaires](#-gérer-les-prompts-secondaires)
-  - [💡 Exemples de modèles](#-exemples-de-modèles)
-  - [🔧 Créer vos propres prompts secondaires](#-créer-vos-propres-prompts-secondaires)
-  - [💬 Conseil pratique](#-conseil-pratique)
-  - [⌨️ Syntaxe manuelle de /sideprompt](#-syntaxe-manuelle-de-sideprompt)
-  - [🧠 Contrôle avancé du texte avec l'extension Regex](#-contrôle-avancé-du-texte-avec-lextension-regex)
-- [⚙️ Les réglages à apprendre en premier](#-les-réglages-à-apprendre-en-premier)
-- [🔧 Dépannage (quand les choses ne fonctionnent pas)](#-dépannage-quand-les-choses-ne-fonctionnent-pas)
-- [🚫 Ce que ST Memory Books ne fait pas](#-ce-que-st-memory-books-ne-fait-pas)
-- [💡 Aide et informations](#-aide-et-informations)
-  - [📚 Boostez le tout avec STLO](#-boostez-le-tout-avec-stlo)
+- [Démarrage rapide](#-démarrage-rapide-5-minutes-pour-votre-première-mémoire)
+- [Ce que fait réellement ST Memory Books](#-ce-que-fait-réellement-st-memory-books)
+- [Choisir votre style](#-choisir-votre-style)
+- [Épingler dans le Memory Book](#️-épingler-dans-le-memory-book)
+- [Clips vs Side Prompts](#️-clips-vs-side-prompts)
+- [Clip thématique](#-clip-thématique)
+- [Économie de tokens : masquer / afficher](#-économie-de-tokens--masquer--afficher)
+- [Compaction vs Consolidation](#-compaction-vs-consolidation)
+- [Consolidation des résumés](#-consolidation-des-résumés)
+- [Trackers, Side Prompts et modèles](#-trackers-side-prompts-et-modèles-fonction-avancée)
+- [Compaction](#-compaction)
+- [Les réglages à apprendre en premier](#️-les-réglages-à-apprendre-en-premier)
+- [Dépannage](#-dépannage-quand-les-choses-ne-fonctionnent-pas)
+- [Ce que ST Memory Books ne fait pas](#-ce-que-st-memory-books-ne-fait-pas)
+- [Aide et informations](#-aide-et-informations)
+- [Boostez le tout avec STLO](#-boostez-le-tout-avec-stlo)
+
+---
 
 ## 🚀 Démarrage rapide (5 minutes pour votre première mémoire)
 
@@ -96,7 +76,7 @@ Pensez à ST Memory Books comme à votre **bibliothécaire IA personnel** pour l
 - Créez une mémoire à la demande pour un moment important
 - Très pratique pour les tournants de scénario, scènes clés et évolutions de personnages
 
-### 📊 **Prompts secondaires et trackers intelligents**
+### 📊 **Side Prompts et trackers intelligents**
 *"Je veux suivre les relations, les arcs, les stats ou l'état du monde."*
 
 - Fragments de prompts réutilisables qui complètent la mémoire
@@ -178,6 +158,299 @@ Pensez à ST Memory Books comme à votre **bibliothécaire IA personnel** pour l
 
 ---
 
+## ✂️ Épingler dans le Memory Book
+
+Utilisez **Épingler dans le Memory Book** quand vous voulez enregistrer une ligne ou un fait important sans créer une mémoire de scène complète. Surlignez du texte dans le chat, cliquez sur le bouton flottant avec les ciseaux, puis choisissez une entrée de clip existante ou créez-en une nouvelle.
+
+Vous ne savez pas si cela doit être un Clip ou un Side Prompt ? Consultez [Clips vs Side Prompts](#-clips-vs-side-prompts).
+
+### Quand utiliser les Clips ?
+
+Les Clips sont faits pour les petits faits que l’IA doit retenir, par exemple :
+
+- une préférence de personnage
+- une promesse ou un secret
+- un détail de relation
+- un animal, lieu, objet ou détail récurrent
+- une courte « note pour moi-même » qui ne mérite pas une mémoire complète
+
+Pour les scènes plus larges, utilisez plutôt la création de mémoire normale.
+
+### Comment fonctionne le clipping
+
+1. Surlignez la phrase ou l’expression à enregistrer.
+2. Cliquez sur le bouton flottant avec les ciseaux.
+3. Choisissez une entrée de clip existante ou créez-en une nouvelle.
+4. Vérifiez l’aperçu de l’entrée.
+5. Enregistrez le clip.
+
+Les entrées de clip sont des entrées de lorebook normales marquées avec `[STMB Clip]`. Par exemple :
+
+```txt
+Seraphina Healed Me [STMB Clip]
+```
+
+À l’intérieur de l’entrée, STMB conserve le contenu dans un format de section propre :
+
+```md
+=== Seraphina Healed Me ===
+
+- Seraphina healed my wounds with magic.
+
+=== END Seraphina Healed Me ===
+```
+
+### Créer ou renommer des entrées de clip
+
+Quand vous créez une nouvelle entrée de clip, le titre de l’entrée devient aussi l’en-tête de section. Vous pouvez renommer l’entrée pendant le clipping ; STMB mettra l’en-tête de section à jour pour correspondre.
+
+Les nouvelles entrées de clip peuvent être :
+
+- **toujours actives**, pour les faits qui doivent toujours être disponibles
+- **déclenchées par mots-clés**, pour les faits qui doivent apparaître seulement quand des mots correspondants sont présents
+
+Utilisez des mots-clés quand le clip ne concerne qu’un sujet, personnage, lieu, animal, objet ou relation spécifique.
+
+### Bouton flottant avec les ciseaux
+
+Le bouton flottant avec les ciseaux apparaît seulement après avoir surligné du texte dans le chat. Vous pouvez l’activer ou le désactiver dans la fenêtre principale de Memory Books.
+
+### Relire les entrées de clip longues
+
+Si une entrée de clip devient longue, STMB peut vous rappeler de la relire. Vous pouvez la modifier vous-même, ou utiliser la **Compaction** pour demander à l’IA de rendre une entrée de Clip, de Side Prompt ou de mémoire STMB plus économe en tokens avant de décider si vous remplacez l’original.
+
+---
+
+## ✂️ Clips vs Side Prompts
+
+Les Clips et les Side Prompts enregistrent tous deux des informations dans votre Memory Book, mais ils ne servent pas au même travail.
+
+Règle simple : **les Clips enregistrent un fait précis. Les Side Prompts maintiennent un tracker vivant.**
+
+| **Clips** | **Side Prompts** |
+|---|---|
+| Enregistrent du texte sélectionné du chat dans une entrée de Memory Book. | Demandent à l’IA de relire le chat et de mettre à jour une entrée de tracker. |
+| Idéal pour un fait clair, une ligne, une promesse, une préférence, un objet ou une note. | Idéal pour les informations qui changent avec le temps, comme l’état d’une relation, la progression d’une quête, l’inventaire ou les fils narratifs non résolus. |
+| Vous choisissez le texte exact. STMB enregistre ce que vous avez sélectionné. | L’IA interprète le chat et rédige ou met à jour le tracker. |
+| À utiliser quand le fait est déjà évident et ne nécessite pas d’analyse. | À utiliser quand l’IA doit comparer, résumer ou mettre à jour un état à partir de plusieurs messages. |
+| Grandit généralement seulement quand vous ajoutez manuellement un autre clip. | Peut être mis à jour plusieurs fois pendant que l’histoire change. |
+| Pensez : « épingler cette note ». | Pensez : « garder cette section à jour ». |
+
+Bons exemples de Clips :
+
+- `Aiko aime le thé au miel.`
+- `Andalino a promis de ne plus lui mentir.`
+- `Colt l’appelle Boss.`
+
+Bons exemples de Side Prompts :
+
+- état d’une relation
+- progression de quête actuelle
+- inventaire et ressources
+- répertoire de PNJ
+- fils narratifs non résolus
+
+Si vous voulez seulement retenir un détail, utilisez un Clip. Si vous avez besoin d’un tracker continu, utilisez un Side Prompt.
+
+---
+
+---
+
+## 🔎 Clip thématique
+
+Le Clip thématique sert à créer une entrée ciblée « à propos de ce sujet » à partir de mémoires que vous avez déjà créées.
+
+Imaginez que vous demandez à STMB :
+
+> « Lis mes mémoires enregistrées et crée une entrée utile à propos de cette personne, de ce lieu, de cette relation, de ce fil d’intrigue, de cet objet, de ce secret ou de ce sujet. »
+
+C’est toujours une entrée de type Clip, mais vous ne découpez pas du texte sélectionné dans le chat. STMB utilise plutôt des entrées de mémoire existantes comme source.
+
+Règle simple : **Clip enregistre le texte sélectionné. Clip thématique rassemble les détails liés depuis les mémoires enregistrées. Side Prompts gardent des trackers à jour au fil du temps.**
+
+### Quand utiliser le Clip thématique
+
+Utilisez le Clip thématique lorsque votre Memory Book contient déjà plusieurs mémoires et que vous voulez une entrée plus facile à déclencher sur un sujet précis.
+
+Bons exemples :
+
+- Un PNJ récurrent
+- Une relation entre deux personnages
+- Un mystère ou une enquête
+- Un lieu
+- Une faction
+- Les pouvoirs, blessures, promesses, secrets ou préférences d’un personnage
+- Un fil d’intrigue qui apparaît dans plusieurs scènes
+
+Exemples de sujets :
+
+```txt
+Seraphina
+La magie de {{user}}
+La relation entre Alex et Mira
+L'enquête de Black Harbor
+La clé d'argent
+```
+
+### Quand ne pas utiliser le Clip thématique
+
+N’utilisez pas le Clip thématique si :
+
+- vous voulez seulement enregistrer une ligne sélectionnée du chat — utilisez **Épingler dans le Memory Book**
+- vous voulez un tracker qui se met automatiquement à jour pendant les futures exécutions de mémoire — utilisez **Side Prompts**
+- vous voulez raccourcir une longue entrée — utilisez **Compaction**
+- vous voulez combiner plusieurs mémoires dans un résumé de niveau supérieur — utilisez **Consolidation des résumés**
+
+### Comment utiliser le Clip thématique
+
+1. Ouvrez la fenêtre Memory Books.
+2. Cliquez sur **🔎 Clip thématique**.
+3. Choisissez le **Memory Book source**.
+4. Saisissez le **Sujet**.
+   - C’est le sujet sur lequel l’IA doit se concentrer.
+   - Gardez-le précis.
+5. Saisissez des **Mots-clés**.
+   - Ils deviennent les mots-clés d’activation de l’entrée de lorebook.
+   - Si vous laissez les mots-clés vides, STMB utilise le sujet.
+6. Choisissez un mode :
+   - **Créer un nouveau clip thématique** crée une nouvelle entrée `[STMB Clip]`.
+   - **Mettre à jour l'entrée existante** met à jour une entrée de Clip existante.
+7. Choisissez un **Profil de génération**.
+   - Il contrôle quelle connexion/modèle IA écrit le brouillon.
+8. Optionnel : cliquez sur **Modifier le prompt du clip thématique** si vous voulez changer les instructions envoyées à l’IA.
+9. Cliquez sur **Générer un brouillon**.
+10. Relisez le brouillon généré.
+11. Modifiez le brouillon si nécessaire.
+12. Cliquez sur **Enregistrer le clip thématique**.
+
+STMB n’enregistre pas le brouillon automatiquement. Le lorebook ne change qu’après le clic sur **Enregistrer le clip thématique**.
+
+### Créer un nouveau Clip thématique
+
+Quand vous créez un nouveau Clip thématique, STMB crée une entrée de lorebook de type Clip.
+
+Par exemple, si votre sujet est :
+
+```txt
+Seraphina
+```
+
+le titre de l’entrée ressemblera à :
+
+```txt
+À propos de Seraphina [STMB Clip]
+```
+
+La section visible dans l’entrée utilise le même style d’encadrement que les entrées de Clip normales.
+
+### Mettre à jour un Clip thématique existant
+
+Le Clip thématique peut aussi mettre à jour une entrée `[STMB Clip]` existante.
+
+C’est utile si vous avez déjà une entrée comme :
+
+```txt
+À propos de Seraphina [STMB Clip]
+```
+
+et que de nouvelles mémoires ont été ajoutées depuis sa dernière mise à jour.
+
+Quand une mise à jour de Clip thématique est enregistrée avec succès, STMB stocke un petit historique d’exécution sur cette entrée. Il inclut les mémoires source utilisées pendant l’exécution. Lors de la mise à jour suivante, STMB peut utiliser cet historique pour trouver seulement les mémoires source nouvelles ou modifiées au lieu de tout relire.
+
+Cela garde les mises à jour plus petites et évite de renvoyer sans cesse les mêmes anciennes mémoires à l’IA.
+
+### Reconstruire depuis toutes les mémoires source
+
+Lorsque vous mettez à jour un Clip thématique existant, vous pouvez voir **Reconstruire depuis toutes les mémoires source**.
+
+Laissez cette option désactivée pour les mises à jour normales. STMB utilisera seulement les mémoires source nouvelles ou modifiées quand c’est possible.
+
+Activez-la quand :
+
+- le Clip thématique existant est très obsolète
+- vous avez changé le prompt de Clip thématique
+- vous avez beaucoup changé le sujet ou les mots-clés
+- vous voulez que l’IA reconsidère toutes les mémoires enregistrées pour ce sujet
+- l’entrée n’a pas encore d’historique d’exécution utile
+
+### Quelles entrées source utilise-t-il ?
+
+Le Clip thématique utilise les entrées de mémoire STMB confirmées du Memory Book sélectionné.
+
+Il n’utilise pas :
+
+- les entrées de Clip normales
+- les entrées de tracker Side Prompt
+- les entrées de lorebook ordinaires qui ne sont pas gérées par STMB
+
+Cela garde le Clip thématique concentré sur les mémoires que STMB peut identifier de manière sûre.
+
+### Bonnes habitudes pour le Clip thématique
+
+Utilisez des sujets ciblés.
+
+Mieux :
+
+```txt
+La relation entre Alex et Mira
+```
+
+Moins utile :
+
+```txt
+Tout sur l'histoire
+```
+
+Mieux :
+
+```txt
+La clé d'argent
+```
+
+Moins utile :
+
+```txt
+Objets importants
+```
+
+Le Clip thématique fonctionne mieux quand le sujet est assez précis pour que l’IA puisse savoir ce qui appartient au sujet et ce qui n’y appartient pas.
+
+### Modifier le prompt
+
+Le prompt de Clip thématique est modifiable.
+
+Le prompt par défaut dit à l’IA de :
+
+- extraire seulement les informations liées au sujet
+- éviter les événements sans rapport
+- préserver les noms, relations, préférences, promesses, secrets, contraintes et questions non résolues
+- mentionner les contradictions au lieu de choisir une version en silence
+- mettre à jour le contenu de Clip existant sans le dupliquer
+- éviter d’inventer les détails manquants
+
+Le prompt doit inclure :
+
+```txt
+{{SOURCE_MEMORIES}}
+```
+
+Sans ce placeholder, STMB ne sait pas où placer les mémoires source.
+
+Les autres placeholders pris en charge incluent :
+
+```txt
+{{MODE}}
+{{TOPIC}}
+{{KEYWORDS}}
+{{EXISTING_CLIP}}
+{{EXISTING_ENTRY_CONTENT}}
+{{SOURCE_MEMORIES}}
+```
+
+Utilisez **Reset to Default** si votre prompt personnalisé ne fonctionne plus bien.
+
+---
+
 ## 🙈 Économie de tokens : masquer / afficher
 
 Une des façons les plus simples d'alléger un chat long est de masquer les messages une fois qu'ils ont déjà été transformés en mémoire.
@@ -218,13 +491,33 @@ Une bonne base de départ :
 
 ---
 
+## 🧭 Compaction vs Consolidation
+
+Les noms se ressemblent, mais ces fonctions ne font pas le même travail.
+
+Règle simple : **la Compaction nettoie une entrée. La Consolidation combine plusieurs mémoires en un récapitulatif de niveau supérieur.**
+
+| **Compaction** | **Consolidation** |
+|---|---|
+| Réduit la taille d’une entrée existante gérée par STMB. | Combine plusieurs mémoires ou résumés en un récapitulatif de niveau supérieur. |
+| Travaille sur une entrée de Clip, de Side Prompt ou de mémoire STMB à la fois. | Travaille à partir de plusieurs entrées de mémoire/résumé sélectionnées. |
+| Idéal quand une entrée est utile, mais trop longue, répétitive ou coûteuse à garder dans le contexte. | Idéal quand les anciennes mémoires de scène s’accumulent et doivent devenir un résumé Arc, Chapter, Book, Legend, Series ou Epic. |
+| Réécrit l’entrée sélectionnée sous une forme plus économe en tokens. | Crée une nouvelle entrée de résumé à partir des entrées source sélectionnées. |
+| Doit préserver les faits existants et retirer le gras. | Doit préserver le grand arc de continuité et réduire le détail scène par scène. |
+| Ne crée pas une nouvelle mémoire depuis le chat brut. | Ne compacte pas une seule entrée gonflée toute seule. |
+| Pensez : « raccourcir cette entrée ». | Pensez : « regrouper ces mémoires en récapitulatif ». |
+
+Les deux outils passent d’abord par une relecture : STMB vous montre ce que l’IA a écrit avant tout enregistrement ou remplacement.
+
+---
+
 ## 🌈 Consolidation des résumés
 
-La consolidation permet de garder les longues histoires lisibles et gérables en compressant d'anciennes mémoires STMB dans des résumés de niveau supérieur.
+La Consolidation des résumés aide à garder les longues histoires gérables en compressant d’anciennes mémoires STMB en entrées récapitulatives de niveau supérieur.
 
-### Q : Qu'est-ce que la consolidation des résumés ?
+### Q : Qu'est-ce que la Consolidation des résumés ?
 
-**R :** Au lieu d'accumuler uniquement des mémoires de scène, STMB peut combiner des mémoires ou des résumés existants pour en faire une entrée plus compacte. Le premier niveau est **Arc**, puis viennent aussi :
+**R :** Au lieu de créer indéfiniment des mémoires de scène, STMB peut combiner des mémoires ou résumés existants en un récapitulatif plus compact. Le premier niveau est **Arc**, et des niveaux de récapitulatif plus élevés sont aussi disponibles pour les longues histoires :
 
 - Arc
 - Chapter
@@ -233,87 +526,46 @@ La consolidation permet de garder les longues histoires lisibles et gérables en
 - Series
 - Epic
 
-### Q : Pourquoi s'en servir ?
+### Q : Pourquoi s’en servir ?
 
-**R :** C'est utile quand :
+**R :** La Consolidation est utile quand :
 
-- votre liste de mémoires devient très longue
-- les anciennes scènes n'ont plus besoin d'un niveau de détail scène par scène
+- votre liste de mémoires devient longue
+- les anciennes entrées n’ont plus besoin d’un détail scène par scène complet
 - vous voulez réduire les tokens sans perdre la continuité
-- vous voulez des récapitulatifs narratifs plus larges et plus propres
+- vous voulez des récapitulatifs narratifs plus propres et de niveau supérieur
 
 ### Q : Est-ce automatique ?
 
-**R :** Non. La consolidation demande toujours une confirmation.
+**R :** Non. La Consolidation demande toujours une confirmation.
 
-- Vous pouvez ouvrir **Consolider les mémoires** manuellement depuis la fenêtre principale
-- Vous pouvez aussi activer **Demander une consolidation lorsqu'un niveau est prêt**
-- Quand un niveau cible sélectionné atteint son minimum requis, STMB affiche une confirmation **yes/later**
-- Choisir **Yes** ouvre simplement la fenêtre de consolidation avec ce niveau déjà sélectionné ; cela ne lance pas la consolidation en silence
+- Vous pouvez toujours ouvrir **Consolider les mémoires** manuellement depuis la fenêtre principale
+- Vous pouvez aussi activer **Demander une consolidation lorsqu’un niveau est prêt**
+- Quand un niveau cible sélectionné atteint son minimum enregistré d’entrées éligibles, STMB affiche une confirmation **oui/plus tard**
+- Choisir **Oui** ouvre la fenêtre de consolidation avec ce niveau déjà sélectionné ; cela ne lance rien en silence
 
-### Q : Comment s'en servir ?
+### Q : Comment s’en servir ?
 
 **R :** Pour créer un résumé consolidé :
 
 1. Cliquez sur **Consolider les mémoires** dans la fenêtre principale de STMB
 2. Choisissez le niveau de résumé cible
 3. Sélectionnez les entrées source à inclure
-4. Décidez si vous voulez désactiver les entrées source après création
+4. Désactivez éventuellement les entrées source après la création du nouveau résumé
 5. Cliquez sur **Run**
 
-Si l'IA renvoie une mauvaise réponse, STMB peut vous proposer une étape de relecture/correction avant de réessayer la validation.
-
-### Que consolide-t-on, et que ne consolide-t-on pas ?
-
-La consolidation porte sur **les mémoires STMB et les résumés STMB**.
-
-Cela signifie :
-
-- les mémoires normales peuvent être consolidées dans des résumés de niveau supérieur
-- les résumés de niveau supérieur peuvent eux-mêmes être consolidés plus tard
-
-Les prompts secondaires sont différents.
-
-**Les prompts secondaires sont des entrées de suivi**, pas des entrées de type mémoire/résumé. Ils servent à maintenir à jour un état continu, par exemple :
-
-- le statut d'une relation
-- les objectifs actuels
-- des scoreboards
-- l'état du monde
-- des trackers de trame
-
-En clair :
-
-- **Mémoires** = « que s'est-il passé dans cette scène ? »
-- **Prompts secondaires** = « quel est l'état actuel de cette chose ? »
-- **Consolidation** = « résumer plusieurs mémoires en un récapitulatif plus large »
-
-### Pourquoi est-ce important ?
-
-Des utilisateurs s'attendent parfois à ce que les trackers et scoreboards remontent automatiquement dans les résumés Arc ou Chapter.
-
-Ce n'est **pas** le cas.
-
-Si vous voulez qu'un élément fasse partie de la consolidation, il doit exister sous forme de mémoire/résumé STMB normal, pas uniquement comme Side Prompt.
-
-### Règle simple
-
-Utilisez :
-
-- **les mémoires** pour résumer une scène
-- **les prompts secondaires** pour les suivis continus
-- **la consolidation** pour réduire plusieurs mémoires en récapitulatifs plus larges
+Pour prévisualiser ces entrées, activez « afficher les aperçus » dans vos préférences.
 
 ---
 
-## 🎨 Trackers, prompts secondaires et modèles (fonction avancée)
+## 🎨 Trackers, Side Prompts et modèles (fonction avancée)
 
-Les **prompts secondaires** sont des trackers en arrière-plan. Ils tournent à côté de la création de mémoire et mettent à jour des entrées séparées dans votre lorebook. Pensez-y comme à de petits assistants qui surveillent un aspect précis de votre histoire.
+Les **Side Prompts** sont des trackers en arrière-plan. Ils tournent à côté de la création de mémoire et mettent à jour des entrées séparées dans votre lorebook. Pensez-y comme à de petits assistants qui surveillent un aspect précis de votre histoire.
 
 ### 🚀 **Démarrage rapide avec des modèles**
 
 1. Ouvrez les réglages de Memory Books
-2. Cliquez sur **Prompts secondaires**
+2. Cliquez sur **Side Prompts**
 3. Parcourez la bibliothèque de modèles et choisissez ceux qui conviennent à votre histoire :
    - **Character Development Tracker** - suit l'évolution d'un personnage
    - **Relationship Dynamics** - suit les relations entre personnages
@@ -323,9 +575,9 @@ Les **prompts secondaires** sont des trackers en arrière-plan. Ils tournent à 
 4. Activez les modèles qui vous intéressent
 5. Si le modèle utilise des déclencheurs automatiques, STMB mettra cette entrée à jour en même temps que les mémoires
 
-[Guide Scribe pas à pas pour activer les prompts secondaires automatiques](https://scribehow.com/viewer/How_to_Enable_Side_Prompts_in_Memory_Books__fif494uSSjCmxE2ZCmRGxQ)
+[Guide Scribe pas à pas pour activer les Side Prompts automatiques](https://scribehow.com/viewer/How_to_Enable_Side_Prompts_in_Memory_Books__fif494uSSjCmxE2ZCmRGxQ)
 
-### ⚙️ **Comment fonctionnent les prompts secondaires**
+### ⚙️ **Comment fonctionnent les Side Prompts**
 
 - **Trackers de fond** : ils tournent discrètement et mettent à jour une information au fil du temps
 - **Non intrusifs** : ils ne modifient pas vos prompts principaux ni votre fiche personnage
@@ -334,12 +586,12 @@ Les **prompts secondaires** sont des trackers en arrière-plan. Ils tournent à 
 - **Automatiques ou manuels** : les modèles standard peuvent tourner automatiquement ; ceux avec macros runtime personnalisées sont manuels uniquement
 - **Support des macros** : `Prompt`, `Response Format`, `Title` et les champs de mots-clés peuvent utiliser les macros ST standard comme `{{user}}` et `{{char}}`
 - **Macros runtime** : les `{{...}}` non standard deviennent des arguments obligatoires, par exemple `{{npc name}}="Jane Doe"`
-- **Texte brut autorisé** : les prompts secondaires n'ont pas besoin de renvoyer du JSON
+- **Texte brut autorisé** : les Side Prompts n'ont pas besoin de renvoyer du JSON
 - **Comportement d'écrasement** : un Side Prompt met à jour sa propre entrée au fil du temps au lieu de créer une nouvelle mémoire séquentielle à chaque exécution
 
-### 🛠️ **Gérer les prompts secondaires**
+### 🛠️ **Gérer les Side Prompts**
 
-- **Gestionnaire de prompts secondaires** : créer, modifier, dupliquer et organiser les trackers
+- **Gestionnaire de Side Prompts** : créer, modifier, dupliquer et organiser les trackers
 - **Activer / désactiver** : les allumer ou les couper à tout moment
 - **Importer / exporter** : partager des modèles ou faire des sauvegardes
 - **Vue d'état** : voir quels trackers sont actifs dans le chat actuel et quand ils se déclenchent
@@ -357,9 +609,9 @@ Exemples d'idées :
 - « noter les nouveaux éléments de worldbuilding quand ils apparaissent »
 - « suivre la relation entre le personnage A et le personnage B »
 
-### 🔧 **Créer vos propres prompts secondaires**
+### 🔧 **Créer vos propres Side Prompts**
 
-1. Ouvrez le gestionnaire de prompts secondaires
+1. Ouvrez le gestionnaire de Side Prompts
 2. Cliquez sur **Créer nouveau**
 3. Écrivez une instruction claire et courte
 4. Ajoutez si besoin des macros ST standard comme `{{user}}` ou `{{char}}`
@@ -369,7 +621,7 @@ Exemples d'idées :
 
 ### 💬 **Conseil pratique**
 
-Les prompts secondaires fonctionnent mieux quand ils sont **petits et ciblés**.
+Les Side Prompts fonctionnent mieux quand ils sont **petits et ciblés**.
 
 Au lieu de « suivre tout », préférez quelque chose comme « suivre la tension romantique entre les personnages principaux ».
 
@@ -429,6 +681,74 @@ Si votre modèle ajoute souvent `(OOC: I hope this summary is helpful!)`, vous p
 4. Ajouter ce script dans la sélection **entrante**
 
 STMB nettoiera alors la réponse avant l'aperçu ou l'enregistrement.
+
+---
+
+## 🧹 Compaction
+
+La compaction sert quand une entrée de lorebook gérée par STMB est encore utile, mais qu’elle est devenue trop longue ou répétitive. Au lieu de la couper à la main, vous pouvez demander à l’IA de la réécrire sous une forme plus économe en tokens.
+
+C’est un outil de **relecture avant remplacement**. STMB vous montre l’original et le brouillon compacté avant d’enregistrer quoi que ce soit.
+
+### Que peut-on compacter ?
+
+La compaction peut lister ces entrées depuis un Memory Book sélectionné :
+
+- entrées Clip
+- entrées de tracker SidePrompt
+- entrées de mémoire STMB
+
+Elle n’affiche pas les entrées ordinaires de lorebook que STMB ne gère pas.
+
+### Comment utiliser la compaction
+
+1. Ouvrez la fenêtre Memory Books.
+2. Cliquez sur **📝 Compaction**.
+3. Sélectionnez le **Memory Book** à relire. Si votre chat actuel a déjà un Memory Book, il peut être sélectionné automatiquement.
+4. Sélectionnez un **Profil de compaction**. Cela choisit quelle connexion IA / quel modèle réécrit l’entrée.
+5. Facultatif : cliquez sur **Modifier le prompt de compaction** si vous voulez changer les instructions de réécriture.
+6. Trouvez l’entrée dans le tableau et cliquez sur **Compacter l’entrée**.
+7. Relisez le résultat :
+   - **Contenu original** montre ce qui est actuellement enregistré.
+   - **Brouillon compacté** montre la réécriture de l’IA.
+   - Les deux affichent une estimation de tokens.
+8. Modifiez le brouillon compacté si nécessaire.
+9. Choisissez une option :
+   - **Remplacer par la version compactée** pour enregistrer le brouillon à la place de l’entrée originale.
+   - **Copier le brouillon compacté** pour le copier sans enregistrer.
+   - **Annuler** pour laisser l’entrée inchangée.
+
+STMB ne doit jamais remplacer l’original en silence. Si vous ne cliquez pas sur **Remplacer par la version compactée**, l’entrée de lorebook reste telle quelle.
+
+### Modifier le Prompt de compaction
+
+Le Prompt de compaction contrôle la façon dont l’IA réécrit les entrées. Le prompt intégré est volontairement conservateur : préserver les faits importants, les noms, les pronoms, les macros, les en-têtes d’enveloppe et les marqueurs de fin ; supprimer les répétitions et les formulations à faible valeur ; ne rien inventer.
+
+Le prompt prend en charge ces placeholders :
+
+- `{{ENTRY_CONTENT}}` — le contenu actuel de l’entrée. Obligatoire.
+- `{{ENTRY_KIND}}` — le type d’entrée, par exemple Clip, SidePrompt ou Mémoire.
+- `{{ENTRY_TITLE}}` — le titre de l’entrée.
+
+Utilisez **Rétablir la valeur par défaut** si votre prompt personnalisé ne se comporte plus correctement.
+
+### Bons cas d’usage
+
+Utilisez la compaction pour :
+
+- longues entrées Clip
+- trackers SidePrompt qui se répètent au fil du temps
+- entrées de mémoire correctes mais gonflées
+- entrées toujours actives qui coûtent trop de tokens
+
+Ne l’utilisez pas pour :
+
+- créer une nouvelle mémoire depuis le chat
+- ajouter de nouveaux faits
+- corriger une continuité absente de l’entrée
+- modifier des entrées normales de lorebook hors STMB
+
+La compaction est un outil de nettoyage, pas un outil de génération de mémoire.
 
 ---
 

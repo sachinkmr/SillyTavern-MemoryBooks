@@ -7,15 +7,62 @@ import {
     getCurrentApiInfo,
     createProfileObject,
     clampInt,
-    readIntInput
+    readIntInput,
+    parseBooleanFlag,
+    normalizeAdditionalContextEntries,
+    getLorebookEntryDisplayName,
+    getLorebookEntryByUid,
+    generateProfileKey
 } from './utils.js';
 import { getDefaultTitleFormats } from './addlore.js';
 import * as SummaryPromptManager from './summaryPromptManager.js';
 import { t as __st_t_tag, translate } from '../../../i18n.js';
+import { getPresetManager } from '../../../preset-manager.js';
+import { loadWorldInfo, world_names } from '../../../world-info.js';
+import { escapeHtml, getSortableDelay } from '../../../utils.js';
 
 const MODULE_NAME = 'STMemoryBooks-ProfileManager';
 const BUILTIN_CURRENT_ST_NAME = 'Current SillyTavern Settings';
 const DEFAULT_REVERSE_START = 9999;
+
+function getChatCompletionPresetOptions(selectedPreset = '') {
+    const selected = String(selectedPreset || '').trim();
+    const options = [{
+        value: '',
+        displayName: translate('No Chat Completion preset', 'STMemoryBooks_NoChatCompletionPreset'),
+        selected: !selected,
+    }];
+
+    try {
+        const manager = getPresetManager('openai');
+        const presetList = manager?.getPresetList?.('openai');
+        const names = Array.isArray(presetList?.preset_names)
+            ? presetList.preset_names
+            : Object.keys(presetList?.preset_names || {});
+
+        for (const name of names) {
+            const value = String(name || '').trim();
+            if (!value) continue;
+            options.push({
+                value,
+                displayName: value,
+                selected: value === selected,
+            });
+        }
+    } catch (error) {
+        console.warn(`${MODULE_NAME}: Failed to load Chat Completion presets`, error);
+    }
+
+    if (selected && !options.some(option => option.value === selected)) {
+        options.push({
+            value: selected,
+            displayName: selected,
+            selected: true,
+        });
+    }
+
+    return options;
+}
 
 /**
  * Profile edit template
@@ -45,6 +92,7 @@ const profileEditTemplate = Handlebars.compile(`
                 <option value="aimlapi" {{#if (eq connection.api "aimlapi")}}selected{{/if}}>AI/ML API</option>
                 <option value="claude" {{#if (eq connection.api "claude")}}selected{{/if}}>Anthropic/Claude</option>
                 <option value="azure_openai" {{#if (eq connection.api "azure_openai")}}selected{{/if}}>Azure OpenAI</option>
+                <option value="chutes" {{#if (eq connection.api "chutes")}}selected{{/if}}>Chutes</option>
                 <option value="cohere" {{#if (eq connection.api "cohere")}}selected{{/if}}>Cohere</option>
                 <option value="cometapi" {{#if (eq connection.api "cometapi")}}selected{{/if}}>Comet API</option>
                 <option value="deepseek" {{#if (eq connection.api "deepseek")}}selected{{/if}}>DeepSeek</option>
@@ -73,6 +121,30 @@ const profileEditTemplate = Handlebars.compile(`
             <small data-i18n="STMemoryBooks_APIProfileConfigHint">💡 Profile Setup Hint: STMB automatically reads API info and keys from your ST config. First, configure and test your connection in ST using Test Message. Then select it from the dropdown above to use those settings for memory generation. Only use Full Manual Configuration if you need two different Custom OpenAI-Compatible setups; otherwise, just create two connection profiles in ST—one for roleplay and one for Memory Books.</small>
         </div>
 
+        <label class="checkbox_label marginTop5">
+            <input type="checkbox" id="stmb-profile-skip-structured-output" {{#if skipStructuredOutput}}checked{{/if}}>
+            <span data-i18n="STMemoryBooks_SkipStructuredOutput">Skip structured output and use plain-text completion</span>
+        </label>
+
+        <div id="stmb-profile-chat-completion-service-container" class="{{#if (eq connection.api 'full-manual')}}displayNone{{/if}}">
+            <label class="checkbox_label marginTop5">
+                <input type="checkbox" id="stmb-profile-use-chat-completion-service" {{#if useChatCompletionService}}checked{{/if}}>
+                <span data-i18n="STMemoryBooks_UseChatCompletionService">Use ST's ChatCompletionService</span>
+            </label>
+            <small class="opacity50p" data-i18n="STMemoryBooks_UseChatCompletionServiceDesc">Routes this profile through SillyTavern's built-in chat completion request helper. Full Manual profiles are not affected.</small>
+            <div id="stmb-profile-chat-completion-preset-container" class="marginTop5 {{#unless useChatCompletionService}}displayNone{{/unless}}">
+                <label for="stmb-profile-chat-completion-preset">
+                    <h4 data-i18n="STMemoryBooks_ChatCompletionPreset">Chat Completion Preset:</h4>
+                    <small class="opacity50p" data-i18n="STMemoryBooks_ChatCompletionPresetDesc">Optional. Applies a SillyTavern chat completion preset through ChatCompletionService.processRequest.</small>
+                    <select id="stmb-profile-chat-completion-preset" class="text_pole">
+                        {{#each chatCompletionPresetOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{displayName}}</option>
+                        {{/each}}
+                    </select>
+                </label>
+            </div>
+        </div>
+
         <label for="stmb-profile-model">
             <h4 data-i18n="STMemoryBooks_Model">Model:</h4>
             <input type="text" id="stmb-profile-model" value="{{connection.model}}" class="text_pole" data-i18n="[placeholder]STMemoryBooks_ModelPlaceholder" placeholder="Paste model ID here" {{#if (eq connection.api "current_st")}}disabled title="Managed by SillyTavern UI"{{/if}}>
@@ -91,6 +163,11 @@ const profileEditTemplate = Handlebars.compile(`
             <small class="opacity50p" data-i18n="STMemoryBooks_UseReasoningNote">Not available when using current ST connection</small>
         </div>
 
+        <label class="checkbox_label marginTop5">
+            <input type="checkbox" id="stmb-profile-reverse-proxy" {{#if connection.reverseProxy}}checked{{/if}}>
+            <span data-i18n="STMemoryBooks_ReverseProxy">Use reverse proxy</span>
+        </label>
+
         <div id="stmb-full-manual-section" class="{{#unless (eq connection.api 'full-manual')}}displayNone{{/unless}}">
             <label for="stmb-profile-endpoint">
                 <h4 data-i18n="STMemoryBooks_APIEndpointURL">API Endpoint URL:</h4>
@@ -98,8 +175,8 @@ const profileEditTemplate = Handlebars.compile(`
             </label>
 
             <label for="stmb-profile-apikey">
-                <h4 data-i18n="STMemoryBooks_APIKey">API Key:</h4>
-                <input type="password" id="stmb-profile-apikey" value="{{connection.apiKey}}" class="text_pole" data-i18n="[placeholder]STMemoryBooks_APIKeyPlaceholder" placeholder="Enter your API key">
+                <h4 id="stmb-profile-apikey-label" data-i18n="{{#if connection.reverseProxy}}STMemoryBooks_ProxyPassword{{else}}STMemoryBooks_APIKey{{/if}}">{{#if connection.reverseProxy}}Proxy Password:{{else}}API Key:{{/if}}</h4>
+                <input type="password" id="stmb-profile-apikey" value="{{connection.apiKey}}" class="text_pole" data-i18n="[placeholder]{{#if connection.reverseProxy}}STMemoryBooks_ProxyPasswordPlaceholder{{else}}STMemoryBooks_APIKeyPlaceholder{{/if}}" placeholder="{{#if connection.reverseProxy}}Enter proxy password{{else}}Enter your API key{{/if}}">
             </label>
 
             <div class="info-block hint warning marginBot10" data-i18n="STMemoryBooks_FullManualConfig">
@@ -145,6 +222,26 @@ const profileEditTemplate = Handlebars.compile(`
         <input type="text" id="stmb-profile-custom-title-format" class="text_pole marginTop5 {{#unless showCustomTitleInput}}displayNone{{/unless}}"
             data-i18n="[placeholder]STMemoryBooks_EnterCustomFormat" placeholder="Enter custom format" value="{{titleFormat}}">
     </div>
+
+    {{#if canUseAdditionalContext}}
+    <div class="world_entry_form_control marginTop5" id="stmb-profile-additional-context-section">
+        <h4 data-i18n="STMemoryBooks_Profile_AlsoInclude">Also include:</h4>
+        <small class="opacity50p" data-i18n="STMemoryBooks_Profile_AlsoIncludeDesc">Include selected lorebook entries as additional reference context when creating memories with this profile. Entries will be included in the order below. Drag and drop to reorder.</small>
+        <div class="buttons_block gap10px marginTop5">
+            <label for="stmb-profile-additional-lorebook" class="flex1">
+                <span data-i18n="STMemoryBooks_Profile_AlsoIncludeLorebook">Lorebook</span>
+                <select id="stmb-profile-additional-lorebook" class="text_pole"></select>
+            </label>
+            <label for="stmb-profile-additional-entry" class="flex1">
+                <span data-i18n="STMemoryBooks_Profile_AlsoIncludeEntry">Entry</span>
+                <select id="stmb-profile-additional-entry" class="text_pole"></select>
+            </label>
+            <button id="stmb-profile-additional-add" type="button" class="menu_button whitespacenowrap" data-i18n="STMemoryBooks_Profile_AlsoIncludeAdd">Add</button>
+        </div>
+        <div id="stmb-profile-additional-context-list" class="marginTop5"></div>
+    </div>
+    {{/if}}
+
     <hr>
     <h4 data-i18n="STMemoryBooks_LorebookEntrySettings">Lorebook Entry Settings</h4>
     <div class="info-block hint marginBot10" data-i18n="STMemoryBooks_LorebookEntrySettingsDesc">
@@ -265,8 +362,12 @@ export async function editProfile(settings, profileIndex, refreshCallback) {
             reverseStart: Number.isFinite(profile.reverseStart) ? profile.reverseStart : DEFAULT_REVERSE_START,
             preventRecursion: profile.preventRecursion,
             delayUntilRecursion: profile.delayUntilRecursion,
+            skipStructuredOutput: Boolean(profile.skipStructuredOutput),
+            useChatCompletionService: Boolean(profile.useChatCompletionService) && connection.api !== 'full-manual',
+            chatCompletionPresetOptions: getChatCompletionPresetOptions(profile.chatCompletionPreset || ''),
             outletName: profile.outletName || '',
-            hasLegacyCustomPrompt: (profile.prompt && profile.prompt.trim()) ? true : false
+            hasLegacyCustomPrompt: (profile.prompt && profile.prompt.trim()) ? true : false,
+            canUseAdditionalContext: false,
         };
 
         const content = DOMPurify.sanitize(profileEditTemplate(templateData));
@@ -279,12 +380,14 @@ export async function editProfile(settings, profileIndex, refreshCallback) {
             allowVerticalScrolling: true,
         });
 
-        setupProfileEditEventHandlers(popupInstance, settings);
+        setupProfileEditEventHandlers(popupInstance, settings, {
+            additionalContextEntries: isBuiltinCurrentST ? [] : profile.additionalContextEntries,
+        });
 
         const result = await popupInstance.show();
 
         if (result === POPUP_RESULT.AFFIRMATIVE) {
-            const updatedProfile = buildProfileFromForm(popupInstance.dlg, profile.name);
+            const updatedProfile = buildProfileFromForm(popupInstance.dlg, profile.name, profile);
 
             // Enforce builtin profile invariants even if UI is bypassed.
             if (profile?.isBuiltinCurrentST) {
@@ -323,7 +426,7 @@ export async function newProfile(settings, refreshCallback) {
         const apiInfo = getCurrentApiInfo();
 
         // Logic to handle title format for the template
-        const currentTitleFormat = settings.titleFormat || '[000] - {{title}}';
+        const currentTitleFormat = settings.profiles?.[settings.defaultProfile]?.titleFormat || settings.titleFormat || '[000] - {{title}}';
         const allTitleFormats = getDefaultTitleFormats();
         const isCustomTitleFormat = !allTitleFormats.includes(currentTitleFormat);
         await SummaryPromptManager.firstRunInitIfMissing(settings);
@@ -359,7 +462,11 @@ export async function newProfile(settings, refreshCallback) {
             reverseStart: DEFAULT_REVERSE_START,
             preventRecursion: false,
             delayUntilRecursion: false,
-            outletName: ''
+            skipStructuredOutput: false,
+            useChatCompletionService: false,
+            chatCompletionPresetOptions: getChatCompletionPresetOptions(''),
+            outletName: '',
+            canUseAdditionalContext: false,
         };
 
         const content = DOMPurify.sanitize(profileEditTemplate(templateData));
@@ -372,7 +479,9 @@ export async function newProfile(settings, refreshCallback) {
             allowVerticalScrolling: true,
         });
 
-        setupProfileEditEventHandlers(popupInstance, settings);
+        setupProfileEditEventHandlers(popupInstance, settings, {
+            additionalContextEntries: [],
+        });
 
         const result = await popupInstance.show();
 
@@ -524,6 +633,7 @@ export function importProfiles(event, settings, refreshCallback) {
             let importedCount = 0;
             let skippedCount = 0;
             const existingNames = settings.profiles.map(p => p.name);
+            const existingProfileKeys = new Set(settings.profiles.map(p => String(p?.profileKey || '').trim()).filter(Boolean));
 
             // Merge profiles (avoid duplicates by name)
             validProfiles.forEach(importProfile => {
@@ -532,6 +642,10 @@ export function importProfiles(event, settings, refreshCallback) {
                     // Ensure unique name and clean structure
                     const finalName = generateSafeProfileName(importProfile.name, existingNames);
                     importProfile.name = finalName;
+                    if (!importProfile.profileKey || existingProfileKeys.has(importProfile.profileKey)) {
+                        importProfile.profileKey = generateProfileKey();
+                    }
+                    existingProfileKeys.add(importProfile.profileKey);
                     existingNames.push(finalName);
 
                     settings.profiles.push(importProfile);
@@ -572,11 +686,242 @@ export function importProfiles(event, settings, refreshCallback) {
     event.target.value = '';
 }
 
+async function getLorebookEntriesForPicker(lorebookName) {
+    const data = await loadWorldInfo(lorebookName);
+    return Object.entries(data?.entries || {})
+        .map(([key, entry]) => ({
+            uid: String(entry?.uid ?? key),
+            title: getLorebookEntryDisplayName(entry, key),
+        }))
+        .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+async function resolveAdditionalContextRows(refs) {
+    const normalized = normalizeAdditionalContextEntries(refs);
+    const cache = new Map();
+    const rows = [];
+
+    for (const ref of normalized) {
+        let staleReason = '';
+        let title = '';
+        try {
+            if (!Array.isArray(world_names) || !world_names.includes(ref.lorebookName)) {
+                staleReason = translate('Missing lorebook', 'STMemoryBooks_Profile_AlsoIncludeMissingLorebook');
+            } else {
+                if (!cache.has(ref.lorebookName)) {
+                    cache.set(ref.lorebookName, await loadWorldInfo(ref.lorebookName));
+                }
+                const entry = getLorebookEntryByUid(cache.get(ref.lorebookName), ref.uid);
+                if (entry) {
+                    title = getLorebookEntryDisplayName(entry, ref.uid);
+                } else {
+                    staleReason = translate('Missing entry', 'STMemoryBooks_Profile_AlsoIncludeMissingEntry');
+                }
+            }
+        } catch (error) {
+            console.warn(`${MODULE_NAME}: Failed to resolve additional context entry`, ref, error);
+            staleReason = translate('Load failed', 'STMemoryBooks_Profile_AlsoIncludeLoadFailedShort');
+        }
+
+        rows.push({
+            ...ref,
+            title: title || String(ref.uid),
+            staleReason,
+        });
+    }
+
+    return rows;
+}
+
+function readAdditionalContextEntriesFromList(list) {
+    if (!list) return [];
+    return normalizeAdditionalContextEntries(Array.from(list.querySelectorAll('[data-lorebook-name][data-entry-uid]')).map(row => ({
+        lorebookName: row.dataset.lorebookName,
+        uid: row.dataset.entryUid,
+    })));
+}
+
+function setupSortableAdditionalContextList(list) {
+    if (!list || typeof window.jQuery !== 'function') return;
+    try {
+        const $list = window.jQuery(list);
+        if ($list.data('ui-sortable')) {
+            $list.sortable('destroy');
+        }
+        $list.sortable({
+            delay: getSortableDelay(),
+            handle: '.stmb-additional-context-drag',
+        });
+    } catch (error) {
+        console.warn(`${MODULE_NAME}: Failed to initialize additional context sorting`, error);
+    }
+}
+
+function renderAdditionalContextResolvedRows(list, rows) {
+    if (!list) return;
+
+    if (rows.length === 0) {
+        list.innerHTML = `<div class="opacity70p" data-i18n="STMemoryBooks_Profile_AlsoIncludeEmpty">${escapeHtml(translate('No additional context entries selected.', 'STMemoryBooks_Profile_AlsoIncludeEmpty'))}</div>`;
+        return;
+    }
+
+    list.innerHTML = rows.map(row => {
+        const label = `${row.lorebookName} - ${row.title}`;
+        const stale = row.staleReason
+            ? `<span class="textWarn" data-i18n="STMemoryBooks_Profile_AlsoIncludeStale">${escapeHtml(translate('Stale', 'STMemoryBooks_Profile_AlsoIncludeStale'))}: ${escapeHtml(row.staleReason)}</span>`
+            : '';
+        return `
+            <div class="stmb-profile-additional-context-row flex-container alignitemscenter gap10px marginTop5" data-lorebook-name="${escapeHtml(row.lorebookName)}" data-entry-uid="${escapeHtml(row.uid)}">
+                <span class="fa-solid fa-grip-lines stmb-additional-context-drag drag-handle" title="${escapeHtml(translate('Drag to reorder', 'STMemoryBooks_Profile_AlsoIncludeDrag'))}"></span>
+                <span class="flex1">${escapeHtml(label)}</span>
+                ${stale}
+                <button type="button" class="menu_button stmb-additional-context-remove whitespacenowrap" data-i18n="STMemoryBooks_Profile_AlsoIncludeRemove">${escapeHtml(translate('Remove', 'STMemoryBooks_Profile_AlsoIncludeRemove'))}</button>
+            </div>
+        `;
+    }).join('');
+
+    list.querySelectorAll('.stmb-additional-context-remove').forEach(button => {
+        button.addEventListener('click', () => {
+            button.closest('[data-lorebook-name][data-entry-uid]')?.remove();
+            if (!list.querySelector('[data-lorebook-name][data-entry-uid]')) {
+                void renderAdditionalContextRows(list, []);
+            }
+        });
+    });
+
+    setupSortableAdditionalContextList(list);
+}
+
+async function renderAdditionalContextRows(list, refs) {
+    if (!list) return;
+    const normalized = normalizeAdditionalContextEntries(refs);
+    const renderToken = `${Date.now()}:${Math.random()}`;
+    list.dataset.renderToken = renderToken;
+
+    renderAdditionalContextResolvedRows(list, normalized.map(ref => ({
+        ...ref,
+        title: String(ref.uid),
+        staleReason: '',
+    })));
+
+    const rows = await resolveAdditionalContextRows(normalized);
+    if (list.dataset.renderToken !== renderToken) return;
+    renderAdditionalContextResolvedRows(list, rows);
+}
+
+function populateAdditionalContextLorebookSelect(select) {
+    if (!select) return;
+    const names = Array.isArray(world_names) ? world_names.filter(Boolean) : [];
+    if (names.length === 0) {
+        select.innerHTML = `<option value="">${escapeHtml(translate('No lorebooks found', 'STMemoryBooks_Profile_AlsoIncludeNoLorebooks'))}</option>`;
+        select.disabled = true;
+        return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = [
+        `<option value="">${escapeHtml(translate('Select a lorebook...', 'STMemoryBooks_Profile_AlsoIncludeSelectLorebook'))}</option>`,
+        ...names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
+    ].join('');
+}
+
+async function populateAdditionalContextEntrySelect(select, lorebookName) {
+    if (!select) return;
+    select.disabled = true;
+    if (!lorebookName) {
+        select.innerHTML = `<option value="">${escapeHtml(translate('Select an entry...', 'STMemoryBooks_Profile_AlsoIncludeSelectEntry'))}</option>`;
+        return;
+    }
+
+    select.innerHTML = `<option value="">${escapeHtml(translate('Loading entries...', 'STMemoryBooks_Profile_AlsoIncludeLoadingEntries'))}</option>`;
+    try {
+        const entries = await getLorebookEntriesForPicker(lorebookName);
+        if (entries.length === 0) {
+            select.innerHTML = `<option value="">${escapeHtml(translate('No entries found', 'STMemoryBooks_Profile_AlsoIncludeNoEntries'))}</option>`;
+            return;
+        }
+
+        select.innerHTML = [
+            `<option value="">${escapeHtml(translate('Select an entry...', 'STMemoryBooks_Profile_AlsoIncludeSelectEntry'))}</option>`,
+            ...entries.map(entry => `<option value="${escapeHtml(entry.uid)}">${escapeHtml(entry.title)}</option>`),
+        ].join('');
+        select.disabled = false;
+    } catch (error) {
+        console.warn(`${MODULE_NAME}: Failed to load entries for additional context picker`, error);
+        select.innerHTML = `<option value="">${escapeHtml(translate('Failed to load entries', 'STMemoryBooks_Profile_AlsoIncludeLoadFailed'))}</option>`;
+    }
+}
+
+function setupAdditionalContextControls(popupElement, initialRefs = []) {
+    const section = popupElement.querySelector('#stmb-profile-additional-context-section');
+    if (!section) return;
+
+    const lorebookSelect = section.querySelector('#stmb-profile-additional-lorebook');
+    const entrySelect = section.querySelector('#stmb-profile-additional-entry');
+    const addButton = section.querySelector('#stmb-profile-additional-add');
+    const list = section.querySelector('#stmb-profile-additional-context-list');
+
+    populateAdditionalContextLorebookSelect(lorebookSelect);
+    void populateAdditionalContextEntrySelect(entrySelect, lorebookSelect?.value || '');
+    void renderAdditionalContextRows(list, initialRefs);
+
+    lorebookSelect?.addEventListener('change', () => {
+        void populateAdditionalContextEntrySelect(entrySelect, lorebookSelect.value);
+    });
+
+    addButton?.addEventListener('click', async () => {
+        const lorebookName = String(lorebookSelect?.value || '').trim();
+        const uid = String(entrySelect?.value || '').trim();
+        if (!lorebookName || !uid) {
+            toastr.warning(translate('Choose a lorebook and entry first.', 'STMemoryBooks_Profile_AlsoIncludeMissingSelection'), 'STMemoryBooks');
+            return;
+        }
+
+        const current = readAdditionalContextEntriesFromList(list);
+        if (current.some(ref => ref.lorebookName === lorebookName && ref.uid === uid)) {
+            toastr.warning(translate('That entry is already included in this profile.', 'STMemoryBooks_Profile_AlsoIncludeDuplicate'), 'STMemoryBooks');
+            return;
+        }
+
+        await renderAdditionalContextRows(list, [...current, { lorebookName, uid }]);
+    });
+}
+
 /**
  * Setup event handlers for profile edit popup
  */
-function setupProfileEditEventHandlers(popupInstance, settings) {
+function setupProfileEditEventHandlers(popupInstance, settings, options = {}) {
     const popupElement = popupInstance.dlg;
+    setupAdditionalContextControls(popupElement, options.additionalContextEntries);
+
+    function syncFullManualReverseProxyFields() {
+        const reverseProxyInput = popupElement.querySelector('#stmb-profile-reverse-proxy');
+        const apiKeyLabel = popupElement.querySelector('#stmb-profile-apikey-label');
+        const apiKeyInput = popupElement.querySelector('#stmb-profile-apikey');
+        const isReverseProxy = !!reverseProxyInput?.checked;
+
+        if (apiKeyLabel) {
+            apiKeyLabel.textContent = isReverseProxy
+                ? translate('Proxy Password:', 'STMemoryBooks_ProxyPassword')
+                : translate('API Key:', 'STMemoryBooks_APIKey');
+            apiKeyLabel.setAttribute('data-i18n', isReverseProxy ? 'STMemoryBooks_ProxyPassword' : 'STMemoryBooks_APIKey');
+        }
+
+        if (apiKeyInput) {
+            apiKeyInput.placeholder = isReverseProxy
+                ? translate('Enter proxy password', 'STMemoryBooks_ProxyPasswordPlaceholder')
+                : translate('Enter your API key', 'STMemoryBooks_APIKeyPlaceholder');
+            apiKeyInput.setAttribute('data-i18n', `[placeholder]${isReverseProxy ? 'STMemoryBooks_ProxyPasswordPlaceholder' : 'STMemoryBooks_APIKeyPlaceholder'}`);
+        }
+    }
+
+    function syncChatCompletionPresetFields() {
+        const apiSelect = popupElement.querySelector('#stmb-profile-api');
+        const useServiceInput = popupElement.querySelector('#stmb-profile-use-chat-completion-service');
+        const presetContainer = popupElement.querySelector('#stmb-profile-chat-completion-preset-container');
+        const isEligible = apiSelect?.value !== 'full-manual' && !!useServiceInput?.checked;
+        presetContainer?.classList.toggle('displayNone', !isEligible);
+    }
 
     // Open Summary Prompt Manager from profile editor
     popupElement.querySelector('#stmb-open-prompt-manager')?.addEventListener('click', () => {
@@ -720,15 +1065,23 @@ function setupProfileEditEventHandlers(popupInstance, settings) {
 
     popupElement.querySelector('#stmb-profile-api')?.addEventListener('change', (e) => {
         const fullManualSection = popupElement.querySelector('#stmb-full-manual-section');
+        const chatCompletionServiceContainer = popupElement.querySelector('#stmb-profile-chat-completion-service-container');
+        const chatCompletionServiceInput = popupElement.querySelector('#stmb-profile-use-chat-completion-service');
         const modelInput = popupElement.querySelector('#stmb-profile-model');
         const tempInput = popupElement.querySelector('#stmb-profile-temperature');
         const reasoningCheckbox = popupElement.querySelector('#stmemory-conn-use-reasoning');
         const reasoningLabel = reasoningCheckbox ? reasoningCheckbox.closest('label') : null;
         if (e.target.value === 'full-manual') {
             fullManualSection.classList.remove('displayNone');
+            chatCompletionServiceContainer?.classList.add('displayNone');
+            if (chatCompletionServiceInput) {
+                chatCompletionServiceInput.checked = false;
+            }
         } else {
             fullManualSection.classList.add('displayNone');
+            chatCompletionServiceContainer?.classList.remove('displayNone');
         }
+        syncChatCompletionPresetFields();
         // Disable model/temp/reasoning when using Current SillyTavern Settings provider
         const isCurrentST = e.target.value === 'current_st';
         if (modelInput) {
@@ -746,6 +1099,12 @@ function setupProfileEditEventHandlers(popupInstance, settings) {
             reasoningLabel.classList.toggle('opacity50p', isCurrentST);
         }
     });
+
+    popupElement.querySelector('#stmb-profile-use-chat-completion-service')?.addEventListener('change', syncChatCompletionPresetFields);
+    syncChatCompletionPresetFields();
+
+    popupElement.querySelector('#stmb-profile-reverse-proxy')?.addEventListener('change', syncFullManualReverseProxyFields);
+    syncFullManualReverseProxyFields();
 
     function syncOrderModeInputs(mode) {
         const orderValueInput = popupElement.querySelector('#stmb-profile-order-value');
@@ -830,15 +1189,17 @@ function setupProfileEditEventHandlers(popupInstance, settings) {
 /**
  * Build profile object from form data
  */
-function buildProfileFromForm(popupElement, fallbackName) {
+function buildProfileFromForm(popupElement, fallbackName, existingProfile = {}) {
     // Step 1: Gather all the raw data from the form into a single object.
     const data = {
+        profileKey: existingProfile?.profileKey,
         name: popupElement.querySelector('#stmb-profile-name')?.value.trim() || fallbackName,
         api: popupElement.querySelector('#stmb-profile-api')?.value,
         model: popupElement.querySelector('#stmb-profile-model')?.value,
         temperature: popupElement.querySelector('#stmb-profile-temperature')?.value,
         endpoint: popupElement.querySelector('#stmb-profile-endpoint')?.value,
         apiKey: popupElement.querySelector('#stmb-profile-apikey')?.value,
+        reverseProxy: popupElement.querySelector('#stmb-profile-reverse-proxy')?.checked,
         constVectMode: popupElement.querySelector('#stmb-profile-const-vect')?.value,
         position: popupElement.querySelector('#stmb-profile-position')?.value,
         orderMode: popupElement.querySelector('input[name="order-mode"]:checked')?.value,
@@ -847,7 +1208,18 @@ function buildProfileFromForm(popupElement, fallbackName) {
         preventRecursion: popupElement.querySelector('#stmb-profile-prevent-recursion')?.checked,
         delayUntilRecursion: popupElement.querySelector('#stmb-profile-delay-recursion')?.checked,
         useReasoning: popupElement.querySelector('#stmemory-conn-use-reasoning')?.checked,
+        skipStructuredOutput: popupElement.querySelector('#stmb-profile-skip-structured-output')?.checked,
     };
+
+    const additionalContextList = popupElement.querySelector('#stmb-profile-additional-context-list');
+    if (additionalContextList) {
+        data.additionalContextEntries = readAdditionalContextEntriesFromList(additionalContextList);
+    }
+
+    if (data.api !== 'full-manual') {
+        data.useChatCompletionService = popupElement.querySelector('#stmb-profile-use-chat-completion-service')?.checked;
+        data.chatCompletionPreset = popupElement.querySelector('#stmb-profile-chat-completion-preset')?.value || '';
+    }
 
     // Step 2: Intelligently determine whether to use the selected preset or the custom prompt.
     const presetSelect = popupElement.querySelector('#stmb-profile-preset');
@@ -875,6 +1247,7 @@ function buildProfileFromForm(popupElement, fallbackName) {
 export function validateAndFixProfiles(settings) {
     const issues = [];
     const fixes = [];
+    const legacyTitleFormat = settings.titleFormat || '[000] - {{title}}';
 
     if (!settings.profiles || !Array.isArray(settings.profiles)) {
         settings.profiles = [];
@@ -888,6 +1261,7 @@ export function validateAndFixProfiles(settings) {
             api: 'current_st',
             preset: 'summary',
             isBuiltinCurrentST: true,
+            titleFormat: legacyTitleFormat,
         });
 
         settings.profiles.push(dynamicProfile);
@@ -937,6 +1311,7 @@ export function validateAndFixProfiles(settings) {
                     api: 'current_st',
                     preset: 'summary',
                     isBuiltinCurrentST: true,
+                    titleFormat: legacyTitleFormat,
                 });
                 settings.profiles.unshift(dynamicProfile);
                 if (typeof settings.defaultProfile === 'number') {
@@ -955,6 +1330,7 @@ export function validateAndFixProfiles(settings) {
         console.warn(`${MODULE_NAME}: Failed to enforce builtin Current ST profile invariants`, e);
     }
 
+    const seenProfileKeys = new Set();
     settings.profiles.forEach((profile, index) => {
         if (!validateProfile(profile)) {
             issues.push(`Profile ${index} is invalid`);
@@ -968,11 +1344,22 @@ export function validateAndFixProfiles(settings) {
             }
         }
 
+        const existingProfileKey = String(profile?.profileKey || '').trim();
+        if (!existingProfileKey || seenProfileKeys.has(existingProfileKey)) {
+            profile.profileKey = generateProfileKey();
+            fixes.push(`Assigned stable profile key for profile "${profile.name || index}"`);
+        }
+        seenProfileKeys.add(profile.profileKey);
+
         // Enforce builtin profile invariants.
         if (profile?.isBuiltinCurrentST) {
             profile.name = BUILTIN_CURRENT_ST_NAME;
             profile.connection = profile.connection || {};
             profile.connection.api = 'current_st';
+            if ('additionalContextEntries' in profile) {
+                delete profile.additionalContextEntries;
+                fixes.push(`Removed 'additionalContextEntries' from builtin profile "${profile.name}"`);
+            }
         }
 
         // For each profile, we check if the new settings exist. If not, we add the defaults.
@@ -997,9 +1384,51 @@ export function validateAndFixProfiles(settings) {
             profile.delayUntilRecursion = false;
             fixes.push(`Added default 'delayUntilRecursion' to profile "${profile.name}"`);
         }
+        if (profile.skipStructuredOutput === undefined) {
+            profile.skipStructuredOutput = false;
+            fixes.push(`Added default 'skipStructuredOutput' to profile "${profile.name}"`);
+        } else {
+            profile.skipStructuredOutput = parseBooleanFlag(profile.skipStructuredOutput, false);
+        }
+        if (profile.connection?.api === 'full-manual') {
+            if ('useChatCompletionService' in profile) {
+                delete profile.useChatCompletionService;
+                fixes.push(`Removed 'useChatCompletionService' from Full Manual profile "${profile.name}"`);
+            }
+            if ('chatCompletionPreset' in profile) {
+                delete profile.chatCompletionPreset;
+                fixes.push(`Removed 'chatCompletionPreset' from Full Manual profile "${profile.name}"`);
+            }
+        } else if (profile.useChatCompletionService === undefined) {
+            profile.useChatCompletionService = false;
+            fixes.push(`Added default 'useChatCompletionService' to profile "${profile.name}"`);
+        } else {
+            profile.useChatCompletionService = parseBooleanFlag(profile.useChatCompletionService, false);
+        }
+        if (profile.connection?.api !== 'full-manual') {
+            const chatCompletionPreset = String(profile.chatCompletionPreset || '').trim();
+            if (profile.useChatCompletionService && chatCompletionPreset) {
+                profile.chatCompletionPreset = chatCompletionPreset;
+            } else if ('chatCompletionPreset' in profile) {
+                delete profile.chatCompletionPreset;
+                fixes.push(`Removed inactive 'chatCompletionPreset' from profile "${profile.name}"`);
+            }
+        }
+        if (!profile?.isBuiltinCurrentST) {
+            const additionalContextEntries = normalizeAdditionalContextEntries(profile.additionalContextEntries);
+            if (additionalContextEntries.length > 0) {
+                if (JSON.stringify(profile.additionalContextEntries) !== JSON.stringify(additionalContextEntries)) {
+                    profile.additionalContextEntries = additionalContextEntries;
+                    fixes.push(`Normalized 'additionalContextEntries' for profile "${profile.name}"`);
+                }
+            } else if ('additionalContextEntries' in profile) {
+                delete profile.additionalContextEntries;
+                fixes.push(`Removed empty 'additionalContextEntries' from profile "${profile.name}"`);
+            }
+        }
         // Ensure all existing profiles have a title format
         if (!profile.titleFormat) {
-            profile.titleFormat = settings.titleFormat || '[000] - {{title}}';
+            profile.titleFormat = legacyTitleFormat;
             fixes.push(`Added missing title format to profile "${profile.name}"`);
         }
     });
@@ -1014,6 +1443,12 @@ export function validateAndFixProfiles(settings) {
     ) {
         settings.defaultProfile = 0;
         fixes.push('Fixed invalid default profile index');
+    }
+
+    const defaultProfile = settings.profiles[settings.defaultProfile];
+    if (defaultProfile?.titleFormat && settings.titleFormat !== defaultProfile.titleFormat) {
+        settings.titleFormat = defaultProfile.titleFormat;
+        fixes.push('Mirrored default profile title format to legacy settings.titleFormat');
     }
 
     return {

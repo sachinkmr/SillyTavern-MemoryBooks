@@ -4,8 +4,40 @@ A next-generation SillyTavern extension for automatic, structured, and reliable 
 
 ### ❓ Vocabulary
 - Scene → Memory  
+- One saved fact → Clip  
+- Ongoing tracker → Side Prompt  
 - Many Memories → Summary / Consolidation  
-- Always-On → Side Prompt (Tracker)
+- One long entry → Compaction
+
+### Clips vs Side Prompts
+
+<details>
+<summary><strong>Clips vs Side Prompts</strong></summary>
+
+| **Clips** | **Side Prompts** |
+|---|---|
+| Save selected chat text into a Memory Book entry. | Ask the AI to review chat and update a tracker entry. |
+| Best for one clear fact, line, promise, preference, item, or note. | Best for information that changes over time. |
+| Think: “pin this note.” | Think: “keep this section updated.” |
+
+</details>
+
+For the longer explanation, see the [User Guide](USER_GUIDE.md#-clips-vs-side-prompts).
+
+### Compaction vs Consolidation
+
+<details>
+<summary><strong>Compaction vs Consolidation</strong></summary>
+
+| **Compaction** | **Consolidation** |
+|---|---|
+| Shortens one existing STMB-managed entry. | Combines multiple memories or summaries into one higher-level recap. |
+| Use when a Clip, Side Prompt, or Memory entry is useful, but getting too long. | Use when several memories are ready to become an Arc, Chapter, Book, or other larger summary. |
+| Think: “trim this one entry.” | Think: “roll these memories up into a recap.” |
+
+</details>
+
+For the longer explanation, see the [User Guide](USER_GUIDE.md#-compaction-vs-consolidation).
 
 ## ❗ Read Me First!
 
@@ -20,7 +52,7 @@ Other links:
 * 📋 [Version History & Changelog](changelog.md)
 * 💡 [Using 📕 Memory Books with 📚 Lorebook Ordering](https://github.com/aikohanasaki/SillyTavern-LorebookOrdering/blob/main/guides/STMB%20and%20STLO%20-%20English.md)
 
-> Note: Supports various languages: see [`/locales`](locales) folder for list. Internaional/localized Readme and User Guides can be found in the [`/userguides`](userguides) folder. 
+> Note: Supports various languages: see [`/locales`](locales) folder for list. International/localized Readme and User Guides can be found in the [`/userguides`](userguides) folder. 
 > Lorebook converter and side prompt template library are in the [`/resources`](resources) folder.
 
 ## 📑 Table of Contents
@@ -41,6 +73,8 @@ Other links:
   - [Built-in Presets](#built-in-presets)
   - [Custom Prompts](#custom-prompts)
 - [Lorebook Integration](#-lorebook-integration)
+- [Clip to Memory Book](#-clip-to-memory-book)
+- [Topical Clip](#-topical-clip)
 - [Slash Commands](#-slash-commands)
 - [Group Chat Support](#-group-chat-support)
 - [Modes of Operation](#-modes-of-operation)
@@ -48,12 +82,15 @@ Other links:
   - [Auto-Create Lorebook Mode](#auto-create-lorebook-mode)
   - [Manual Lorebook Mode](#manual-lorebook-mode)
 - [Trackers & Side Prompts](#-trackers--side-prompts)
+- [Compaction](#-compaction)
 - [Regex Integration for Advanced Customization](#-regex-integration-for-advanced-customization)
 - [Profile Management](#-profile-management)
 - [Settings & Configuration](#-settings--configuration)
   - [Global Settings](#global-settings)
   - [Profile Fields](#profile-fields)
 - [Title Formatting](#-title-formatting)
+- [Context Memories](#-context-memories)
+- [Optional Job Queue](#-optional-job-queue-chat-top-bar-required)
 - [Visual Feedback & Accessibility](#-visual-feedback--accessibility)
 - [FAQ](#faq)
   - [Should I make a separate lorebook for memories, or can I use the same lorebook I'm already using for other things?](#should-i-make-a-separate-lorebook-for-memories-or-can-i-use-the-same-lorebook-im-already-using-for-other-things)
@@ -71,7 +108,7 @@ Other links:
 ## 📋 Prerequisites
 
 - **SillyTavern:** 1.14.0+ (latest recommended)
-- **Scene Selection:** Start and end markers (start < end) must be set.
+- **Optional Job Queue:** STMB works without the job queue. To use queueing, install and enable **Chat Top Bar** / **Chat Top Info Bar**, the official SillyTavern extension that adds a top bar to the chat window. STMB uses that top bar to show the Memory Books Jobs button and queue drawer.
 - **Chat Completion Support:** Full support for OpenAI, Claude, Anthropic, OpenRouter, or other chat completion API.
 - **Text Completion Support:** Text completion APIs (Kobold, TextGen, etc.) are supported when connected via a Chat Completion (OpenAI-compatible) API endpoint. I recommend setting up a Chat Completion API connection according to the KoboldCpp tips below (change as needed if you are Ollama or other software). After that, set up an STMB profile and use Custom (recommended) or full manual configuration (only if Custom fails or you have more than one custom connection).
 **NOTE**: Please note that if you use Text Completion, you must have a chat completion preset!
@@ -123,7 +160,12 @@ llama-server -m <model-path> -c <context-size> --port 8080
 - Click ◄ on the last message.
 
 Below are some examples of what the chevron buttons look like when clicked. Your colors may vary depending on your CSS theme!
-![Visual feedback showing scene selection](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-start.png)
+
+![Clicked start button](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-start.png)
+
+![Mid-scene buttons](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-middle.png)
+
+![Clicked end button](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-end.png)
 
 ### 3. **Create a Memory**
 - Open the Extensions menu (the magic wand 🪄) and click "Memory Books", or use `/creatememory` slash command.
@@ -149,6 +191,9 @@ This is the standard and most commonly used memory type.
 ---
 
 ### 🌈 Summary Consolidation
+
+![Consolidate button](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/button-consolidate.png)
+
 Summary consolidation captures **what changed over time** across multiple memories or summaries.
 
 Instead of summarizing one scene, consolidated summaries focus on:
@@ -228,22 +273,120 @@ All prompts and presets **must** instruct the AI to return only valid JSON, e.g.
 
 ---
 
+
+## ✂️ Clip to Memory Book
+
+![Clip text](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/clip.png)
+
+Clip to Memory Book is for quick “remember this” notes. Highlight important chat text, click the floating scissors button, and save the selected text as a bullet in your Memory Book without opening the lorebook editor first.
+
+If you want an ongoing tracker that updates over time, use a Side Prompt instead. Short version: **Clip = one saved fact; Side Prompt = ongoing tracker.**
+
+#### How it works
+- Highlight the exact text you want to remember.
+- Click the floating scissors button. You can turn this button on or off in the Memory Books popup.
+- Choose an existing clip entry or create a new one.
+- Review the current entry and updated preview before saving.
+- Rename the entry/section if needed.
+
+Clip entries are normal lorebook entries marked with `[STMB Clip]` at the end of the entry title. For example:
+
+```txt
+Seraphina Healed Me [STMB Clip]
+```
+
+The visible section inside the entry uses the title without `[STMB Clip]`:
+
+```md
+=== Seraphina Healed Me ===
+
+- Seraphina healed my wounds with magic.
+- Seraphina, guardian of this forest
+
+=== END Seraphina Healed Me ===
+```
+
+#### Tips
+- One clip entry has one section. Use focused titles like `Things {{user}} Likes`, `Pet Names`, or `Food Preferences` so keywords can stay specific.
+- New clip entries can be always active or keyword-triggered. Always active is easiest; keywords are better when the entry should only appear sometimes.
+- Existing entries can become clip entries by adding `[STMB Clip]` to the end of the title.
+- Long clip entries may show a reminder to review or compact them. Compaction can help make clip, side prompt, and STMB memory entries more token-efficient before you replace the original.
+- Clip entries do not add source attribution. They save only the text you chose to clip.
+
+## 🔎 Topical Clip
+
+Topical Clip creates or updates a focused Clip-style memory entry about one topic.
+
+Use it when you already have STMB memories saved, but want one clean “about this” entry that gathers related details from those memories. For example:
+
+- `About Seraphina`
+- `About {{user}}'s magic`
+- `About the Black Harbor investigation`
+- `About Alex and Mira's relationship`
+
+Topical Clip is different from normal Clip to Memory Book. A normal Clip saves highlighted chat text directly. Topical Clip reads existing STMB memory entries, asks the AI to extract details about one topic, then gives you an editable draft before saving.
+
+#### How it works
+
+1. Open Memory Books.
+2. Click **🔎 Topical Clip**.
+3. Choose the **Source Memory Book**.
+4. Enter a **Topic**.
+5. Enter activation **Keywords**, or leave them empty to use the topic.
+6. Choose whether to create a new Topical Clip or update an existing `[STMB Clip]` entry.
+7. Choose a **Generation Profile**.
+8. Click **Generate Draft**.
+9. Review and edit the draft.
+10. Click **Save Topical Clip** only when you are happy with it.
+
+Topical Clip saves entries as normal Clip entries marked with `[STMB Clip]`. New entries use a title like:
+
+```txt
+About Elliott [STMB Clip]
+````
+
+#### Updating existing Topical Clips
+
+When you update an existing Topical Clip, STMB remembers which source memories were used during the last successful run. The next update normally uses only new or changed source memories.
+
+If you want to rebuild the whole entry from all eligible memories, enable **Rebuild from all source memories** before generating the draft.
+
+#### Notes
+
+* Topical Clip only uses confirmed STMB memory entries as source material.
+* Clip entries and Side Prompt entries are not used as source memories.
+* Update targets are existing `[STMB Clip]` entries.
+* The AI draft is always reviewable and editable before saving.
+* STMB does not save the generated draft until you click **Save Topical Clip**.
+* If the request is large, STMB may show a token warning before running.
+
 ## 🆕 Slash Commands
 
 - `/creatememory` - Create memory from marked scene.
 - `/scenememory X-Y` - Set scene range and create memory (e.g., `/scenememory 10-15`).
 - `/nextmemory` - Create memory from end of last memory to current message.
+- `/stmb-catchup interval:x start:y end:y` - Create catch-up memories across an existing long chat by processing the selected message range in interval-sized chunks.
 - `/sideprompt "Name" {{macro}}="value" [X-Y]` - Run side prompt (`{{macro}}`s are optional). Add `-debug` for detailed console logs.
+- `/sideprompt-set "Set Name" [X-Y]` - Run a saved Side Prompt Set.
+- `/sideprompt-macroset "Set Name" {{macro}}="value" [X-Y]` - Run a Side Prompt Set and supply reusable macro values.
 - `/sideprompt-on "Name" | all` - Enable a Side Prompt by name or all.
 - `/sideprompt-off "Name" | all` - Disable a Side Prompt by name or all.
 - `/stmb-highest` - Return the highest message id for processed memories in this chat.
 - `/stmb-set-highest <N|none>` - Manually set the highest processed message id for this chat.
 - `/stmb-stop` - Stop all in-flight STMB generation everywhere (emergency halt).
 
+### `/stmb-catchup`
+
+Use `/stmb-catchup` when converting an existing long chat into STMB memories. Syntax: `/stmb-catchup interval:x start:y end:y`
+
+Example: `/stmb-catchup interval:30 start:0 end:300`
+
+---
+
 ## 👥 Group Chat Support
 
 - All features work with group chats.
-- Scene markers, memory creation, and lorebook integration are stored in group metadata.
+- Scene markers, memory creation, and lorebook integration are stored in the active chat metadata.
 - No special setup required—just select a group chat and use as normal.
 
 ---
@@ -281,7 +424,15 @@ All prompts and presets **must** instruct the AI to return only valid JSON, e.g.
 
 ### 🎡 Trackers & Side Prompts
 
-Side Prompts can be used like trackers and create separate side-prompt entries in your memory lorebook. Side Prompts allow you to track **ongoing state**, not just past events. For example:
+![Where to find Trackers and Side Prompts](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/sp.png)
+
+> 📘 Side Prompts have their own guide: [Side Prompts Guide](userguides/side-prompts-en.md). Use that for sets, macros, examples, and troubleshooting.
+> 🎡 Need the click path? See the [Scribe walkthrough for enabling Side Prompts](https://scribehow.com/viewer/How_to_Enable_Side_Prompts_in_Memory_Books__fif494uSSjCmxE2ZCmRGxQ).
+
+Side Prompts are separate STMB prompt runs for maintaining ongoing chat state. Use them for trackers and support notes that should not bloat the normal character reply. If you only want to save one highlighted fact, use Clip to Memory Book instead.
+
+Use Side Prompts for things like:
+
 - 💰 Inventory & Resources ("What items does the user have?")
 - ❤️ Relationship Status ("How does X feel about Y?")
 - 📊 Character Stats ("Current health, skills, reputation")
@@ -289,6 +440,7 @@ Side Prompts can be used like trackers and create separate side-prompt entries i
 - 🌍 World State ("What's changed in the setting?")
 
 #### **Access:** From the Memory Books settings, click “🎡 Trackers & Side Prompts”.
+
 #### **Features:**
 - View all side prompts.
 - Create new or duplicate prompts to experiment with different prompt styles.
@@ -335,11 +487,82 @@ At the bottom of the Trackers & Side Prompts dialog, the **Character Lorebook Ma
 - Manual syntax is `/sideprompt "Name" {{macro}}="value" [X-Y]`. Add `-debug` for detailed browser console logs.
 - Once you choose a side prompt in slash-command autocomplete, STMB will suggest any required runtime macros for that template.
 - Side prompts with custom runtime macros (not ST default) are manual-only. STMB disables `On Interval` and `On After Memory` from those templates on save/import and warns you when that happens.
+- Save Side Prompt output as separate side-prompt entries in your memory lorebook.
+
+#### **Side Prompt Sets:**
+- Run Side Prompts as part of a **Side Prompt Set** — an ordered bundle of trackers.
+- Use Side Prompt Sets when a chat needs an ordered bundle of trackers.
+- A selected after-memory Side Prompt Set replaces individually-enabled after-memory Side Prompts for that chat.
+- Manual syntax: `/sideprompt-set "Set Name" [X-Y]`, or `/sideprompt-macroset "Set Name" {{macro}}="value" [X-Y]` to supply reusable macro values.
+
 - Additional Side Prompts Template Library [JSON file](resources/SidePromptTemplateLibrary.json) - just import to use.
+
+--- 
+
+## 🧹 Compaction
+
+![Click here for Compaction Menu](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/compaction.png)
+
+Compaction is a review workflow for making STMB-managed lorebook entries more token-efficient. It asks the AI to rewrite one existing entry, then shows you the original and the compacted draft before anything is replaced.
+
+This is separate from Summary Consolidation: Compaction rewrites one entry; Consolidation combines several memories into a larger recap.
+
+You can open it from the main Memory Books popup with **📝 Compaction**. Long Clip entries may also offer a **Compact Entry** button from the Clip workflow.
+
+#### Eligible entries
+
+Compaction lists eligible entries from the selected Memory Book:
+
+- Clip entries marked with `[STMB Clip]`
+- Side Prompt entries
+- STMB memory entries flagged by Memory Books
+
+Ordinary lorebook entries that are not managed by STMB are not shown.
+
+#### How it works
+
+1. Open Memory Books and click **📝 Compaction**.
+2. Choose a **Memory Book**. If the current chat already has a valid Memory Book, STMB pre-selects it; otherwise, choose one from the searchable dropdown.
+3. Choose a **Compaction Profile**. This controls which AI connection/model is used for the compaction request.
+4. Optional: click **Edit Compaction Prompt** if you want to change the instructions sent to the AI.
+5. Click **Compact Entry** next to the entry you want to rewrite.
+6. Compare **Original content** and **Compacted draft**. STMB shows estimated token counts for both.
+7. Edit the draft if needed, then choose **Replace with Compacted Version**, **Copy Compacted Draft**, or **Cancel**.
+
+STMB does **not** replace the original automatically. The lorebook entry is only changed if you click **Replace with Compacted Version**.
+
+#### Compaction Prompt
+
+The Compaction Prompt is editable. The default prompt tells the AI to preserve important facts, names, pronouns, macros, wrapper headings, and end markers while removing redundancy and low-value wording.
+
+Supported prompt placeholders:
+
+- `{{ENTRY_CONTENT}}` — the current lorebook entry content. This placeholder is required.
+- `{{ENTRY_KIND}}` — the entry type, such as Clip, SidePrompt, or Memory.
+- `{{ENTRY_TITLE}}` — the lorebook entry title.
+
+Use **Reset to Default** in the prompt editor if you want to restore the built-in Compaction Prompt.
+
+#### Best used for
+
+- long Clip entries
+- Side Prompt tracker entries that have accumulated repeated notes
+- STMB memory entries that are useful but wordy
+- entries that are always active and starting to waste context
+
+#### Not meant for
+
+- adding new facts
+- summarizing raw chat
+- creating new memories
+- rewriting ordinary lorebook entries that STMB does not manage
 
 ---
 
 ### 🧠 Regex Integration for Advanced Customization
+
+![Configure regex](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/regex.png)
+
 - **Full Control Over Text Processing**: Memory Books now integrates with SillyTavern's **Regex** extension, allowing you to apply powerful text transformations at two key stages:
     1.  **Prompt Generation**: Automatically modify the prompts sent to the AI by creating regex scripts that target the **User Input** placement.
     2.  **Response Parsing**: Clean, reformat, or standardize the AI's raw response before it's saved by targeting the **AI Output** placement.
@@ -351,6 +574,8 @@ At the bottom of the Trackers & Side Prompts dialog, the **Character Lorebook Ma
 
 ## 👤 Profile Management
 
+![Profile Management](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profiles.png)
+
 - **Profiles:** Each profile includes API, model, temperature, prompt/preset, title format, and lorebook settings.
 - **Import/Export:** Share profiles as JSON.
 - **Profile Creation:** Use the advanced options popup to save new profiles.
@@ -361,7 +586,9 @@ At the bottom of the Trackers & Side Prompts dialog, the **Character Lorebook Ma
 
 ## ⚙️ Settings & Configuration
 
-![Main settings panel](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/Main.png)
+![Main settings panel 1](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile1.png)
+![Main settings panel 2](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile2.png)
+![Main settings panel 3](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/profile3.png)
 
 ### **Global Settings**
 [Short video overview on Youtube](https://youtu.be/mG2eRH_EhHs)
@@ -405,6 +632,9 @@ At the bottom of the Trackers & Side Prompts dialog, the **Character Lorebook Ma
 
 ## 🏷️ Title Formatting
 
+![Title format](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/titleformat.png)
+![Title formats](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/titleformats.png)
+
 Customize the titles of your lorebook entries using a powerful template system.
 
 - **Placeholders:**
@@ -417,6 +647,41 @@ Customize the titles of your lorebook entries using a powerful template system.
   - Current date/time placeholders in various formats (e.g., `August 13, 2025` for date, `11:08 PM` for time).
 - **Auto-numbering:** Use `[0]`, `[00]`, `(0)`, `{0}`, `#0`, and now also the wrapped forms like `#[000]`, `([000])`, `{[000]}` for sequential, zero-padded numbering.
 - **Custom Formats:** You can create your own formats. As of v4.5.1, all printable Unicode characters (including emoji, CJK, accented, symbols, etc.) are allowed in titles; only Unicode control characters are blocked.
+
+---
+
+## 🧵 Context Memories
+
+- **Include up to 7 previous memories** as context for better continuity.
+- **Token estimation** includes context memories for accuracy.
+- **Advanced options** let you temporarily override prompt/profile behavior for a single memory run.
+
+![Memory generation with context](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/context.png)
+
+---
+
+## 🧾 Optional Job Queue (Chat Top Bar required)
+
+![ST Memory Books Job Queue](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/queue.png)
+
+The job queue is optional. You do not need it to use Memory Books.
+
+If you install and enable **Chat Top Bar** / **Chat Top Info Bar**, STMB adds a **Memory Books Jobs** button to the top chat bar. This opens a queue drawer where you can see active, completed, failed, canceled, or review-needed Memory Books jobs.
+
+This is especially useful when you are:
+
+- creating memories from longer scenes
+- running consolidation
+- running Side Prompts after memory creation
+- working in long chats where you want clearer progress and review handling
+
+The queue can show job status, let you cancel active jobs, retry failed jobs, and dismiss completed jobs. If a queued job needs user review, STMB can mark it as **Needs review** instead of silently overwriting something unsafe.
+
+If Chat Top Bar is not installed or enabled, STMB still works normally. You just will not have the job queue UI.
+
+### Installing Chat Top Bar
+
+![How to install Chat Top Bar](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/install.png)
 
 ---
 
@@ -459,6 +724,7 @@ If the entries are being triggered and are being sent to the AI, you should prob
 
 - **I can't find Memory Books in the Extensions menu!**
 Settings are located in the Extensions menu (the magic wand 🪄 to the left of your input box). Look for "Memory Books".
+
 ![Location of STMB settings](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/menu.png)
 
 - **No lorebook available or selected:**
@@ -476,6 +742,7 @@ Settings are located in the Extensions menu (the magic wand 🪄 to the left of 
   - Choose a different range, or enable "Allow scene overlap" in settings.
 
 ![Scene overlap warning](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/overlap.png)
+![Enable scene overlap](https://github.com/aikohanasaki/imagehost/blob/main/STMemoryBooks/overlap2.png)
 
 - **AI failed to generate valid memory:**
   - Use a model that supports JSON output.
