@@ -634,7 +634,12 @@ function populateLorebookEntry(entry, memoryResult, entryTitle, lorebookSettings
     if (memoryResult.metadata?.chatId) { // Tag entry with the chat it belongs to
         entry.STMB_chatId = memoryResult.metadata.chatId;
     }
-    
+
+    // Phase 1a: audience gate. memoryResult.characterFilter is null/absent for fail-open.
+    if (memoryResult.characterFilter && Array.isArray(memoryResult.characterFilter.names)) {
+        const { isExclude = false, names, tags = [] } = memoryResult.characterFilter;
+        entry.characterFilter = { isExclude, names, tags }; // strip helper-only `unresolved`
+    }
 }
 
 /**
