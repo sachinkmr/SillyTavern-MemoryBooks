@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     audienceOf, messageWitnessedBy, isPresentInWindow, filterCompiledSceneForCharacter,
+    realityOf, isUnreal, dropUnrealMessages,
 } from '../witnessScope.js';
 
 const stamped = (aud, name = 'Shilpa', extra = {}) => ({
@@ -64,4 +65,28 @@ test('filterCompiledSceneForCharacter joins by id, fail-open, updates metadata',
     assert.equal(out.metadata.witnessFiltered, 1);
     // input untouched
     assert.equal(compiled.messages.length, 3);
+});
+
+test('realityOf returns the lowercased reality tag or null', () => {
+    assert.equal(realityOf({ extra: { channel: { reality: 'Dream' } } }), 'dream');
+    assert.equal(realityOf({ extra: { channel: {} } }), null);
+    assert.equal(realityOf({}), null);
+});
+
+test('isUnreal is true for dream/flashback/story, false otherwise', () => {
+    assert.equal(isUnreal({ extra: { channel: { reality: 'dream' } } }), true);
+    assert.equal(isUnreal({ extra: { channel: { reality: 'flashback' } } }), true);
+    assert.equal(isUnreal({ extra: { channel: { reality: 'story' } } }), true);
+    assert.equal(isUnreal({ extra: { channel: { reality: 'real' } } }), false);
+    assert.equal(isUnreal({ extra: {} }), false);
+});
+
+test('dropUnrealMessages removes only unreal-tagged messages', () => {
+    const msgs = [
+        { mes: 'a' },                                                   // real (unstamped)
+        { mes: 'b', extra: { channel: { reality: 'dream' } } },         // unreal
+        { mes: 'c', extra: { channel: { audience: ['aisha'] } } },      // real
+    ];
+    assert.deepEqual(dropUnrealMessages(msgs).map(m => m.mes), ['a', 'c']);
+    assert.deepEqual(dropUnrealMessages(null), []);
 });

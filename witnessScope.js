@@ -61,3 +61,23 @@ export function filterCompiledSceneForCharacter(compiledScene, chat, charName) {
         },
     };
 }
+
+/** Unreal-scene reality tags that memory must NOT ingest (mirrors StateTracker). */
+const UNREAL_REALITIES = new Set(['dream', 'flashback', 'story']);
+
+/** Lowercased reality tag for a message ('dream'|'flashback'|'story'|...), or null. */
+export function realityOf(message) {
+    const r = message?.extra?.channel?.reality;
+    return r ? String(r).toLowerCase() : null;
+}
+
+/** True when the message is an unreal scene memory must skip. */
+export function isUnreal(message) {
+    const r = realityOf(message);
+    return r !== null && UNREAL_REALITIES.has(r);
+}
+
+/** Return a new array with unreal-tagged messages removed. */
+export function dropUnrealMessages(messages) {
+    return (Array.isArray(messages) ? messages : []).filter(m => !isUnreal(m));
+}
