@@ -1426,7 +1426,7 @@ async function buildPrompt(compiledScene, profile) {
     // Teaches the extraction LLM which content layers are private vs observable,
     // and enforces character-perspective scoping so private content from other
     // characters is never stored as {{char}}'s known facts.
-    const SCHEME_B_FILTER = substituteParams(
+    const SCENE_FORMAT_GUIDE =
         '## Scene Format Guide (Scheme B)\n' +
         '- "quotes" = spoken dialogue — INCLUDE: audible to characters present.\n' +
         '- *italics* = private unspoken thought — SKIP: invisible to all other characters.\n' +
@@ -1443,10 +1443,16 @@ async function buildPrompt(compiledScene, profile) {
         '- Emotional metaphors and framing: "intoxicating", "electricity between them", "dread pooled"\n' +
         '- Internal effort or process: "she fought to stay calm", "she forced herself to" — skip the effort; if the visible result matters, note only what is outwardly visible\n' +
         '- First-person interiority: feelings, self-awareness, and reasoning not expressed outwardly\n' +
-        '\n' +
+        '\n';
+
+    const PERSPECTIVE_RULE =
         '## Perspective Rule\n' +
         'This memory belongs to {{char}}. Extract ONLY what {{char}} directly witnessed or was explicitly told. ' +
-        'Do NOT extract another character\'s private sensations, concealed actions, or internal thoughts as if {{char}} already knew about them.\n\n',
+        'Do NOT extract another character\'s private sensations, concealed actions, or internal thoughts as if {{char}} already knew about them.\n\n';
+
+    const twoPlane = !!(extension_settings?.STMemoryBooks?.moduleSettings?.twoPlaneMemory);
+    const SCHEME_B_FILTER = substituteParams(
+        SCENE_FORMAT_GUIDE + (twoPlane ? '' : PERSPECTIVE_RULE),
         metadata.userName, metadata.characterName
     );
 

@@ -408,6 +408,7 @@ const defaultSettings = {
     useRegex: false,
     selectedRegexOutgoing: [],
     selectedRegexIncoming: [],
+    twoPlaneMemory: false,
     // Arc creation ordering (applies to newly created arcs)
     arcOrderMode: "auto",
     arcOrderValue: 100,
@@ -6954,6 +6955,7 @@ async function showSettingsPopup() {
     regexOptions,
     selectedRegexOutgoing,
     selectedRegexIncoming,
+    twoPlaneMemory: settings.moduleSettings.twoPlaneMemory || false,
     titleFormats: getDefaultTitleFormats().map((format) => ({
       value: format,
       isSelected: format === defaultProfileTitleFormat,
@@ -7168,6 +7170,13 @@ function setupSettingsEventListeners() {
       saveSettingsDebounced();
       const btn = popupElement.querySelector("#stmb-configure-regex");
       if (btn) btn.style.display = e.target.checked ? "" : "none";
+      return;
+    }
+
+    // Two-plane memory gate
+    if (e.target.matches("#stmb-two-plane-memory")) {
+      settings.moduleSettings.twoPlaneMemory = e.target.checked;
+      saveSettingsDebounced();
       return;
     }
 

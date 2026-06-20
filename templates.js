@@ -136,6 +136,16 @@ export const settingsTemplate = Handlebars.compile(`
             <small class="opacity70p" data-i18n="STMemoryBooks_RegexSelection_Desc">Selecting a regex here will run it REGARDLESS of whether it is enabled or disabled.</small>
         </div>
 
+        <div class="world_entry_form_control" class="flex-container">
+            <div class="flex flexFlowRow alignItemsBaseline">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="stmb-two-plane-memory" {{#if twoPlaneMemory}}checked{{/if}}>
+                    <span data-i18n="STMemoryBooks_TwoPlaneMemory">Two-plane memory (objective + audience-gated)</span>
+                </label>
+            </div>
+            <small class="opacity70p" data-i18n="STMemoryBooks_TwoPlaneMemory_Desc">When enabled, memory summaries are objective (no character-perspective scoping). Use with audience-gated lorebook entries.</small>
+        </div>
+
         <h3 class="stmb-section-title" data-i18n="STMemoryBooks_CurrentLorebookConfig">Current Lorebook Configuration</h3>
 
         <div class="info-block">
