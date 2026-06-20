@@ -2523,6 +2523,8 @@ async function executeMemoryGeneration(
   }
 
   const maxRetries = MEMORY_GENERATION.MAX_RETRIES;
+  // Phase-1a: declare in outer scope so catch block (lastFailedAIContext) can capture them
+  let plane1Book = null, plane1Filter = null;
 
   try {
     throwIfStmbStopped(runEpoch);
@@ -2534,7 +2536,6 @@ async function executeMemoryGeneration(
     compiledScene = compileScene(sceneRequest);
 
     // Phase-1a two-plane memory: objective input-filter + gate resolve
-    let plane1Book = null, plane1Filter = null;
     if (isTwoPlane()) {
       const p1 = computePlane1Memory(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
       if (p1.skipped) {
@@ -2748,31 +2749,34 @@ async function executeMemoryGeneration(
     }
 
     // Mirror to additional lorebooks if multi-lorebook manual mode is active
-    try {
-      const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
-      if (startChatId !== null && _mirrorChatId !== startChatId) {
-        console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
-      } else {
-        const _sceneRange = _parseSceneRangeStr(finalMemoryResult?.metadata?.sceneRange);
-        const _allLoreNames = await getEffectiveLorebookNames();
-        const _extraLoreNames = _allLoreNames.filter(n => n !== lorebookValidation.name);
-        for (const extraName of _extraLoreNames) {
-          try {
-            const extraData = await loadWorldInfo(extraName);
-            if (extraData) {
-              if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
-                console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
-              } else {
-                await addMemoryToLorebook(finalMemoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
+    // In two-plane mode the primary write already went to the world plane1Book — skip mirror to avoid duplication.
+    if (!(isTwoPlane() && plane1Book)) {
+      try {
+        const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+        if (startChatId !== null && _mirrorChatId !== startChatId) {
+          console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
+        } else {
+          const _sceneRange = _parseSceneRangeStr(finalMemoryResult?.metadata?.sceneRange);
+          const _allLoreNames = await getEffectiveLorebookNames();
+          const _extraLoreNames = _allLoreNames.filter(n => n !== lorebookValidation.name);
+          for (const extraName of _extraLoreNames) {
+            try {
+              const extraData = await loadWorldInfo(extraName);
+              if (extraData) {
+                if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
+                  console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
+                } else {
+                  await addMemoryToLorebook(finalMemoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
+                }
               }
+            } catch (e) {
+              console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
             }
-          } catch (e) {
-            console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
           }
         }
+      } catch (e) {
+        console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
       }
-    } catch (e) {
-      console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
     }
     throwIfStmbStopped(runEpoch);
     try {
@@ -2905,6 +2909,8 @@ async function executeMemoryGeneration(
           compiledScene?.metadata?.sceneStart !== undefined
             ? `${compiledScene.metadata.sceneStart}-${compiledScene.metadata.sceneEnd}`
             : `${sceneData.sceneStart}-${sceneData.sceneEnd}`,
+        plane1Filter,
+        plane1BookName: plane1Book?.name ?? null,
       };
       lastFailureToast = toastr.error(
         __st_t_tag`AI failed to generate valid memory${codeTag}: ${error.message}${retryMsg}`,
@@ -3220,7 +3226,7 @@ async function executeQueuedMemoryJob(job, jobContext) {
 
   // Phase-1a: if all messages were unreal/unwitnessed at enqueue, skip cleanly
   if (payload.plane1?.skipped) {
-    jobContext.patch({ state: "canceled", detail: `Skipped: ${payload.plane1.reason || 'all-unreal'}` });
+    jobContext.patch({ state: "skipped", detail: `Skipped: ${payload.plane1.reason || 'all-unreal'}` });
     return;
   }
 
@@ -3231,7 +3237,7 @@ async function executeQueuedMemoryJob(job, jobContext) {
   });
   jobContext.throwIfCancelled();
   // Phase-1a: stamp characterFilter so addMemoryToLorebook can gate the entry
-  memoryResult.characterFilter = payload.plane1?.characterFilter ?? null;
+  if (isTwoPlane()) memoryResult.characterFilter = payload.plane1?.characterFilter ?? null;
 
   let finalMemoryResult = memoryResult;
   if (settings.moduleSettings?.showMemoryPreviews) {
@@ -8616,12 +8622,15 @@ async function applyManualFixedJson(correctedRaw) {
     };
 
     // Phase-1a: stamp characterFilter and resolve world memories book for repair path
+    // Reuse the gate computed at original generation — recomputing on the already-filtered
+    // context.compiledScene can over-broaden the audience and leak.
     let _repairLorebookValidation = context.lorebookValidation;
-    if (isTwoPlane() && context?.compiledScene) {
-      const p1 = computePlane1Memory(context.compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
-      memoryResult.characterFilter = p1.characterFilter ?? null;
-      const wb = await resolveWorldMemoriesBook();
-      if (wb) _repairLorebookValidation = wb;
+    if (isTwoPlane()) {
+      memoryResult.characterFilter = context.plane1Filter ?? null;
+      if (context.plane1BookName) {
+        const data = await loadWorldInfo(context.plane1BookName);
+        if (data?.entries) _repairLorebookValidation = { valid: true, name: context.plane1BookName, data };
+      }
     }
 
     throwIfStmbStopped(runEpoch);
@@ -8646,31 +8655,34 @@ async function applyManualFixedJson(correctedRaw) {
       throw new Error(addResult.error || "Failed to add memory to lorebook");
     }
 
-    try {
-      const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
-      if (startChatId !== null && _mirrorChatId !== startChatId) {
-        console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
-      } else {
-        const _sceneRange = _parseSceneRangeStr(memoryResult?.metadata?.sceneRange);
-        const _allLoreNames = await getEffectiveLorebookNames();
-        const _extraLoreNames = _allLoreNames.filter(n => n !== context.lorebookValidation?.name);
-        for (const extraName of _extraLoreNames) {
-          try {
-            const extraData = await loadWorldInfo(extraName);
-            if (extraData) {
-              if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
-                console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
-              } else {
-                await addMemoryToLorebook(memoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
+    // In two-plane mode the repair write already went to the world plane1Book — skip mirror to avoid duplication.
+    if (!(isTwoPlane() && context.plane1BookName)) {
+      try {
+        const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+        if (startChatId !== null && _mirrorChatId !== startChatId) {
+          console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
+        } else {
+          const _sceneRange = _parseSceneRangeStr(memoryResult?.metadata?.sceneRange);
+          const _allLoreNames = await getEffectiveLorebookNames();
+          const _extraLoreNames = _allLoreNames.filter(n => n !== context.lorebookValidation?.name);
+          for (const extraName of _extraLoreNames) {
+            try {
+              const extraData = await loadWorldInfo(extraName);
+              if (extraData) {
+                if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
+                  console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
+                } else {
+                  await addMemoryToLorebook(memoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
+                }
               }
+            } catch (e) {
+              console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
             }
-          } catch (e) {
-            console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
           }
         }
+      } catch (e) {
+        console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
       }
-    } catch (e) {
-      console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
     }
     throwIfStmbStopped(runEpoch);
 

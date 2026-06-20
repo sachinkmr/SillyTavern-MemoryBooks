@@ -73,12 +73,6 @@ test('fail-open: an unstamped message is fed to everyone', () => {
     assert.deepEqual(ids(filterCompiledSceneForCharacter(scene, chat, 'Aisha')), [0]);
 });
 
-// U6 SHELL — Aisha should still learn "a whisper happened" (NOT the content).
-// Requires the shell mechanism (Phase 2). Locked here as the Phase-2 gate.
-test('U6 shell: Aisha learns a whisper occurred (no content)', { skip: 'Phase 2 — shell mechanism not built' }, () => {
-    assert.fail('implement in Phase 2');
-});
-
 // Phase-1a coverage pointer — wiring covered by plane1.test.js + integration review.
 test('Phase 1a: objective single-segment witness gate is covered by tests/plane1.test.js', () => {
     // U1/U2/N2 + drop-unreal + dead-filter + fail-open/closed are exercised in plane1.test.js
