@@ -37,3 +37,16 @@ test('buildCharacterFilter dedups and partially resolves', () => {
         isExclude: false, names: ['Aisha'], tags: [], unresolved: ['ghost'],
     });
 });
+
+test('canonicalName: ambiguous first token resolves to nobody (fail-closed)', () => {
+    const roster = ['Kavya Nair', 'Kavya Reddy'];
+    assert.equal(canonicalName('kavya', roster), null);              // ambiguous → null
+    assert.equal(canonicalName('Kavya Nair', roster), 'Kavya Nair'); // exact still wins
+});
+
+test('buildCharacterFilter: ambiguous first token → matches nobody, not the wrong target', () => {
+    const roster = ['Kavya Nair', 'Kavya Reddy'];
+    assert.deepEqual(buildCharacterFilter(['kavya'], roster), {
+        isExclude: false, names: [], tags: [], unresolved: ['kavya'],
+    });
+});

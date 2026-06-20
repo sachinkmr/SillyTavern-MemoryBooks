@@ -14,7 +14,10 @@ export function audienceOf(message) {
     return Array.isArray(aud) ? aud.map(n => String(n).toLowerCase()) : null;
 }
 
-/** True when charName witnessed the message (fail-open on unstamped). */
+/**
+ * True when charName witnessed the message (fail-open on unstamped).
+ * charName must be the stamp-token form (lowercased perceiver name as stamped by StateTracker); callers resolve {{user}}/persona to that token first.
+ */
 export function messageWitnessedBy(message, charName) {
     const aud = audienceOf(message);
     if (!aud) return true;
@@ -47,6 +50,7 @@ export function isPresentInWindow(charName, chat, start, end) {
  * compiledMessage.id is the chat index (set by compileScene) — used to join
  * back to the live message for its stamp. metadata.messageCount is updated;
  * metadata.witnessFiltered records how many messages were dropped.
+ * charName must be the stamp-token form (lowercased perceiver name as stamped by StateTracker); callers resolve {{user}}/persona to that token first.
  */
 export function filterCompiledSceneForCharacter(compiledScene, chat, charName) {
     const all = compiledScene?.messages || [];

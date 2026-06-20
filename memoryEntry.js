@@ -5,20 +5,24 @@
 
 /**
  * Resolve a (lowercased / first-name) perceiver name to its canonical roster name.
+ * Ambiguous first-token (>1 roster member shares the same first name) resolves to null.
  * @param {string} name
  * @param {string[]} roster canonical character (card) names
- * @returns {string|null} canonical name, or null if no roster member matches
+ * @returns {string|null} canonical name, or null if no roster member matches or first-token is ambiguous
  */
 export function canonicalName(name, roster) {
     const n = String(name || '').trim().toLowerCase();
     if (!n || !Array.isArray(roster)) return null;
-    for (const r of roster) {                                   // exact, case-insensitive
+    // exact (case-insensitive) — unambiguous, always wins
+    for (const r of roster) {
         if (String(r).trim().toLowerCase() === n) return r;
     }
-    for (const r of roster) {                                   // first-token (card first name)
-        if (String(r).trim().toLowerCase().split(/\s+/)[0] === n) return r;
-    }
-    return null;
+    // first-token — resolve ONLY when exactly one roster member matches;
+    // ambiguous (>1) or none → null (fail-closed: never guess a wrong target)
+    const firstTokenMatches = roster.filter(
+        r => String(r).trim().toLowerCase().split(/\s+/)[0] === n,
+    );
+    return firstTokenMatches.length === 1 ? firstTokenMatches[0] : null;
 }
 
 /**
