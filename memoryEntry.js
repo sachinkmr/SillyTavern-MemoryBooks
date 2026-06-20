@@ -3,6 +3,8 @@
  * entry metadata. No SillyTavern imports. See docs/two-plane-memory/.
  */
 
+import { characterFilterName } from './wiFilterName.js';
+
 /**
  * Resolve a (lowercased / first-name) perceiver name to its canonical roster name.
  * Ambiguous first-token (>1 roster member shares the same first name) resolves to null.
@@ -44,4 +46,26 @@ export function buildCharacterFilter(audience, roster) {
         else { unresolved.push(a); }
     }
     return { isExclude: false, names, tags: [], unresolved };             // fail-closed
+}
+
+/**
+ * Build a World-Info-ready characterFilter from a witness audience, mapping resolved
+ * roster members to their AVATAR BASENAME (ST matches getCharaFilename, never display name).
+ * @param {string[]} audience perceiver tokens (any case)
+ * @param {{name:string,avatar?:string}[]} rosterRows discoverChatCharacters()-style rows
+ * @returns {{isExclude:false,names:string[],tags:string[],unresolved:string[]}|null}
+ *   null ONLY when audience is empty/missing (fail-open). Non-empty unresolved -> names:[] (N9).
+ */
+export function buildEntryCharacterFilter(audience, rosterRows) {
+    const rows = Array.isArray(rosterRows) ? rosterRows : [];
+    const roster = rows.map(r => r && r.name).filter(Boolean);
+    const cf = buildCharacterFilter(audience, roster);   // {names: display names}|null
+    if (!cf) return null;                                 // fail-open
+    const byName = new Map(rows.map(r => [r.name, r]));
+    const names = [];
+    for (const dn of cf.names) {
+        const base = characterFilterName(byName.get(dn));
+        if (base && !names.includes(base)) names.push(base);
+    }
+    return { isExclude: false, names, tags: [], unresolved: cf.unresolved };
 }

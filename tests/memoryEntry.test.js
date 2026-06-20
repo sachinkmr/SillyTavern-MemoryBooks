@@ -50,3 +50,26 @@ test('buildCharacterFilter: ambiguous first token → matches nobody, not the wr
         isExclude: false, names: [], tags: [], unresolved: ['kavya'],
     });
 });
+
+import { buildEntryCharacterFilter } from '../memoryEntry.js';
+
+const ROSTER_WITH_AVATARS = [
+  { name: 'Shilpa', avatar: 'Shilpa.png' },
+  { name: 'Priya Mehta', avatar: 'Priya.png' }, // display name != basename (the live 2026-06-11 bug)
+];
+
+test('buildEntryCharacterFilter maps resolved names to avatar basenames', () => {
+  const cf = buildEntryCharacterFilter(['shilpa', 'priya mehta'], ROSTER_WITH_AVATARS);
+  assert.deepEqual(cf.names.sort(), ['Priya', 'Shilpa']);   // basenames, NOT 'Priya Mehta'
+  assert.equal(cf.isExclude, false);
+});
+
+test('buildEntryCharacterFilter is fail-open (null) on empty audience', () => {
+  assert.equal(buildEntryCharacterFilter([], ROSTER_WITH_AVATARS), null);
+});
+
+test('buildEntryCharacterFilter is fail-closed (names:[]) on unresolved non-empty audience', () => {
+  const cf = buildEntryCharacterFilter(['ghost'], ROSTER_WITH_AVATARS);
+  assert.deepEqual(cf.names, []);                 // matches nobody, never everybody (N9)
+  assert.deepEqual(cf.unresolved, ['ghost']);
+});
