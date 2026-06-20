@@ -31,7 +31,8 @@ Every task's requirements implicitly include this section. Copy values verbatim.
 |------|--------|----------------|
 | `witnessScope.js` | modify (add 2 pure fns) | `dropUnrealFromCompiledScene`, `filterCompiledSceneForAudience` — compiled-scene siblings of `filterCompiledSceneForCharacter` (cm.id→chat join) |
 | `memoryEntry.js` | modify (add 1 pure fn) | `buildEntryCharacterFilter(audience, rosterRows)` — `buildCharacterFilter` + display-name→avatar-basename mapping |
-| `plane1.js` | **create** | Plane-1 module: PURE `computePlane1Memory(...)` orchestrator (the witness-correctness heart) + impure `getChatRoster()` + impure `resolveWorldMemoriesBook()` |
+| `plane1.js` | **create** | PURE `computePlane1Memory(...)` orchestrator (the witness-correctness heart). NO SillyTavern imports (so it stays node-testable). |
+| `plane1Context.js` | **create** | IMPURE resolvers `getChatRoster()` + `resolveWorldMemoriesBook()` (SillyTavern imports). Kept separate from `plane1.js` so the pure orchestrator + its tests never load script.js. |
 | `stmemory.js` | modify (~1429-1451) | Split `SCHEME_B_FILTER`; drop the Perspective Rule when `twoPlaneMemory` is on |
 | `addlore.js` | modify (`populateLorebookEntry` ~614-638) | Stamp `entry.characterFilter` from `memoryResult.characterFilter` (strip `unresolved`), AFTER `applyLorebookEntrySettings` |
 | `index.js` | modify (3 seams) | Wire compute→filter→route→thread at `executeMemoryGeneration`, `buildQueuedMemoryJob`/`executeQueuedMemoryJob`, JSON-repair; flag-gated |
@@ -391,8 +392,8 @@ export function computePlane1Memory(compiledScene, chat, rosterRows, opts = {}) 
 ### Task 4: Impure resolvers — `getChatRoster()` + `resolveWorldMemoriesBook()`
 
 **Files:**
-- Modify: `plane1.js` (append impure helpers; add ST imports)
-- Test: `tests/plane1.test.js` is unaffected (these are impure; verified by review + live). Add a small pure test only if a name-derivation helper is extracted.
+- Create: `plane1Context.js` (impure helpers; SillyTavern imports). MUST be a NEW file — do NOT add these to `plane1.js`, which stays pure so `tests/plane1.test.js` can load it under `node --test` (script.js does not resolve in the test runner).
+- Test: none (these are impure; verified by review + live). `node --test tests/` must still pass unchanged (proves `plane1.js` stayed pure).
 
 **Interfaces:**
 - Produces:
@@ -404,7 +405,7 @@ export function computePlane1Memory(compiledScene, chat, rosterRows, opts = {}) 
 - [ ] **Step 1: Implement `getChatRoster`** (mirror `discoverChatCharacters`)
 
 ```javascript
-// plane1.js — add imports near top (match the exact relative depth used elsewhere in repo):
+// plane1Context.js — imports (match the exact relative depth/specifiers used elsewhere in repo):
 import { characters, this_chid, chat_metadata } from '../../../../script.js';
 import { selected_group, groups } from '../../../../scripts/group-chats.js';
 import { world_names, loadWorldInfo, createNewWorldInfo } from '../../../../scripts/world-info.js';
@@ -434,7 +435,7 @@ export function getChatRoster() {
 - [ ] **Step 2: Implement `resolveWorldMemoriesBook`**
 
 ```javascript
-// plane1.js — append
+// plane1Context.js — append
 /** Resolve/create/load the shared "<World> - Memories" book. Does NOT rebind chat metadata. */
 export async function resolveWorldMemoriesBook() {
     const ctx = getCurrentMemoryBooksContext();
@@ -454,7 +455,7 @@ export async function resolveWorldMemoriesBook() {
 
 - [ ] **Step 3: Verify** — `node --test tests/` (no regressions). Manual/review: confirm `createNewWorldInfo` creates an empty book and does NOT write `chat_metadata[METADATA_KEY]` (contrast `autoCreateLorebook`, which does).
 
-- [ ] **Step 4: Commit** — `git add plane1.js && git commit -m "feat(memory): roster + <World>-Memories book resolvers (Phase 1a)"`
+- [ ] **Step 4: Commit** — `git add plane1Context.js && git commit -m "feat(memory): roster + <World>-Memories book resolvers (Phase 1a)"`
 
 ---
 
@@ -545,7 +546,7 @@ const SCHEME_B_FILTER = substituteParams(
 - Modify: `tests/witness-pov.test.js` — repurpose the skipped Phase-1 placeholder
 
 **Interfaces:**
-- Consumes: `computePlane1Memory`, `getChatRoster`, `resolveWorldMemoriesBook` (`./plane1.js`); live `chat`, `name1` (script.js, already imported).
+- Consumes: `computePlane1Memory` (`./plane1.js`); `getChatRoster`, `resolveWorldMemoriesBook` (`./plane1Context.js`); live `chat`, `name1` (script.js, already imported).
 - Produces: when `twoPlaneMemory` on — objective input-filtered scene fed to `createMemory`; `memoryResult.characterFilter` set; the write routed to `<World> - Memories`. When off — unchanged.
 
 **Global gate helper** (define once near the other module helpers):
