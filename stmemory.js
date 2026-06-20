@@ -987,12 +987,40 @@ async function buildPrompt(compiledScene, profile) {
     
     // Use substituteParams to allow for standard macros like {{char}} and {{user}}
     const processedSystemPrompt = substituteParams(systemPrompt, metadata.userName, metadata.characterName);
-    
+
+    // Scheme B format filter — prepended to every extraction regardless of preset.
+    // Teaches the extraction LLM which content layers are private vs observable,
+    // and enforces character-perspective scoping so private content from other
+    // characters is never stored as {{char}}'s known facts.
+    const SCHEME_B_FILTER = substituteParams(
+        '## Scene Format Guide (Scheme B)\n' +
+        '- "quotes" = spoken dialogue — INCLUDE: audible to characters present.\n' +
+        '- *italics* = private unspoken thought — SKIP: invisible to all other characters.\n' +
+        '- (parentheses) = narrator aside — SKIP: reader-only, no character perceives it.\n' +
+        '- Plain prose = actions and behavior. Apply the rules below.\n' +
+        '\n' +
+        'INCLUDE (externally observable):\n' +
+        '- Physical actions: "she leaned in", "his touch became frantic", "she went rigid"\n' +
+        '- Audible sounds or speech delivery: "inhale escaped", "voice came out too high"\n' +
+        '- Visible tells that reveal a concealed state: "fingers curled", "didn\'t look down" — extract the behavior, not the internal reason behind it\n' +
+        '\n' +
+        'SKIP (internal/unobservable):\n' +
+        '- Internal sensations: "a jolt through her", "warmth spread through her"\n' +
+        '- Emotional metaphors and framing: "intoxicating", "electricity between them", "dread pooled"\n' +
+        '- Internal effort or process: "she fought to stay calm", "she forced herself to" — skip the effort; if the visible result matters, note only what is outwardly visible\n' +
+        '- First-person interiority: feelings, self-awareness, and reasoning not expressed outwardly\n' +
+        '\n' +
+        '## Perspective Rule\n' +
+        'This memory belongs to {{char}}. Extract ONLY what {{char}} directly witnessed or was explicitly told. ' +
+        'Do NOT extract another character\'s private sensations, concealed actions, or internal thoughts as if {{char}} already knew about them.\n\n',
+        metadata.userName, metadata.characterName
+    );
+
     // Build scene text for user prompt
     const sceneText = formatSceneForAI(messages, metadata, previousSummariesContext);
-    
-    // Combine system prompt and scene
-    const finalPrompt = `${processedSystemPrompt}\n\n${sceneText}`;
+
+    // Combine: Scheme B filter + system prompt + scene
+    const finalPrompt = `${SCHEME_B_FILTER}${processedSystemPrompt}\n\n${sceneText}`;
 
     // Apply user-selected outgoing regex scripts (bypass engine gating)
     try {
