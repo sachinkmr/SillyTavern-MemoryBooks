@@ -2694,6 +2694,7 @@ export async function runAfterMemory(compiledScene, profile = null, options = {}
                         _tplLores: r.tplLores,
                         _charTarget: r.charTarget,
                         _charLore: r.charLore,
+                        _tpl: tpl,
                     });
                     succeededNames.push(r.displayName);
                 } else {
@@ -2753,6 +2754,13 @@ export async function runAfterMemory(compiledScene, profile = null, options = {}
                         name,
                         saved: true,
                     });
+                }
+
+                // Deep-save: fire after all hot upserts settled, per character item
+                for (const item of items) {
+                    if (!item._charTarget) continue;
+                    if (failedItemNames.has(item.name)) continue;
+                    await maybeDeepSave({ tpl: item._tpl, charTarget: item._charTarget, resultText: item.content });
                 }
             }
         }
@@ -3314,6 +3322,9 @@ export async function runSidePrompt(args, options = {}) {
                         });
                         dbg(`Upsert complete for lorebook: "${tplLore.name}"`);
                     }
+                }
+                if (charTarget) {
+                    await maybeDeepSave({ tpl, charTarget, resultText });
                 }
                 console.log(`${MODULE_NAME}: SidePrompt success`, {
                     trigger: 'manual',

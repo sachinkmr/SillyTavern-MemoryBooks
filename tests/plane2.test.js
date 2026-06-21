@@ -68,6 +68,19 @@ test('coldFactTitle is stable + dedup-bearing (same fact -> same title)', () => 
   assert.match(coldFactTitle('Shilpa', it), /^\[Deep\]\[Shilpa\] knows:Sachin —/);
 });
 
+test('coldFactTitle: same 48-char prefix but different full fact → different titles', () => {
+  // Both facts share the same first 48 chars; only their suffix differs
+  const prefix = 'lost his flat and moved in with a friend in town';  // exactly 48 chars
+  const itA = { tag: 'knows', about: 'Sachin', fact: prefix + ' A' };
+  const itB = { tag: 'knows', about: 'Sachin', fact: prefix + ' B' };
+  assert.notEqual(coldFactTitle('Shilpa', itA), coldFactTitle('Shilpa', itB));
+});
+
+test('coldFactTitle: identical fact always yields identical title (idempotent)', () => {
+  const it = { tag: 'knows', about: 'Sachin', fact: 'lost his flat and hides the debt' };
+  assert.equal(coldFactTitle('Shilpa', it), coldFactTitle('Shilpa', it));
+});
+
 test('buildColdFactEntry returns null when the knower cannot be gated (not in roster)', () => {
   const e = buildColdFactEntry({ tag: 'knows', about: 'Sachin', fact: 'x' }, { name: 'Ghost', avatar: 'Ghost.png' }, [{ name: 'Shilpa', avatar: 'Shilpa.png' }]);
   assert.equal(e, null);

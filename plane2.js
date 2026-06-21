@@ -36,9 +36,21 @@ function slug(s, n = 48) {
     return String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
 }
 
-/** Stable, dedup-bearing title (upsert-by-title => idempotent). */
+/** FNV-1a 32-bit hash → short hex string. Pure, no imports. */
+function fnv1a(s) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = (h * 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+}
+
+/** Stable, dedup-bearing title (upsert-by-title => idempotent).
+ *  A hash of the full fact is appended so two facts with the same
+ *  48-char prefix but different full text get distinct titles (no silent overwrite). */
 export function coldFactTitle(charName, item) {
-    return `[Deep][${charName}] ${item.tag}:${item.about} — ${slug(item.fact)}`;
+    return `[Deep][${charName}] ${item.tag}:${item.about} — ${slug(item.fact)} ⟨${fnv1a(String(item.fact || ''))}⟩`;
 }
 
 /** Cold-fact lorebook entry gated to the knower. null if tag not cold-eligible. */
@@ -83,7 +95,7 @@ export async function writeDeepFacts({ tpl, charTarget, resultText, rosterRows, 
         if (!entry) continue;
         await deps.upsertByTitle(bookName, data, entry.title, entry.content, {
             defaults: { vectorized: true },
-            entryOverrides: { key: entry.keys, characterFilter: entry.characterFilter, ...entry.metadata },
+            entryOverrides: { ...entry.metadata, key: entry.keys, characterFilter: entry.characterFilter },
         });
         written++;
     }
