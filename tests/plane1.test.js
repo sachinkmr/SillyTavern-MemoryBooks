@@ -214,6 +214,65 @@ test('dead-filter: per-segment gate uses avatar basenames', () => {
   assert.deepEqual(segs[0].characterFilter.names, ['Priya']);     // NOT 'Priya Mehta'
 });
 
+// --- Phase-2 follow-up: whisper-merge tests ---
+
+test('WHISPER-MERGE: {A,Sh} whisper(present_cast covers both) {A,Sh} → ONE merged {A,Sh} segment + whisper segment', () => {
+  // Build fixture: msg0={A,Sh}, msg1={Sh} whisper (Aisha stayed present), msg2={A,Sh}
+  const { chat, compiledScene } = fixture([
+    { name: 'Shilpa',  audience: ['user', 'shilpa', 'aisha'] },           // msg 0
+    { name: 'Shilpa',  audience: ['user', 'shilpa'] },                    // msg 1 — directed/whisper
+    { name: 'Aisha',   audience: ['user', 'shilpa', 'aisha'] },           // msg 2
+  ]);
+  // Stamp present_cast on the whisper: Aisha stayed present in the room
+  chat[1].extra.channel.present_cast = ['user', 'shilpa', 'aisha'];
+
+  const segs = computePlane1Segments(compiledScene, chat, ROSTER3, { userToken: 'user' });
+
+  // Expect exactly 2 segments: the merged {A,Sh} segment + the {Sh} whisper segment
+  assert.equal(segs.length, 2);
+
+  // Find the merged {A,Sh} segment — audience includes both
+  const aiShaSeg = segs.find(s => s.audience.includes('aisha') && s.audience.includes('shilpa'));
+  assert.ok(aiShaSeg, 'merged {A,Sh} segment must exist');
+  // Its messages must be [0,2] (skipping whisper at 1)
+  assert.deepEqual(segIds(aiShaSeg), [0, 2]);
+  assert.deepEqual(aiShaSeg.characterFilter.names.sort(), ['Aisha', 'Shilpa']);
+
+  // The {Sh}-only whisper segment
+  const shSeg = segs.find(s => !s.audience.includes('aisha') && s.audience.includes('shilpa'));
+  assert.ok(shSeg, '{Sh} whisper segment must exist');
+  assert.deepEqual(segIds(shSeg), [1]);
+});
+
+test('EXIT-NO-MERGE: {A,Sh} genuine-exit {Sh no present_cast} {A,Sh} → 3 segments (no merge)', () => {
+  // msg1 has no present_cast → treated as a genuine exit; {A,Sh} segments must NOT merge
+  const { chat, compiledScene } = fixture([
+    { name: 'Shilpa',  audience: ['user', 'shilpa', 'aisha'] },           // msg 0
+    { name: 'Shilpa',  audience: ['user', 'shilpa'] },                    // msg 1 — no present_cast
+    { name: 'Aisha',   audience: ['user', 'shilpa', 'aisha'] },           // msg 2
+  ]);
+  // No mutation of chat[1] — no present_cast → genuine exit
+
+  const segs = computePlane1Segments(compiledScene, chat, ROSTER3, { userToken: 'user' });
+  assert.equal(segs.length, 3);
+  assert.deepEqual(segIds(segs[0]), [0]);
+  assert.deepEqual(segIds(segs[1]), [1]);
+  assert.deepEqual(segIds(segs[2]), [2]);
+});
+
+test('WHISPER-MERGE: present_cast excludes a member → no merge (member was absent)', () => {
+  // msg1 present_cast does NOT include aisha → she genuinely left → no merge
+  const { chat, compiledScene } = fixture([
+    { name: 'Shilpa',  audience: ['user', 'shilpa', 'aisha'] },
+    { name: 'Shilpa',  audience: ['user', 'shilpa'] },
+    { name: 'Aisha',   audience: ['user', 'shilpa', 'aisha'] },
+  ]);
+  chat[1].extra.channel.present_cast = ['user', 'shilpa'];  // Aisha NOT listed → exit
+
+  const segs = computePlane1Segments(compiledScene, chat, ROSTER3, { userToken: 'user' });
+  assert.equal(segs.length, 3);   // no merge: 3 separate segments
+});
+
 test('resolveMemoryLorebook: flag OFF → legacy validator only (world never resolved)', async () => {
   let worldCalled = false, legacyCalled = false;
   const r = await resolveMemoryLorebook({

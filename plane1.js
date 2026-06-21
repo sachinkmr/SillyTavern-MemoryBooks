@@ -75,9 +75,37 @@ export function computePlane1Segments(compiledScene, chat, rosterRows, opts = {}
         }
     }
 
+    // Phase 2 follow-up: merge same-audience runs separated ONLY by directed gaps (whisper/DM/text
+    // where those members stayed PRESENT, i.e. present_cast covers them) — never across a real exit.
+    const runIsDirectedCovering = (run, setTokens) => {
+        for (const cm of run.messages) {
+            const pc = chat?.[cm.id]?.extra?.channel?.present_cast;
+            if (!Array.isArray(pc)) return false;                       // not a directed gap → treat as exit
+            const pcl = pc.map(n => String(n).toLowerCase());
+            for (const m of setTokens) if (!pcl.includes(m)) return false;  // a member wasn't present → exit
+        }
+        return true;
+    };
+    const mergedRuns = [];
+    for (const run of runs) {
+        let target = -1;
+        if (run.key !== null) {                                          // never merge fail-open (null-key) runs
+            const between = [];
+            for (let j = mergedRuns.length - 1; j >= 0; j--) {
+                if (mergedRuns[j].key === run.key) {
+                    if (between.every(b => runIsDirectedCovering(b, run.tokens))) target = j;
+                    break;
+                }
+                between.push(mergedRuns[j]);
+            }
+        }
+        if (target >= 0) mergedRuns[target].messages = mergedRuns[target].messages.concat(run.messages);
+        else mergedRuns.push(run);
+    }
+
     // 2. One segment per run; drop single-perceiver runs.
     const segments = [];
-    for (const run of runs) {
+    for (const run of mergedRuns) {
         const audience = run.tokens;                                            // null => fail-open run
         if (audience && audience.length === 1) continue;                        // single perceiver → drop
         const ids = run.messages.map(m => m.id);
