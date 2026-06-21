@@ -658,6 +658,8 @@ function populateLorebookEntry(entry, memoryResult, entryTitle, lorebookSettings
         const { isExclude = false, names, tags = [] } = memoryResult.characterFilter;
         entry.characterFilter = { isExclude, names, tags }; // strip helper-only `unresolved`
     }
+    // Phase 2: graded-perception shell marker (set on shell entries only).
+    if (memoryResult.shell === true) entry.STMB_shell = true;
 }
 
 /**
