@@ -24,3 +24,37 @@ export function parseUpdateNum(text) {
     const m = String(text || '').match(/Epistemic\s+#(\d+)/i);
     return m ? Number(m[1]) : null;
 }
+
+const COLD_TAGS = new Set(['knows', 'believes', 'suspects']);
+const PHRASE = { knows: 'knows', believes: 'believes (possibly falsely)', suspects: 'suspects' };
+
+export function isDeepSaveEligible(tag) {
+    return COLD_TAGS.has(String(tag || '').trim().toLowerCase());
+}
+
+function slug(s, n = 48) {
+    return String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+}
+
+/** Stable, dedup-bearing title (upsert-by-title => idempotent). */
+export function coldFactTitle(charName, item) {
+    return `[Deep][${charName}] ${item.tag}:${item.about} — ${slug(item.fact)}`;
+}
+
+/** Cold-fact lorebook entry gated to the knower. null if tag not cold-eligible. */
+export function buildColdFactEntry(item, charTarget, rosterRows, opts = {}) {
+    if (!item || !charTarget || !isDeepSaveEligible(item.tag)) return null;
+    const charName = String(charTarget.name);
+    const cf = buildEntryCharacterFilter([charName.toLowerCase()], rosterRows);
+    const characterFilter = cf ? { isExclude: false, names: cf.names, tags: cf.tags || [] } : null;
+    const content = `${charName} ${PHRASE[item.tag]} about ${item.about}: ${item.fact}.`;
+    const metadata = {
+        STMB_deep: true,
+        STMB_deepTag: item.tag,
+        STMB_deepAbout: item.about,
+        STMB_deepReason: item.reason || '',
+        STMB_deepSince: opts.updateNum ?? null,
+    };
+    if (item.tag === 'believes') metadata.STMB_deepFalse = true;
+    return { title: coldFactTitle(charName, item), content, keys: [item.about], characterFilter, metadata };
+}
