@@ -72,3 +72,32 @@ test('buildColdFactEntry returns null when the knower cannot be gated (not in ro
   const e = buildColdFactEntry({ tag: 'knows', about: 'Sachin', fact: 'x' }, { name: 'Ghost', avatar: 'Ghost.png' }, [{ name: 'Shilpa', avatar: 'Shilpa.png' }]);
   assert.equal(e, null);
 });
+
+import { writeDeepFacts } from '../plane2.js';
+
+function spyDeps() {
+  const calls = [];
+  return {
+    calls,
+    resolveBookName: () => '🏠 TWW2 - Deep Facts',
+    ensureBook: async () => ({ entries: {} }),
+    upsertByTitle: async (name, data, title, content, opts) => { calls.push({ name, title, content, opts }); },
+  };
+}
+const TPL_ON = { settings: { deepSave: { enabled: true } } };
+const RESULT = `*Epistemic #4 | Scene: x*\n\n## To Deep Storage\n- knows | Sachin | lost his flat | resolved\n- hiding | Aisha | the affair | resolved`;
+
+test('writeDeepFacts: writes eligible items, drops ineligible, gates per char', async () => {
+  const d = spyDeps();
+  const r = await writeDeepFacts({ tpl: TPL_ON, charTarget: { name: 'Shilpa', avatar: 'Shilpa.png' }, resultText: RESULT, rosterRows: [{ name: 'Shilpa', avatar: 'Shilpa.png' }], updateNum: 4 }, d);
+  assert.equal(r.written, 1);                 // hiding dropped
+  assert.equal(d.calls.length, 1);
+  assert.deepEqual(d.calls[0].opts.entryOverrides.characterFilter.names, ['Shilpa']);
+  assert.equal(d.calls[0].opts.defaults.vectorized, true);
+});
+
+test('writeDeepFacts: skips when disabled / no char / no items', async () => {
+  assert.deepEqual(await writeDeepFacts({ tpl: { settings: {} }, charTarget: { name: 'Shilpa' }, resultText: RESULT }, spyDeps()), { written: 0, skipped: 'disabled' });
+  assert.deepEqual(await writeDeepFacts({ tpl: TPL_ON, charTarget: null, resultText: RESULT }, spyDeps()), { written: 0, skipped: 'no-char' });
+  assert.deepEqual(await writeDeepFacts({ tpl: TPL_ON, charTarget: { name: 'Shilpa' }, resultText: 'no section' }, spyDeps()), { written: 0 });
+});

@@ -61,3 +61,31 @@ export function buildColdFactEntry(item, charTarget, rosterRows, opts = {}) {
     if (item.tag === 'believes') metadata.STMB_deepFalse = true;
     return { title: coldFactTitle(charName, item), content, keys: [item.about], characterFilter, metadata };
 }
+
+/**
+ * Eviction -> cold store. PURE via injected deps:
+ *   deps.resolveBookName(tpl) -> string
+ *   deps.ensureBook(name)     -> Promise<lorebookData>
+ *   deps.upsertByTitle(name, data, title, content, opts) -> Promise<any>
+ */
+export async function writeDeepFacts({ tpl, charTarget, resultText, rosterRows, updateNum } = {}, deps) {
+    if (!tpl?.settings?.deepSave?.enabled) return { written: 0, skipped: 'disabled' };
+    if (!charTarget) return { written: 0, skipped: 'no-char' };
+    const items = parseToDeepStorage(resultText);
+    if (!items.length) return { written: 0 };
+    const bookName = deps.resolveBookName(tpl);
+    if (!bookName) return { written: 0, skipped: 'no-book' };
+    const since = updateNum ?? parseUpdateNum(resultText);
+    const data = await deps.ensureBook(bookName);
+    let written = 0;
+    for (const item of items) {
+        const entry = buildColdFactEntry(item, charTarget, rosterRows, { updateNum: since });
+        if (!entry) continue;
+        await deps.upsertByTitle(bookName, data, entry.title, entry.content, {
+            defaults: { vectorized: true },
+            entryOverrides: { key: entry.keys, characterFilter: entry.characterFilter, ...entry.metadata },
+        });
+        written++;
+    }
+    return { written, bookName };
+}
