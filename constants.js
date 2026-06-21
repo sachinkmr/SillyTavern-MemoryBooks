@@ -60,7 +60,7 @@ export const DISPLAY_NAME_DEFAULTS = {
     northgate: 'Northgate - Intended for creative writing. By Northgate on ST Discord',
     aelemar: 'Aelemar - Focuses on plot points and character memories. By Aelemar on ST Discord',
     comprehensive: 'Comprehensive - Synopsis plus improved keywords extraction',
-    witness: 'Witness - Objective, audience-neutral scene log (light structure; for two-plane)',
+    witness: 'Witness - Objective, audience-neutral, dual-layer keywords, day-aware (two-plane canonical)',
 };
 
 export const DISPLAY_NAME_I18N_KEYS = {

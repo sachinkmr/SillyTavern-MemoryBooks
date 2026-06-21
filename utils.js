@@ -848,26 +848,42 @@ Return ONLY the JSON — no additional text.`,
 
 Respond with ONLY valid JSON in this exact format:
 {
-  "title": "Short scene title (3-5 words)",
-  "content": "Objective, audience-neutral record of this scene (structure below)",
-  "keywords": ["keyword1", "keyword2", "keyword3"]
+  "title": "Short scene title (3-6 words)",
+  "content": "Objective, audience-neutral record of this scene (structured; see below)",
+  "keywords": ["keyword1", "keyword2"]
 }
 
 CONTENT — an objective, third-person, past-tense record of THIS scene only:
 - Cover what every present character did and said; name them. Do NOT write from any single character's point of view or privilege one character's perspective.
 - Record ONLY what is shown in the messages provided. Do NOT add, infer, or carry in events, knowledge, or backstory not present in this scene.
-- Token-efficient: synthesize, don't transcribe. Favor cause -> intention -> reaction -> consequence. Concrete nouns; adjectives/adverbs only when they change meaning or tone.
-- Exclude all [OOC]/meta.
-Use this lean structure inside the content string (omit a section if it is empty):
-**Timeline**: in-story day/time span covered.
-**Beats**: 3-7 bullets — major actions, revelations, turning points, in order.
-**Dynamics**: 1-2 bullets — relationship/emotional shifts that were OUTWARDLY expressed (observable only; no inner interpretation).
-**Key Exchanges**: up to 3 short exact quotes, attributed by name, only if pivotal.
-**Outcome & Continuity**: decisions, promises, unresolved threads, physical outcomes, anything that affects future scenes.
+- Token-efficient: synthesize, don't transcribe. Trace cause -> intention -> reaction -> consequence. Concrete nouns; adjectives/adverbs only when they change meaning or tone. Exclude all [OOC]/meta.
+- Use this structure inside the content string (omit a section if it is empty):
 
-KEYWORDS — 15-30 standalone retrieval tags:
-- Concrete and scene-specific (locations, objects, proper nouns, distinctive actions, repeated motifs); one concept per keyword. A keyword should fire when its noun/action is mentioned alone.
-- NOT character or user names. NOT thematic/emotional/abstract. Stop-list: intimacy, vulnerability, trust, dominance, submission, power dynamics, boundaries, jealousy, aftercare, longing, consent, emotional connection.
+# Scene Summary — [in-story date] — [Title]
+(Use the IN-STORY DATE/TIME provided with the scene for [in-story date]; if none is provided, write "undated". Never output a placeholder like "Day X".)
+
+## Timeline
+- **Period**: [start] -> [end] using the in-story date/time provided (e.g. "Saturday, May 24, 2025, 7:15 PM"); a single moment if the scene is brief.
+- Key events in chronological order — "[time/moment]: [event]".
+
+## Major Beats
+- 3-7 bullets: plot-changing actions, revelations, turning points, in order; cause -> effect.
+
+## Character Dynamics
+- 1-2 short bullets: relationship/emotional shifts that were OUTWARDLY expressed (observable only; no inner interpretation).
+
+## Key Exchanges
+- Up to 3 short exact quotes, attributed by name, only if pivotal.
+
+## Outcome & Continuity
+- Decisions, promises, unresolved threads, physical outcomes — anything that affects future scenes.
+
+KEYWORDS — 10-20 retrieval tags, DUAL-LAYER (must serve BOTH substring matching against chat messages AND vector/semantic search):
+
+LAYER 1 — SIMPLE TRIGGER WORDS (5-8): short, concrete, 1-2 word terms a character would ACTUALLY TYPE when later referencing this scene (e.g. "date", "roti", "GPS tracker", "parking lot"). Ask: would someone plausibly type this word? OK if a word also appears in 2-3 other entries; avoid words that would match 5+.
+LAYER 2 — SIGNATURE PHRASES (5-8): distinctive 2-5 word phrases capturing this scene's unique identity for vector search (e.g. "load-bearing wall metaphor", "kitchen floor reconciliation", "first roti puffs perfectly").
+AVOID: character or user names; abstract emotions/themes (intimacy, vulnerability, trust, dominance, submission, power dynamics, boundaries, jealousy, aftercare, longing, consent); generic recurring environment details (mattress, lamplight, living room). Do NOT make all keywords 3+ words — at least half must be 1-2 words.
+DEDUP: if PREVIOUS SCENE CONTEXT is provided, do not reuse a keyword already there unless this scene gives it a fundamentally different meaning.
 
 Return ONLY the JSON, no other text.`,
             'STMemoryBooks_Prompt_witness'

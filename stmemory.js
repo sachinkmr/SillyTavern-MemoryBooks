@@ -1461,8 +1461,17 @@ async function buildPrompt(compiledScene, profile) {
     const additionalContext = await resolveAdditionalContextEntries(profile, compiledScene);
     const sceneText = formatSceneForAI(messages, metadata, previousSummariesContext, additionalContext.entries);
 
-    // Combine: Scheme B filter + system prompt + scene
-    const finalPrompt = `${SCHEME_B_FILTER}${processedSystemPrompt}\n\n${sceneText}`;
+    // In-story clock (StateTracker) — feed it so summaries are dated correctly. Guarded: skip if absent.
+    let dateLine = '';
+    try {
+        const stClock = getContext()?.chat_metadata?.state_tracker_state?.scene?.clock;
+        if (typeof stClock === 'string' && stClock.trim()) {
+            dateLine = `IN-STORY DATE/TIME (current scene clock): ${stClock.trim()}\n\n`;
+        }
+    } catch (e) { /* non-fatal: no date line */ }
+
+    // Combine: Scheme B filter + system prompt + in-story date + scene
+    const finalPrompt = `${SCHEME_B_FILTER}${processedSystemPrompt}\n\n${dateLine}${sceneText}`;
 
     // Apply user-selected outgoing regex scripts (bypass engine gating)
     try {
