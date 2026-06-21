@@ -40,12 +40,14 @@ import {
 import { createMemory, parseAIJsonResponse } from "./stmemory.js";
 import {
   addMemoryToLorebook,
+  applySceneAutoHide,
   DEFAULT_LOREBOOK_ENTRY_SETTINGS,
   getDefaultTitleFormats,
   getAutoHideRanges,
   identifyMemoryEntries,
   getRangeFromMemoryEntry,
   normalizeLorebookEntrySettings,
+  updateHighestMemoryProcessed,
 } from "./addlore.js";
 import { autoCreateLorebook } from "./autocreate.js";
 import {
@@ -192,7 +194,7 @@ import {
   parseSidePromptCommandInput,
 } from "./sidePromptMacros.js";
 import "../../../../lib/select2.min.js";
-import { computePlane1Memory } from './plane1.js';
+import { computePlane1Memory, computePlane1Segments } from './plane1.js';
 import { getChatRoster, resolveWorldMemoriesBook } from './plane1Context.js';
 
 /**
@@ -2535,16 +2537,127 @@ async function executeMemoryGeneration(
     );
     compiledScene = compileScene(sceneRequest);
 
-    // Phase-1a two-plane memory: objective input-filter + gate resolve
+    // Phase-1b two-plane memory: segment loop early-return (replaces 1a single-path block)
     if (isTwoPlane()) {
-      const p1 = computePlane1Memory(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
-      if (p1.skipped) {
-        // Nothing real/witnessed to record — clean no-op (mirrors "no memory" false return)
-        return false;
-      }
-      compiledScene = p1.filteredScene;   // objective summary sees the input-filtered transcript
-      plane1Filter = p1.characterFilter;
+      const segments = computePlane1Segments(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+      if (!segments.length) return false;                             // nothing real/witnessed → clean no-op
       plane1Book = await resolveWorldMemoriesBook();
+      const lv = plane1Book || lorebookValidation;                   // null world book → chat-bound fallback
+      const wholeRange = `${sceneData.sceneStart}-${sceneData.sceneEnd}`;
+      const segmented = segments.length > 1;                         // auto-accept previews only when segmented
+      const entryTitles = [];
+      for (const seg of segments) {
+        throwIfStmbStopped(runEpoch);
+        compiledScene = seg.filteredScene;                           // so AIResponseError catch captures THIS segment
+        plane1Filter = seg.characterFilter;                          // ditto (per-segment repair context)
+        const mr = await createMemory(seg.filteredScene, profileSettings, {
+          tokenWarningThreshold: tokenThreshold,
+          signal: stmbTask.signal,
+        });
+        stmbTask.throwIfStopped();
+        throwIfStmbStopped(runEpoch);
+        mr.characterFilter = seg.characterFilter;
+        mr.metadata.sceneRange = `${seg.sceneStart}-${seg.sceneEnd}`;  // per-segment STMB_start/end
+        let finalMr = mr;
+        if (!segmented && settings.moduleSettings.showMemoryPreviews) {
+          // N==1 ONLY: run the existing preview/edit/retry/cancel flow verbatim (segmented scenes auto-accept)
+          toastr.clear();
+          const previewResult = await showMemoryPreviewPopup(mr, sceneData, profileSettings);
+          throwIfStmbStopped(runEpoch);
+          if (previewResult.action === 'cancel') {
+            return false;
+          } else if (previewResult.action === 'retry') {
+            const maxUserRetries = 3;
+            const currentUserRetries = retryCount >= maxRetries ? retryCount - maxRetries : 0;
+            if (currentUserRetries >= maxUserRetries) {
+              toastr.warning(
+                __st_t_tag`Maximum retry attempts (${maxUserRetries}) reached`,
+                'STMemoryBooks',
+              );
+              return false;
+            }
+            toastr.info(
+              __st_t_tag`Retrying memory generation (${currentUserRetries + 1}/${maxUserRetries})...`,
+              'STMemoryBooks',
+            );
+            const nextRetryCount = Math.max(retryCount + 1, maxRetries + currentUserRetries + 1);
+            return await executeMemoryGeneration(sceneData, lorebookValidation, effectiveSettings, nextRetryCount);
+          }
+          if (previewResult.action === 'accept') {
+            finalMr = mr;
+          } else if (previewResult.action === 'edit') {
+            if (!previewResult.memoryData) {
+              console.error('STMemoryBooks: Edit action missing memoryData');
+              toastr.error(
+                translate('Unable to retrieve edited memory data', 'STMemoryBooks_UnableToRetrieveEditedMemoryData'),
+                'STMemoryBooks',
+              );
+              return false;
+            }
+            if (!previewResult.memoryData.extractedTitle || !previewResult.memoryData.content) {
+              console.error('STMemoryBooks: Edited memory data missing required fields');
+              toastr.error(
+                translate('Edited memory data is incomplete', 'STMemoryBooks_EditedMemoryDataIncomplete'),
+                'STMemoryBooks',
+              );
+              return false;
+            }
+            finalMr = previewResult.memoryData;
+            // carry characterFilter onto edited result (popup spreads ...mr so it survives, but be explicit)
+            if (!finalMr.characterFilter) finalMr.characterFilter = mr.characterFilter;
+          } else {
+            console.warn(`STMemoryBooks: Unexpected preview action: ${previewResult.action}`);
+            finalMr = mr;
+          }
+        }
+        throwIfStmbStopped(runEpoch);
+        const addResult = await addMemoryToLorebook(finalMr, lv, {
+          expectedChatId: startChatId,
+          autoHide: false,
+          updateHighestMemoryProcessed: false,
+          refreshEditor: false,
+        });
+        throwIfStmbStopped(runEpoch);
+        if (!addResult.success) {
+          if (addResult.chatChanged) {
+            toastr.warning(
+              translate(
+                'Chat changed during memory generation — memory was not saved to avoid writing to the wrong character.',
+                'STMemoryBooks_ChatChangedAbort',
+              ),
+              'STMemoryBooks',
+            );
+            return;
+          }
+          throw new Error(addResult.error || 'Failed to add memory to lorebook');
+        }
+        entryTitles.push(addResult.entryTitle);
+      }
+      // ---- per-scene-once side-effects (run ONCE after all segments) ----
+      await applySceneAutoHide(wholeRange, settings.moduleSettings);
+      updateHighestMemoryProcessed({ metadata: { sceneRange: wholeRange, chatId: startChatId } }, startChatId);
+      // refresh editor once
+      if (settings.moduleSettings?.refreshEditor) {
+        try {
+          reloadEditor(lv.name);
+        } catch (e) { /* noop */ }
+      }
+      toastr.clear();
+      lastFailureToast = null;
+      lastFailedAIError = null;
+      lastFailedAIContext = null;
+      toastr.success(
+        __st_t_tag`Saved ${entryTitles.length} memory ${entryTitles.length === 1 ? 'entry' : 'entries'}`,
+        'STMemoryBooks',
+      );
+      try {
+        await runAfterMemory(compiledScene, profileSettings);
+      } catch (e) {
+        console.warn('STMemoryBooks: runAfterMemory failed:', e);
+      }
+      clearAutoSummaryState();
+      await maybePromptSelectedAutoConsolidation({ minTargetTier: 1, lorebookValidation });
+      return true;
     }
 
     // Validate compiled scene
@@ -2626,8 +2739,6 @@ async function executeMemoryGeneration(
     });
     stmbTask.throwIfStopped();
     throwIfStmbStopped(runEpoch);
-    // Phase-1a: stamp characterFilter on the result so addMemoryToLorebook can gate the entry
-    if (isTwoPlane()) memoryResult.characterFilter = plane1Filter;
 
     // Check if memory previews are enabled and handle accordingly
     let finalMemoryResult = memoryResult;
@@ -2726,10 +2837,9 @@ async function executeMemoryGeneration(
     throwIfStmbStopped(runEpoch);
 
     // Add to lorebook silently
-    // Phase-1a: when two-plane is ON and we have a world memories book, route there instead
     const addResult = await addMemoryToLorebook(
       finalMemoryResult,
-      (isTwoPlane() && plane1Book) ? plane1Book : lorebookValidation,
+      lorebookValidation,
       { expectedChatId: startChatId },
     );
     throwIfStmbStopped(runEpoch);
@@ -2749,34 +2859,31 @@ async function executeMemoryGeneration(
     }
 
     // Mirror to additional lorebooks if multi-lorebook manual mode is active
-    // In two-plane mode the primary write already went to the world plane1Book — skip mirror to avoid duplication.
-    if (!(isTwoPlane() && plane1Book)) {
-      try {
-        const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
-        if (startChatId !== null && _mirrorChatId !== startChatId) {
-          console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
-        } else {
-          const _sceneRange = _parseSceneRangeStr(finalMemoryResult?.metadata?.sceneRange);
-          const _allLoreNames = await getEffectiveLorebookNames();
-          const _extraLoreNames = _allLoreNames.filter(n => n !== lorebookValidation.name);
-          for (const extraName of _extraLoreNames) {
-            try {
-              const extraData = await loadWorldInfo(extraName);
-              if (extraData) {
-                if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
-                  console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
-                } else {
-                  await addMemoryToLorebook(finalMemoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
-                }
+    try {
+      const _mirrorChatId = getCurrentMemoryBooksContext()?.chatId ?? null;
+      if (startChatId !== null && _mirrorChatId !== startChatId) {
+        console.warn(`STMemoryBooks: Chat changed before mirror step (was "${startChatId}", now "${_mirrorChatId}"). Skipping multi-lorebook mirror.`);
+      } else {
+        const _sceneRange = _parseSceneRangeStr(finalMemoryResult?.metadata?.sceneRange);
+        const _allLoreNames = await getEffectiveLorebookNames();
+        const _extraLoreNames = _allLoreNames.filter(n => n !== lorebookValidation.name);
+        for (const extraName of _extraLoreNames) {
+          try {
+            const extraData = await loadWorldInfo(extraName);
+            if (extraData) {
+              if (_sceneRange && _lorebookHasEntryForRange(extraData, _sceneRange)) {
+                console.debug(`STMemoryBooks: Skipping mirror to "${extraName}" — entry for range ${_sceneRange.start}-${_sceneRange.end} already exists.`);
+              } else {
+                await addMemoryToLorebook(finalMemoryResult, { valid: true, data: extraData, name: extraName, expectedChatId: startChatId });
               }
-            } catch (e) {
-              console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
             }
+          } catch (e) {
+            console.warn(`STMemoryBooks: Failed to mirror memory to lorebook "${extraName}":`, e);
           }
         }
-      } catch (e) {
-        console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
       }
+    } catch (e) {
+      console.warn('STMemoryBooks: Multi-lorebook mirror failed:', e);
     }
     throwIfStmbStopped(runEpoch);
     try {

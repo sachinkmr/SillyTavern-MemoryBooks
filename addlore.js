@@ -1154,7 +1154,7 @@ export async function getLorebookStats() {
  * Update the highest memory processed tracking for the current chat
  * @param {Object} memoryResult - The memory result containing metadata
  */
-function updateHighestMemoryProcessed(memoryResult, expectedChatId = null) {
+export function updateHighestMemoryProcessed(memoryResult, expectedChatId = null) {
     try {
         console.log(i18n('addlore.log.updateHighestCalled', `${MODULE_NAME}: updateHighestMemoryProcessed called with:`), memoryResult);
 
