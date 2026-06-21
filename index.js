@@ -2656,7 +2656,7 @@ async function executeMemoryGeneration(
         console.warn('STMemoryBooks: runAfterMemory failed:', e);
       }
       clearAutoSummaryState();
-      await maybePromptSelectedAutoConsolidation({ minTargetTier: 1, lorebookValidation });
+      await maybePromptSelectedAutoConsolidation({ minTargetTier: 1, lorebookValidation: lv });   // entries went to the world book (lv), not the chat-bound book
       return true;
     }
 
