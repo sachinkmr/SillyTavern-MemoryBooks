@@ -25,6 +25,7 @@ import {
   getSummaryTypeKey,
   isSummaryEntry,
 } from "./summaryTiers.js";
+import { runWitnessRollup as _runWitnessRollup } from "./rollupOrchestrator.js";
 
 /**
  * Arc Analysis pipeline (stateless wrt model; stateful in controller).
@@ -665,6 +666,12 @@ export async function runSummaryAnalysisSequential(
   } catch {}
   if (!promptText) promptText = getDefaultArcPrompt();
 
+  // Phase 3 (two-plane): append the witness-scoping instruction when the orchestrator threads one.
+  // No-op for the legacy path (no options.witnessPrompt is ever passed there).
+  if (typeof options?.witnessPrompt === "string" && options.witnessPrompt.trim()) {
+    promptText = `${promptText}\n\n${options.witnessPrompt.trim()}`;
+  }
+
   // Resolve connection
   const conn = resolveConnection(profileOrConnection);
 
@@ -970,6 +977,23 @@ export async function runSummaryAnalysisSequential(
   }
 }
 
+// Phase 3 (two-plane): read the flag the same way index.js/stmemory.js do. Declared locally
+// (not imported from index.js) to avoid an import cycle: index.js imports arcanalysis.js.
+const isTwoPlane = () =>
+  !!(extension_settings?.STMemoryBooks?.moduleSettings?.twoPlaneMemory);
+
+/**
+ * Witness-correct rollup entry point. Binds the pure orchestrator to the real summarizer and
+ * the two-plane flag. Flag-off => a single passthrough to runSummaryAnalysisSequential
+ * (byte-identical legacy behavior). See rollupOrchestrator.js / rollupScope.js.
+ */
+export function runWitnessRollup(selectedEntries, options, conn) {
+  return _runWitnessRollup(selectedEntries, options, conn, {
+    summarize: runSummaryAnalysisSequential,
+    isTwoPlane,
+  });
+}
+
 export async function runArcAnalysisSequential(
   selectedEntries,
   options = {},
@@ -1204,6 +1228,11 @@ export async function commitSummaryEntries({
         key: Array.isArray(keywords) ? keywords : [],
         disable: false,
       };
+      // Phase 3 (two-plane): gate the rolled-up summary to its fragment's audience. A null
+      // characterFilter means ungated (fail-open) -> leave it unset, identical to legacy.
+      if (isTwoPlane() && summary.characterFilter) {
+        entryOverrides.characterFilter = summary.characterFilter;
+      }
       throwIfStmbStopped(runEpoch);
       const res = await upsertLorebookEntriesBatch(
         lorebookName,

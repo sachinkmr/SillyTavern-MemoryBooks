@@ -146,6 +146,7 @@ import {
 } from "./contextSettingsPopup.js";
 import {
   runSummaryAnalysisSequential,
+  runWitnessRollup,
   commitSummaryEntries,
   parseSummaryJsonResponse,
 } from "./arcanalysis.js";
@@ -6874,7 +6875,10 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
 
     let analysis;
     try {
-      analysis = await runSummaryAnalysisSequential(selectedEntries, options, null);
+      // Phase 3 (two-plane): route Consolidate through the witness-correct rollup. Flag-gated
+      // internally -> with twoPlaneMemory OFF this is a single passthrough to the legacy
+      // runSummaryAnalysisSequential, byte-identical to before.
+      analysis = await runWitnessRollup(selectedEntries, options, null);
     } catch (e) {
       if (isStmbStopError(e)) {
         return;
