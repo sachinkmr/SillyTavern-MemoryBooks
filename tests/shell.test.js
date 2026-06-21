@@ -38,6 +38,17 @@ test('U8 text to REMOTE target: shell hides the target ("someone")', () => {
   assert.deepEqual(shell.characterFilter.names, ['Aisha']);
 });
 
+test('U7 text to a PRESENT char: shell names the present target; gated to the bystander', () => {
+  const { seg, chat } = dirSeg([0], {
+    type: 'text', audience: ['sachin', 'shilpa'], present_cast: ['sachin', 'shilpa', 'aisha'],
+    from: 'sachin', to: ['shilpa'], remote: [],                       // Shilpa present (not remote)
+  });
+  const shell = buildShellEntry(directedMetaForSegment(seg, chat), seg.audience, ROSTER, { userToken: 'sachin' });
+  assert.match(shell.content, /texting/i);
+  assert.match(shell.content, /Shilpa/);                              // present target IS named
+  assert.deepEqual(shell.characterFilter.names, ['Aisha']);
+});
+
 test('E4/N10 no bystander: no shell', () => {
   const { seg, chat } = dirSeg([0], {
     type: 'whisper', audience: ['sachin', 'shilpa'], present_cast: ['sachin', 'shilpa'],
