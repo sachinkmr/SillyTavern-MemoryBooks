@@ -196,6 +196,7 @@ import {
 import "../../../../lib/select2.min.js";
 import { computePlane1Segments } from './plane1.js';
 import { getChatRoster, resolveWorldMemoriesBook } from './plane1Context.js';
+import { directedMetaForSegment, buildShellEntry } from './shell.js';
 
 /**
  * Async effective prompt that respects Summary Prompt Manager overrides
@@ -2638,6 +2639,17 @@ async function executeMemoryGeneration(
           }
         }
         results.push(finalMr);
+        // Phase 2: emit a graded-perception shell entry for bystanders of directed segments.
+        const _meta = directedMetaForSegment(seg, chat);
+        const _shell = _meta && buildShellEntry(_meta, seg.audience, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+        if (_shell) {
+          results.push({
+            content: _shell.content, suggestedKeys: _shell.suggestedKeys, characterFilter: _shell.characterFilter, shell: true,
+            extractedTitle: `Private exchange (${_shell.from})`,
+            metadata: { ...mr.metadata, sceneRange: `${seg.sceneStart}-${seg.sceneEnd}` },
+            titleFormat: mr.titleFormat, lorebookSettings: mr.lorebookSettings,
+          });
+        }
       }
 
       // I2 FIX Phase 2 (write-all): all LLM calls are done — now write every result.
@@ -3213,6 +3225,9 @@ async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSett
     if (!segs.length) {
       plane1 = { skipped: true };
     } else {
+      // Phase 2: stash directed meta per segment against the live chat BEFORE deepClone
+      // (snapshot-safe: at execution time the live chat may differ from enqueue-time chat).
+      for (const s of segs) s.directedMeta = directedMetaForSegment(s, chat);
       plane1Segments = segs;
       plane1BookName = (await resolveWorldMemoriesBook())?.name || null;
     }
@@ -3424,6 +3439,16 @@ async function executeQueuedMemoryJob(job, jobContext) {
         }
       }
       results.push(finalMr);
+      // Phase 2: emit a graded-perception shell entry using STASHED meta (snapshot-safe).
+      const _shell = seg.directedMeta && buildShellEntry(seg.directedMeta, seg.audience, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+      if (_shell) {
+        results.push({
+          content: _shell.content, suggestedKeys: _shell.suggestedKeys, characterFilter: _shell.characterFilter, shell: true,
+          extractedTitle: `Private exchange (${_shell.from})`,
+          metadata: { ...mr.metadata, sceneRange: `${seg.sceneStart}-${seg.sceneEnd}` },
+          titleFormat: mr.titleFormat, lorebookSettings: mr.lorebookSettings,
+        });
+      }
     }
 
     // ONE write lane holding all N segment writes (no nesting, no LLM calls inside)
