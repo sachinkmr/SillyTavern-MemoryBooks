@@ -195,7 +195,7 @@ import {
 } from "./sidePromptMacros.js";
 import "../../../../lib/select2.min.js";
 import { computePlane1Segments, resolveMemoryLorebook } from './plane1.js';
-import { getChatRoster, resolveWorldMemoriesBook } from './plane1Context.js';
+import { getChatRoster, resolveWorldMemoriesBook, applyWorldBookActivation } from './plane1Context.js';
 import { directedMetaForSegment, buildShellEntry } from './shell.js';
 
 /**
@@ -954,6 +954,21 @@ function handleChatChanged() {
   validateAndCleanupSceneMarkers();
   sanitizeHighestMemoryProcessed();
   void maybePromptContextSettingForChatOpen();
+
+  // Phase 4a — two-plane world-book auto-attach. Per-world + additive: arm the
+  // "<World> - Memories" book in ST's global active set on chat-enter, drop the
+  // previous world's book. Flag-gated HERE so flag-off makes ZERO activation
+  // calls (byte-identical to pre-Phase-4a). Fire-and-forget; never blocks chat
+  // load (applyWorldBookActivation is fully wrapped and resolves a no-op on any
+  // failure).
+  if (isTwoPlane()) {
+    applyWorldBookActivation({ isTwoPlane: true }).catch((error) => {
+      console.warn(
+        "STMemoryBooks: world-book auto-attach on chat change failed:",
+        error,
+      );
+    });
+  }
 
   setTimeout(() => {
     try {
