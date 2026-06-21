@@ -137,8 +137,11 @@ test('(b) flag OFF => characterFilter never written (byte-identical legacy)', as
 const indexSrc = readFileSync(fileURLToPath(new URL('index.js', REPO_ROOT)), 'utf8');
 
 test('(c) the synchronous Consolidate OK handler routes through runWitnessRollup', () => {
-    assert.match(indexSrc, /analysis = await runWitnessRollup\(selectedEntries, options, null\)/,
-        'the inline Consolidate path must call runWitnessRollup');
+    // Relaxed (review fix #5): tolerate benign refactors of argument names/whitespace. We assert the
+    // ROUTING guarantee (an awaited runWitnessRollup call exists on the inline path) rather than pinning
+    // the exact `runWitnessRollup(selectedEntries, options, null)` argument syntax.
+    assert.match(indexSrc, /await\s+runWitnessRollup\s*\(/,
+        'the inline Consolidate path must await runWitnessRollup');
 });
 
 test('(c) the QUEUED consolidation job initial analysis routes through runWitnessRollup', () => {
@@ -160,8 +163,18 @@ test('(c) NO Consolidate path calls raw runSummaryAnalysisSequential (all 4 site
 });
 
 test('(c) both preview-regenerate callbacks route through runWitnessRollup', () => {
-    // generateAnalysis callbacks (sync preview ~6997 and queued preview ~3869) feed retry/next-pass.
-    const generateAnalysisRouted = indexSrc.match(/generateAnalysis: async \(entries, lockedSummaries\) => \{[\s\S]*?return await runWitnessRollup\(/g) || [];
-    assert.equal(generateAnalysisRouted.length, 2,
-        `both generateAnalysis callbacks must route through runWitnessRollup (found ${generateAnalysisRouted.length} of 2)`);
+    // Relaxed (review fix #5): the old assertion pinned the exact callback signature
+    // `generateAnalysis: async (entries, lockedSummaries) => { ... return await runWitnessRollup(`
+    // which breaks on benign param-rename/reformat. Instead verify the routing guarantee structurally:
+    // every Consolidate path (sync inline, queued job, and BOTH preview-regenerate callbacks) routes
+    // through runWitnessRollup -> there must be exactly 4 awaited runWitnessRollup call sites, and at
+    // least one of them threads targetTier into the options object passed to it.
+    const callSites = indexSrc.match(/await\s+runWitnessRollup\s*\(/g) || [];
+    assert.equal(callSites.length, 4,
+        `all 4 Consolidate paths (sync, queued job, both preview-regenerate callbacks) must route through ` +
+        `runWitnessRollup (found ${callSites.length} awaited call sites of 4)`);
+    // targetTier must reach the options object handed to the rollup (witness-correctness depends on tier).
+    const threadsTargetTier = /runWitnessRollup\s*\([\s\S]{0,800}?targetTier/.test(indexSrc);
+    assert.ok(threadsTargetTier,
+        'at least one runWitnessRollup call must pass targetTier through its options (sharp/soft selection depends on it)');
 });

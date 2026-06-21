@@ -80,6 +80,26 @@ test('E8 book tier (>chapter) => single UNION fragment, soft=true', () => {
   assert.deepEqual(frags[0].entries.map(e => e.uid), [1, 2]);
 });
 
+test('tier 2 (chapter) over MIXED audience is SHARP: per-audience fragments, soft=false (pins inclusive SHARP_MAX_TIER=2)', () => {
+  // An off-by-one (tier < SHARP_MAX_TIER instead of <=) would make chapter SOFT/union and slip a leak through.
+  const frags = planRollupFragments([E(['aisha', 'shilpa'], 1), E(['shilpa'], 2), E(['aisha', 'shilpa'], 3)], 2);
+  assert.equal(frags.length, 2, 'chapter (tier 2) must stay SHARP: one fragment per distinct audience');
+  assert.ok(frags.every(f => f.soft === false), 'every chapter fragment must be sharp (soft=false)');
+  const fx = frags.find(f => f.characterFilter.names.length === 2);
+  const fy = frags.find(f => f.characterFilter.names.length === 1);
+  assert.deepEqual(fx.entries.map(e => e.uid), [1, 3]);
+  assert.deepEqual(fy.entries.map(e => e.uid), [2]);
+  assert.deepEqual(fy.characterFilter.names, ['shilpa']);
+});
+
+test('sharpMaxTier injection honored: planRollupFragments(mixed, 2, {sharpMaxTier:1}) => SOFT single union fragment', () => {
+  const frags = planRollupFragments([E(['aisha', 'shilpa'], 1), E(['shilpa'], 2)], 2, { sharpMaxTier: 1 });
+  assert.equal(frags.length, 1, 'with sharpMaxTier lowered to 1, tier 2 falls into the soft/union branch');
+  assert.equal(frags[0].soft, true);
+  assert.deepEqual(frags[0].characterFilter.names, ['aisha', 'shilpa']);
+  assert.deepEqual(frags[0].entries.map(e => e.uid), [1, 2]);
+});
+
 test('fail-open: a null-filter entry groups alone (sharp) and forces null union (book)', () => {
   const sharp = partitionByAudience([E(null, 1), E(['aisha'], 2)]);
   assert.equal(sharp.length, 2);
