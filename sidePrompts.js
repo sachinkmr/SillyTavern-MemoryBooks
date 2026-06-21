@@ -18,7 +18,8 @@ import { applySidePromptMacros, collectTemplateRuntimeMacros, extractMacroTokens
 import { tr } from './i18nHelpers.js';
 import { validateLorebookRequirement } from './lorebookValidation.js';
 import { SIDE_PROMPT } from './constants.js';
-import { isPresentInWindow, filterCompiledSceneForCharacter } from './witnessScope.js';
+import { isPresentInWindow } from './witnessScope.js';
+import { applyWitnessFilter } from './perCharacterWitness.js';
 import { runBounded, resolveParallelLimit } from './concurrency.js';
 import { resolveLorebookNameList, deriveWorldPrefix } from './lorebookNameMacros.js';
 import { pickWorld, readActiveWorldName } from './worldScopeBridge.js';
@@ -1435,13 +1436,21 @@ function logSkippedSetItems(skipped = [], context = 'set') {
     }
 }
 
-function buildSidePromptJob({ tpl, lore, compiledScene, prepared, runtimeMacros = {}, trigger = 'manual', setMeta = null, chatRef: providedChatRef = null, chatKey: providedChatKey = null }) {
+function buildSidePromptJob({ tpl, lore, compiledScene, prepared, runtimeMacros = {}, trigger = 'manual', setMeta = null, charTarget = null, chatRef: providedChatRef = null, chatKey: providedChatKey = null }) {
     const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
     const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runtimeMacros);
+    // Per-character job: gate the entry to this actor (characterFilter) and save
+    // under the per-character title, exactly as the non-job per-character path does.
+    if (charTarget) {
+        Object.assign(entryOverrides, sidePromptEntryOverrides(tpl, charTarget));
+    }
+    const entryTitle = charTarget
+        ? getPerCharacterTitle(prepared.unifiedTitle, charTarget.name)
+        : prepared.unifiedTitle;
     const chatRef = providedChatRef || getCurrentStmbChatRef();
     return {
         type: 'sidePrompt',
-        title: tpl?.name || 'Side Prompt',
+        title: charTarget ? `${tpl?.name || 'Side Prompt'} (${charTarget.name})` : (tpl?.name || 'Side Prompt'),
         detail: compiledScene?.metadata ? `Messages ${compiledScene.metadata.sceneStart}-${compiledScene.metadata.sceneEnd}` : '',
         chatRef,
         chatKey: providedChatKey || getStmbChatKey(chatRef),
@@ -1457,13 +1466,63 @@ function buildSidePromptJob({ tpl, lore, compiledScene, prepared, runtimeMacros 
             compiledScene: structuredClone(compiledScene),
             finalPrompt: prepared.finalPrompt,
             conn: structuredClone(prepared.conn),
-            unifiedTitle: prepared.unifiedTitle,
+            unifiedTitle: entryTitle,
             runtimeMacros: structuredClone(runtimeMacros || {}),
             defaults,
             entryOverrides,
             setMeta: setMeta ? structuredClone(setMeta) : null,
         },
     };
+}
+
+/**
+ * Prepare + enqueue ONE side-prompt job for a (template, character) pair, with
+ * per-character witness filtering applied. Shared by every job-enqueue path
+ * (onInterval / onAfterMemory / manual) so the job queue can no longer bypass the
+ * per-character + witness machinery. Returns true when a job was enqueued, false
+ * when skipped (no lorebook, or witness filter left zero messages for this actor).
+ */
+async function enqueueSidePromptJob({ tpl, charTarget = null, lore, compiled, defaultOverrides, fallbackKinds = [], trigger = 'manual', baseRuntimeMacros = {}, setMeta = null, chatRef = null, chatKey = null }) {
+    if (!lore?.data) {
+        console.debug(`${MODULE_NAME}: SidePrompts: no target lorebook for "${tpl?.name}"${charTarget ? ` (${charTarget.name})` : ''}; skipping job quietly.`);
+        return false;
+    }
+    const runtimeMacros = charTarget
+        ? buildPerCharacterMacros(charTarget.name, baseRuntimeMacros)
+        : (baseRuntimeMacros || {});
+    const wf = applyWitnessFilter(compiled, charTarget, tpl, chat);
+    if (wf.skip) {
+        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping job`);
+        return false;
+    }
+    if (wf.dropped > 0) {
+        console.log(`${MODULE_NAME}: witnessFilter dropped ${wf.dropped} message(s) for ${charTarget?.name || 'run'}`);
+    }
+    const perCharTitleHint = charTarget
+        ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
+        : null;
+    const prepared = await prepareSidePromptRun({
+        tpl,
+        loreData: lore.data,
+        compiledScene: wf.compiledScene,
+        defaultOverrides,
+        fallbackKinds,
+        runtimeMacros,
+        additionalTitles: perCharTitleHint ? [perCharTitleHint] : [],
+    });
+    enqueueStmbJob(buildSidePromptJob({
+        tpl,
+        lore,
+        compiledScene: wf.compiledScene,
+        prepared,
+        runtimeMacros,
+        trigger,
+        setMeta,
+        charTarget,
+        chatRef,
+        chatKey,
+    }));
+    return true;
 }
 
 function buildSidePromptBatchJob({ items, compiledScene, trigger = 'onAfterMemory', chatRef: providedChatRef = null, chatKey: providedChatKey = null }) {
@@ -1914,25 +1973,25 @@ export async function evaluateTrackers() {
             // first resolved lorebook.
             if (areStmbJobsEnabled()) {
                 ensureSidePromptJobExecutorRegistered();
-                const jobLore = tplLores[0];
-                const prepared = await prepareSidePromptRun({
-                    tpl,
-                    loreData: jobLore.data,
-                    compiledScene: compiled,
-                    defaultOverrides,
-                    fallbackKinds: ['tracker'],
-                });
-                enqueueStmbJob(buildSidePromptJob({
-                    tpl,
-                    lore: jobLore,
-                    compiledScene: compiled,
-                    prepared,
-                    runtimeMacros: {},
-                    trigger: 'onInterval',
-                }));
-                console.log(`${MODULE_NAME}: Interval sideprompt queued`, {
+                // Per-character + witness-filtered: enqueue one job per actor
+                // (charWorkItems already gated/expanded above), so the job queue
+                // no longer bypasses per-character/witness scoping.
+                let queued = 0;
+                for (const { charTarget, lore: charLore } of charWorkItems) {
+                    if (await enqueueSidePromptJob({
+                        tpl,
+                        charTarget,
+                        lore: charLore || tplLores[0],
+                        compiled,
+                        defaultOverrides,
+                        fallbackKinds: ['tracker'],
+                        trigger: 'onInterval',
+                    })) queued++;
+                }
+                console.log(`${MODULE_NAME}: Interval sideprompts queued`, {
                     name: tpl.name,
                     key: tpl.key,
+                    queued,
                     range: `${boundedStart}-${currentLast}`,
                 });
                 continue;
@@ -1958,17 +2017,15 @@ export async function evaluateTrackers() {
                         ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
                         : null;
 
-                    let perCharCompiled = compiled;
-                    if (charTarget && tpl?.settings?.witnessFilter?.enabled) {
-                        perCharCompiled = filterCompiledSceneForCharacter(compiled, chat, charTarget.name);
-                        if (perCharCompiled.messages.length === 0) {
-                            console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
-                            return { skipped: true };
-                        }
-                        if (perCharCompiled.metadata.witnessFiltered > 0) {
-                            console.log(`${MODULE_NAME}: witnessFilter dropped ${perCharCompiled.metadata.witnessFiltered} message(s) for ${charTarget.name}`);
-                        }
+                    const wf = applyWitnessFilter(compiled, charTarget, tpl, chat);
+                    if (wf.skip) {
+                        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
+                        return { skipped: true };
                     }
+                    if (wf.dropped > 0) {
+                        console.log(`${MODULE_NAME}: witnessFilter dropped ${wf.dropped} message(s) for ${charTarget.name}`);
+                    }
+                    const perCharCompiled = wf.compiledScene;
 
                     const prepared = await prepareSidePromptRun({
                         tpl,
@@ -2137,17 +2194,15 @@ export async function evaluateTrackers() {
                     ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
                     : null;
 
-                let perCharCompiled = compiled;
-                if (charTarget && tpl?.settings?.witnessFilter?.enabled) {
-                    perCharCompiled = filterCompiledSceneForCharacter(compiled, chat, charTarget.name);
-                    if (perCharCompiled.messages.length === 0) {
-                        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
-                        continue;
-                    }
-                    if (perCharCompiled.metadata.witnessFiltered > 0) {
-                        console.log(`${MODULE_NAME}: witnessFilter dropped ${perCharCompiled.metadata.witnessFiltered} message(s) for ${charTarget.name}`);
-                    }
+                const wf = applyWitnessFilter(compiled, charTarget, tpl, chat);
+                if (wf.skip) {
+                    console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
+                    continue;
                 }
+                if (wf.dropped > 0) {
+                    console.log(`${MODULE_NAME}: witnessFilter dropped ${wf.dropped} message(s) for ${charTarget.name}`);
+                }
+                const perCharCompiled = wf.compiledScene;
 
                 const prepared = await prepareSidePromptRun({
                     tpl,
@@ -2366,46 +2421,44 @@ export async function runAfterMemory(compiledScene, profile = null, options = {}
 
         if (areStmbJobsEnabled()) {
             ensureSidePromptJobExecutorRegistered();
+            // Per-character + witness-filtered enqueue: expand per-character
+            // templates per actor (mirroring the non-job path below) and enqueue
+            // one witness-filtered job each; standard templates enqueue a single
+            // job. The job queue no longer bypasses per-character/witness scoping.
             let queued = 0;
-            const preparedItems = [];
             for (const runItem of runItems) {
                 const tpl = runItem.tpl;
-                const lore = await resolveSidePromptLorebook(tpl, lorebookResolveContext);
-                const prepared = await prepareSidePromptRun({
-                    tpl,
-                    loreData: lore.data,
-                    compiledScene,
-                    defaultOverrides,
-                    fallbackKinds: ['plotpoints', 'scoreboard'],
-                    runtimeMacros: runItem.runtimeMacros,
-                });
-                const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
-                const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runItem.runtimeMacros || {});
-                preparedItems.push({
-                    tpl,
-                    lore,
-                    compiledScene,
-                    prepared,
-                    runtimeMacros: runItem.runtimeMacros,
-                    defaults,
-                    entryOverrides,
-                    displayName: runItem.name || tpl.name,
-                    setMeta: runItem.set ? { setKey: runItem.set.key, setName: runItem.set.name, itemId: runItem.item?.id || '' } : null,
-                });
-            }
-            for (const item of preparedItems) {
-                enqueueStmbJob(buildSidePromptJob({
-                    tpl: item.tpl,
-                    lore: item.lore,
-                    compiledScene,
-                    prepared: item.prepared,
-                    runtimeMacros: item.runtimeMacros,
-                    trigger: 'onAfterMemory',
-                    setMeta: item.setMeta,
-                    chatRef: options.chatRef || null,
-                    chatKey: options.chatKey || null,
-                }));
-                queued++;
+                const setMeta = runItem.set ? { setKey: runItem.set.key, setName: runItem.set.name, itemId: runItem.item?.id || '' } : null;
+                const baseRuntimeMacros = runItem.runtimeMacros || {};
+                if (isPerCharacterTemplate(tpl)) {
+                    const chars = discoverChatCharacters();
+                    if (chars.length === 0) {
+                        console.warn(`${MODULE_NAME}: Per-character template "${tpl.name}" found no characters; skipping.`);
+                        continue;
+                    }
+                    const tplLoresForChar = await resolveLorebooksForTemplate(tpl, lore);
+                    if (tplLoresForChar.length === 0) {
+                        console.debug(`${MODULE_NAME}: SidePrompts: no target lorebook for per-character "${tpl.name}"; skipping quietly.`);
+                        continue;
+                    }
+                    const resolved = await resolveAllPerCharacterLorebooks(chars, tplLoresForChar[0], tpl);
+                    for (const { charTarget, lore: charLore } of resolved) {
+                        if (await enqueueSidePromptJob({
+                            tpl, charTarget, lore: charLore, compiled: compiledScene,
+                            defaultOverrides, fallbackKinds: ['plotpoints', 'scoreboard'],
+                            trigger: 'onAfterMemory', baseRuntimeMacros, setMeta,
+                            chatRef: options.chatRef || null, chatKey: options.chatKey || null,
+                        })) queued++;
+                    }
+                } else {
+                    const soloLore = await resolveSidePromptLorebook(tpl, lorebookResolveContext);
+                    if (await enqueueSidePromptJob({
+                        tpl, charTarget: null, lore: soloLore, compiled: compiledScene,
+                        defaultOverrides, fallbackKinds: ['plotpoints', 'scoreboard'],
+                        trigger: 'onAfterMemory', baseRuntimeMacros, setMeta,
+                        chatRef: options.chatRef || null, chatKey: options.chatKey || null,
+                    })) queued++;
+                }
             }
             if (queued > 0 && showNotifications) {
                 toastr.info(__st_t_tag`Side Prompts after memory queued: ${queued}.`, 'STMemoryBooks');
@@ -2468,10 +2521,18 @@ export async function runAfterMemory(compiledScene, profile = null, options = {}
                     const perCharTitleHint = charTarget
                         ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, runtimeMacros), charTarget.name)
                         : null;
+                    const wf = applyWitnessFilter(compiledScene, charTarget, tpl, chat);
+                    if (wf.skip) {
+                        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
+                        return { ok: false, skipped: true, displayName };
+                    }
+                    if (wf.dropped > 0) {
+                        console.log(`${MODULE_NAME}: witnessFilter dropped ${wf.dropped} message(s) for ${charTarget.name}`);
+                    }
                     const prepared = await prepareSidePromptRun({
                         tpl,
                         loreData: (charLore?.data) || tplLores[0].data,
-                        compiledScene,
+                        compiledScene: wf.compiledScene,
                         defaultOverrides,
                         fallbackKinds: ['plotpoints', 'scoreboard'],
                         runtimeMacros,
@@ -2813,33 +2874,8 @@ export async function runSidePrompt(args, options = {}) {
         }
         const defaultOverrides = resolveSidePromptConnection(null);
 
-        // Job-queue path (upstream): when STMB jobs are enabled, snapshot a single
-        // template-level manual run and enqueue it. The per-character / witness /
-        // bounded-concurrency machinery below is bypassed in this mode.
-        if (areStmbJobsEnabled()) {
-            ensureSidePromptJobExecutorRegistered();
-            const jobLore = tplLores[0];
-            const prepared = await prepareSidePromptRun({
-                tpl,
-                loreData: jobLore.data,
-                compiledScene: compiled,
-                defaultOverrides,
-                fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
-                runtimeMacros,
-            });
-            enqueueStmbJob(buildSidePromptJob({
-                tpl,
-                lore: jobLore,
-                compiledScene: compiled,
-                prepared,
-                runtimeMacros,
-                trigger: 'manual',
-            }));
-            toastr.info(__st_t_tag`SidePrompt "${tpl.name}" queued.`, 'STMemoryBooks');
-            return '';
-        }
-
-        // Per-character mode: resolve lorebooks upfront BEFORE any LLM calls
+        // Per-character mode: resolve lorebooks upfront BEFORE any LLM calls (used
+        // by BOTH the job-queue path and the bounded-concurrency path below).
         const perChar = isPerCharacterTemplate(tpl);
         let charWorkItems; // Array of { charTarget, lore } or [{ charTarget: null, lore: null }]
         if (perChar) {
@@ -2869,6 +2905,28 @@ export async function runSidePrompt(args, options = {}) {
             dbg('Per-character mode: false (single run)');
         }
 
+        // Job-queue path: enqueue one witness-filtered job per actor (per-character
+        // templates) or a single job (standard). The job queue no longer bypasses
+        // per-character/witness scoping.
+        if (areStmbJobsEnabled()) {
+            ensureSidePromptJobExecutorRegistered();
+            let queued = 0;
+            for (const { charTarget, lore: charLore } of charWorkItems) {
+                if (await enqueueSidePromptJob({
+                    tpl,
+                    charTarget,
+                    lore: charLore || tplLores[0],
+                    compiled,
+                    defaultOverrides,
+                    fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
+                    trigger: 'manual',
+                    baseRuntimeMacros: runtimeMacros,
+                })) queued++;
+            }
+            toastr.info(__st_t_tag`SidePrompt "${tpl.name}" queued: ${queued}.`, 'STMemoryBooks');
+            return '';
+        }
+
         try {
             // Bounded-concurrency mode (opt-in via settings.parallelCalls):
             // Phase A runs prepare + LLM per character with bounded concurrency;
@@ -2895,17 +2953,15 @@ export async function runSidePrompt(args, options = {}) {
                         ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, effectiveMacros), charTarget.name)
                         : null;
 
-                    let perCharCompiled = compiled;
-                    if (charTarget && tpl?.settings?.witnessFilter?.enabled) {
-                        perCharCompiled = filterCompiledSceneForCharacter(compiled, chat, charTarget.name);
-                        if (perCharCompiled.messages.length === 0) {
-                            console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
-                            return { skipped: true };
-                        }
-                        if (perCharCompiled.metadata.witnessFiltered > 0) {
-                            console.log(`${MODULE_NAME}: witnessFilter dropped ${perCharCompiled.metadata.witnessFiltered} message(s) for ${charTarget.name}`);
-                        }
+                    const wf = applyWitnessFilter(compiled, charTarget, tpl, chat);
+                    if (wf.skip) {
+                        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
+                        return { skipped: true };
                     }
+                    if (wf.dropped > 0) {
+                        console.log(`${MODULE_NAME}: witnessFilter dropped ${wf.dropped} message(s) for ${charTarget.name}`);
+                    }
+                    const perCharCompiled = wf.compiledScene;
 
                     const prepared = await prepareSidePromptRun({
                         tpl,
@@ -3083,17 +3139,15 @@ export async function runSidePrompt(args, options = {}) {
                     ? getPerCharacterTitle(getUnifiedSidePromptTitle(tpl, effectiveMacros), charTarget.name)
                     : null;
 
-                let perCharCompiled = compiled;
-                if (charTarget && tpl?.settings?.witnessFilter?.enabled) {
-                    perCharCompiled = filterCompiledSceneForCharacter(compiled, chat, charTarget.name);
-                    if (perCharCompiled.messages.length === 0) {
-                        console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
-                        continue;
-                    }
-                    if (perCharCompiled.metadata.witnessFiltered > 0) {
-                        console.log(`${MODULE_NAME}: witnessFilter dropped ${perCharCompiled.metadata.witnessFiltered} message(s) for ${charTarget.name}`);
-                    }
+                const wf = applyWitnessFilter(compiled, charTarget, tpl, chat);
+                if (wf.skip) {
+                    console.log(`${MODULE_NAME}: witnessFilter left 0 messages for ${charTarget.name}; skipping`);
+                    continue;
                 }
+                if (wf.dropped > 0) {
+                    console.log(`${MODULE_NAME}: witnessFilter dropped ${wf.dropped} message(s) for ${charTarget.name}`);
+                }
+                const perCharCompiled = wf.compiledScene;
 
                 const prepared = await prepareSidePromptRun({
                     tpl,

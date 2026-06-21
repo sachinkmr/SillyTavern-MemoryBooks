@@ -11,7 +11,7 @@ import { DOMPurify } from "../../../../lib.js";
 import { translate } from "../../../i18n.js";
 import { autoCreateLorebook } from "./autocreate.js";
 import { getSceneMarkers } from "./sceneManager.js";
-import { markStmbPopup, showLorebookSelectionPopup } from "./utils.js";
+import { markStmbPopup, showLorebookSelectionPopup, resolveManualLorebookNames } from "./utils.js";
 import { escapeHtml } from "../../../utils.js";
 
 function getDefaultRetryText(manualMode) {
@@ -225,7 +225,11 @@ export async function validateLorebookRequirement(options = {}) {
     lorebookNameOverride !== undefined
       ? lorebookNameOverride
       : resolvedManualMode
-        ? stmbData?.manualLorebook ?? null
+        // Use the plural-aware resolver: the chat stores its manual memory book(s)
+        // in stmbData.manualLorebooks (array; two-plane/current UI), with legacy
+        // single-string manualLorebook as fallback. Reading the bare singular field
+        // missed the array form → spurious recovery popup every run.
+        ? (resolveManualLorebookNames(stmbData)[0] ?? null)
         : chat_metadata?.[METADATA_KEY] || null;
   let attempts = 0;
 
