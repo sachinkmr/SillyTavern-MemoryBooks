@@ -870,7 +870,7 @@ CONTENT — an objective, third-person, past-tense record of THIS scene only:
 - 3-7 bullets: plot-changing actions, revelations, turning points, in order; cause -> effect.
 
 ## Character Dynamics
-- 1-2 short bullets: relationship/emotional shifts that were OUTWARDLY expressed (observable only; no inner interpretation).
+- 1-2 short bullets, OUTWARD behaviour ONLY — what a character did, said, or visibly showed. Do NOT infer or state internal feelings, motives, or enjoyment (write "Aisha kept teasing Sachin", NOT "Aisha enjoys his discomfort"). If a shift was not outwardly shown, omit it.
 
 ## Key Exchanges
 - Up to 3 short exact quotes, attributed by name, only if pivotal.
