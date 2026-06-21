@@ -97,7 +97,7 @@ export function computePlane1Segments(compiledScene, chat, rosterRows, opts = {}
         segments.push({
             filteredScene,
             characterFilter,
-            audience: audience || [],
+            audience: audience || [],   // null tokens (fail-open run) → [] = no restriction (everyone)
             sceneStart: ids[0],
             sceneEnd: ids[ids.length - 1],
             segmentIndex: segments.length,

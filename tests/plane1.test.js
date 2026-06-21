@@ -1,7 +1,7 @@
 // tests/plane1.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computePlane1Memory } from '../plane1.js';
+import { computePlane1Memory, computePlane1Segments } from '../plane1.js';
 
 // Build a (chat, compiledScene) pair where compiled msg id == chat index.
 function fixture(rows) {
@@ -100,8 +100,6 @@ test('no-cast-witnessed: disjoint audiences -> skipped (conservative; 1b will se
   assert.equal(r.reason, 'no-cast-witnessed');
 });
 
-import { computePlane1Segments } from '../plane1.js';
-
 const segIds = s => s.filteredScene.messages.map(m => m.id);
 
 test('U2 homogeneous: full-group scene is exactly ONE segment (no spurious split)', () => {
@@ -186,6 +184,20 @@ test('unstamped extends current run (fail-open, inherits gate)', () => {
   assert.equal(segs.length, 1);
   assert.deepEqual(segIds(segs[0]), [0, 1]);
   assert.deepEqual(segs[0].characterFilter.names, ['Aisha']);
+});
+
+test('unstamped between two different-set runs extends the PRIOR run (no new segment)', () => {
+  const { chat, compiledScene } = fixture([
+    { name: 'Shilpa', audience: ['user', 'shilpa'] },             // run 0
+    { name: 'Shilpa' },                                           // unstamped → absorbed into run 0
+    { name: 'Aisha', audience: ['user', 'aisha'] },              // run 1 (different set)
+  ]);
+  const segs = computePlane1Segments(compiledScene, chat, ROSTER3, { userToken: 'user' });
+  assert.equal(segs.length, 2);
+  assert.deepEqual(segIds(segs[0]), [0, 1]);                      // unstamped joins prior, not its own seg
+  assert.deepEqual(segs[0].characterFilter.names, ['Shilpa']);
+  assert.deepEqual(segIds(segs[1]), [2]);
+  assert.deepEqual(segs[1].characterFilter.names, ['Aisha']);
 });
 
 test('fully unstamped scene → one fail-open (ungated) segment', () => {
