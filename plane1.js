@@ -105,3 +105,20 @@ export function computePlane1Segments(compiledScene, chat, rosterRows, opts = {}
     }
     return segments;
 }
+
+/**
+ * Choose the memory write target. In two-plane mode, prefer the shared <World> - Memories book
+ * (resolveWorld); only fall back to the legacy chat-bound validator (which may prompt) when no
+ * world resolves. PURE + dependency-injected so it's unit-testable; the impure deps are passed in.
+ * Key contract: when twoPlane AND a world book resolves, legacyValidate is NOT called (so the
+ * chat-bound "select a lorebook" popup never fires in two-plane mode).
+ * @param {{twoPlane:boolean, resolveWorld:()=>Promise<any|null>, legacyValidate:()=>Promise<any>}} deps
+ * @returns {Promise<any>} the lorebookValidation object ({valid,name,data} | {valid:false,...})
+ */
+export async function resolveMemoryLorebook({ twoPlane, resolveWorld, legacyValidate }) {
+    if (twoPlane) {
+        const wb = await resolveWorld();
+        if (wb) return wb;                       // world book resolved → skip the legacy chat-bound gate/popup
+    }
+    return legacyValidate();
+}

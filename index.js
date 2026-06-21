@@ -194,7 +194,7 @@ import {
   parseSidePromptCommandInput,
 } from "./sidePromptMacros.js";
 import "../../../../lib/select2.min.js";
-import { computePlane1Segments } from './plane1.js';
+import { computePlane1Segments, resolveMemoryLorebook } from './plane1.js';
 import { getChatRoster, resolveWorldMemoriesBook } from './plane1Context.js';
 import { directedMetaForSegment, buildShellEntry } from './shell.js';
 
@@ -2237,9 +2237,13 @@ function validateSettings(settings) {
  * Validate lorebook and return status with data
  */
 export async function validateLorebook(skipAutoCreate = false) {
-  return validateLorebookRequirement({
-    skipAutoCreate,
-    createContext: "chat",
+  // Phase 2: in two-plane mode, route to the shared <World> - Memories book (auto-created from
+  // folder/group/prefix/char) and SKIP the chat-bound requirement/popup; fall back to the legacy
+  // chat-bound validator only when no world resolves. Flag off → unchanged (legacy only).
+  return resolveMemoryLorebook({
+    twoPlane: isTwoPlane(),
+    resolveWorld: () => resolveWorldMemoriesBook(),
+    legacyValidate: () => validateLorebookRequirement({ skipAutoCreate, createContext: "chat" }),
   });
 }
 

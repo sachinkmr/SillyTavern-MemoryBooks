@@ -1,7 +1,7 @@
 // tests/plane1.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computePlane1Memory, computePlane1Segments } from '../plane1.js';
+import { computePlane1Memory, computePlane1Segments, resolveMemoryLorebook } from '../plane1.js';
 
 // Build a (chat, compiledScene) pair where compiled msg id == chat index.
 function fixture(rows) {
@@ -212,4 +212,38 @@ test('dead-filter: per-segment gate uses avatar basenames', () => {
   const { chat, compiledScene } = fixture([{ name: 'Priya Mehta', audience: ['user', 'priya mehta'] }]);
   const segs = computePlane1Segments(compiledScene, chat, ROSTER3, { userToken: 'user' });
   assert.deepEqual(segs[0].characterFilter.names, ['Priya']);     // NOT 'Priya Mehta'
+});
+
+test('resolveMemoryLorebook: flag OFF → legacy validator only (world never resolved)', async () => {
+  let worldCalled = false, legacyCalled = false;
+  const r = await resolveMemoryLorebook({
+    twoPlane: false,
+    resolveWorld: async () => { worldCalled = true; return { valid: true, name: 'W - Memories' }; },
+    legacyValidate: async () => { legacyCalled = true; return { valid: true, name: 'ChatBook' }; },
+  });
+  assert.equal(worldCalled, false);
+  assert.equal(legacyCalled, true);
+  assert.equal(r.name, 'ChatBook');
+});
+
+test('resolveMemoryLorebook: two-plane + world resolves → world book, legacy NOT called (no popup)', async () => {
+  let legacyCalled = false;
+  const r = await resolveMemoryLorebook({
+    twoPlane: true,
+    resolveWorld: async () => ({ valid: true, name: 'W - Memories' }),
+    legacyValidate: async () => { legacyCalled = true; return { valid: false }; },
+  });
+  assert.equal(r.name, 'W - Memories');
+  assert.equal(legacyCalled, false);   // the chat-bound gate/popup never fires
+});
+
+test('resolveMemoryLorebook: two-plane + no world → falls back to legacy validator', async () => {
+  let legacyCalled = false;
+  const r = await resolveMemoryLorebook({
+    twoPlane: true,
+    resolveWorld: async () => null,
+    legacyValidate: async () => { legacyCalled = true; return { valid: true, name: 'ChatBook' }; },
+  });
+  assert.equal(legacyCalled, true);
+  assert.equal(r.name, 'ChatBook');
 });
