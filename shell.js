@@ -30,18 +30,23 @@ export function buildShellEntry(meta, contentAudience, rosterRows, opts = {}) {
     const bystanders = meta.present_cast.filter(n => !aud.includes(n));
     if (!bystanders.length) return null;                             // E4/N10: no excluded observer
     const characterFilter = buildEntryCharacterFilter(bystanders, rosterRows);
-    const fromName = displayName(meta.from, rosterRows);
+    // The user persona is never in rosterRows (AI chars only) — resolve it via opts.userName so
+    // the shell reads "Sachin whispered…" not the lowercased stamp token "sachin".
+    const userTok = String(opts.userToken || '').toLowerCase();
+    const userName = opts.userName ? String(opts.userName) : null;
+    const nameOf = (token) => (userTok && token === userTok && userName) ? userName : displayName(token, rosterRows);
+    const fromName = nameOf(meta.from);
     const toPresentNamed = meta.to.filter(t => !meta.remote.includes(t));     // present, non-remote targets
     let content;
     if (meta.type === 'whisper') {
-        const tgt = meta.to.map(t => displayName(t, rosterRows)).join(' and ') || 'someone';
+        const tgt = meta.to.map(nameOf).join(' and ') || 'someone';
         content = `[Private exchange] ${fromName} whispered something to ${tgt}.`;
     } else { // 'text' / 'dm'
         if (toPresentNamed.length) {
-            content = `[Private exchange] ${fromName} was texting ${toPresentNamed.map(t => displayName(t, rosterRows)).join(' and ')}.`;
+            content = `[Private exchange] ${fromName} was texting ${toPresentNamed.map(nameOf).join(' and ')}.`;
         } else {
             content = `[Private exchange] ${fromName} was texting someone.`;   // U8: remote/absent target hidden
         }
     }
-    return { content, suggestedKeys: [], characterFilter, shell: true, from: meta.from, to: meta.to };
+    return { content, suggestedKeys: [], characterFilter, shell: true, from: meta.from, fromDisplay: fromName, to: meta.to };
 }

@@ -2641,11 +2641,11 @@ async function executeMemoryGeneration(
         results.push(finalMr);
         // Phase 2: emit a graded-perception shell entry for bystanders of directed segments.
         const _meta = directedMetaForSegment(seg, chat);
-        const _shell = _meta && buildShellEntry(_meta, seg.audience, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+        const _shell = _meta && buildShellEntry(_meta, seg.audience, getChatRoster(), { userToken: (name1 || '').toLowerCase(), userName: name1 });
         if (_shell) {
           results.push({
             content: _shell.content, suggestedKeys: _shell.suggestedKeys, characterFilter: _shell.characterFilter, shell: true,
-            extractedTitle: `Private exchange (${_shell.from})`,
+            extractedTitle: `Private exchange (${_shell.fromDisplay || _shell.from})`,
             metadata: { ...mr.metadata, sceneRange: `${seg.sceneStart}-${seg.sceneEnd}` },
             titleFormat: mr.titleFormat, lorebookSettings: mr.lorebookSettings,
           });
@@ -3440,11 +3440,11 @@ async function executeQueuedMemoryJob(job, jobContext) {
       }
       results.push(finalMr);
       // Phase 2: emit a graded-perception shell entry using STASHED meta (snapshot-safe).
-      const _shell = seg.directedMeta && buildShellEntry(seg.directedMeta, seg.audience, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+      const _shell = seg.directedMeta && buildShellEntry(seg.directedMeta, seg.audience, getChatRoster(), { userToken: (name1 || '').toLowerCase(), userName: name1 });
       if (_shell) {
         results.push({
           content: _shell.content, suggestedKeys: _shell.suggestedKeys, characterFilter: _shell.characterFilter, shell: true,
-          extractedTitle: `Private exchange (${_shell.from})`,
+          extractedTitle: `Private exchange (${_shell.fromDisplay || _shell.from})`,
           metadata: { ...mr.metadata, sceneRange: `${seg.sceneStart}-${seg.sceneEnd}` },
           titleFormat: mr.titleFormat, lorebookSettings: mr.lorebookSettings,
         });

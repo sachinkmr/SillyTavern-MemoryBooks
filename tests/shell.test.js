@@ -57,6 +57,16 @@ test('E4/N10 no bystander: no shell', () => {
   assert.equal(buildShellEntry(directedMetaForSegment(seg, chat), seg.audience, ROSTER, { userToken: 'sachin' }), null);
 });
 
+test('M1: user-initiated whisper shows the user display name, not the lowercased token', () => {
+  const { seg, chat } = dirSeg([0], {
+    type: 'whisper', audience: ['sachin', 'shilpa'], present_cast: ['sachin', 'shilpa', 'aisha'],
+    from: 'sachin', to: ['shilpa'],
+  });
+  const shell = buildShellEntry(directedMetaForSegment(seg, chat), seg.audience, ROSTER, { userToken: 'sachin', userName: 'Sachin' });
+  assert.match(shell.content, /Sachin whispered/);   // resolved display name, not 'sachin'
+  assert.equal(shell.fromDisplay, 'Sachin');
+});
+
 test('non-directed segment → directedMetaForSegment returns null (no shell, E1 thoughts handled upstream)', () => {
   const chat = [{ extra: { channel: { audience: ['sachin', 'aisha'] } } }];  // no present_cast
   const seg = { filteredScene: { messages: [{ id: 0 }] }, audience: ['sachin', 'aisha'] };
