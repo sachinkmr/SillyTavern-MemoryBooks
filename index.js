@@ -2539,6 +2539,29 @@ async function executeMemoryGeneration(
 
     // Phase-1b two-plane memory: segment loop early-return (replaces 1a single-path block)
     if (isTwoPlane()) {
+      // I1 FIX: fetch previousSummariesContext + additionalContextEntries BEFORE segmenting so
+      // every seg.filteredScene inherits them via the spreads inside computePlane1Segments.
+      // Mirrors the flag-off path (lines ~2673-2733) and the queued builder (lines ~3155-3170).
+      const additionalContextSnapshot = await resolveAdditionalContextSnapshot(profileSettings, {
+        blockingPrompt: true,
+      });
+      if (additionalContextSnapshot.cancelled) {
+        return false;
+      }
+      compiledScene.additionalContextEntries = additionalContextSnapshot.entries;
+
+      let previousMemories = [];
+      memoryFetchResult = { summaries: [], actualCount: 0, requestedCount: 0 };
+      if (summaryCount > 0) {
+        memoryFetchResult = await fetchPreviousSummaries(
+          summaryCount,
+          settings,
+          chat_metadata,
+        );
+        previousMemories = memoryFetchResult.summaries;
+      }
+      compiledScene.previousSummariesContext = previousMemories;
+
       const segments = computePlane1Segments(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
       if (!segments.length) return false;                             // nothing real/witnessed → clean no-op
       plane1Book = await resolveWorldMemoriesBook();
@@ -2546,7 +2569,10 @@ async function executeMemoryGeneration(
       const wholeRange = `${sceneData.sceneStart}-${sceneData.sceneEnd}`;
       const segmented = segments.length > 1;                         // auto-accept previews only when segmented
       const originalCompiledScene = compiledScene;
-      const entryTitles = [];
+
+      // I2 FIX Phase 1 (generate-all): collect all results before any write so a generation
+      // failure on segment k leaves 0..k-1 unwritten — the full-function retry is safe.
+      const results = [];
       for (const seg of segments) {
         throwIfStmbStopped(runEpoch);
         compiledScene = seg.filteredScene;                           // so AIResponseError catch captures THIS segment
@@ -2611,6 +2637,13 @@ async function executeMemoryGeneration(
             finalMr = mr;
           }
         }
+        results.push(finalMr);
+      }
+
+      // I2 FIX Phase 2 (write-all): all LLM calls are done — now write every result.
+      // A failure here does NOT cause duplicates on retry because no partial writes exist yet.
+      const entryTitles = [];
+      for (const finalMr of results) {
         throwIfStmbStopped(runEpoch);
         const addResult = await addMemoryToLorebook(finalMr, lv, {
           expectedChatId: startChatId,
@@ -2618,7 +2651,6 @@ async function executeMemoryGeneration(
           updateHighestMemoryProcessed: false,
           refreshEditor: false,
         });
-        throwIfStmbStopped(runEpoch);
         if (!addResult.success) {
           if (addResult.chatChanged) {
             toastr.warning(
