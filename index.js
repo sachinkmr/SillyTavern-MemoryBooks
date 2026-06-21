@@ -3170,18 +3170,17 @@ async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSett
   const chatRef = getCurrentStmbChatRef();
   const lorebookName = String(lorebookValidation?.name || "").trim();
 
-  // Phase-1a: compute plane1 data BEFORE deep-clone snapshot (reads live chat)
+  // Phase-1b: compute plane1 segments BEFORE deep-clone snapshot (reads live chat)
   let plane1 = null;
+  let plane1Segments = null;
+  let plane1BookName = null;
   if (isTwoPlane()) {
-    const p1 = computePlane1Memory(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
-    if (!p1.skipped) {
-      compiledScene = p1.filteredScene;                         // snapshot the filtered scene
-      plane1 = {
-        characterFilter: p1.characterFilter,
-        bookName: (await resolveWorldMemoriesBook())?.name || null,
-      };
+    const segs = computePlane1Segments(compiledScene, chat, getChatRoster(), { userToken: (name1 || '').toLowerCase() });
+    if (!segs.length) {
+      plane1 = { skipped: true };
     } else {
-      plane1 = { skipped: true, reason: p1.reason };
+      plane1Segments = segs;
+      plane1BookName = (await resolveWorldMemoriesBook())?.name || null;
     }
   }
 
@@ -3206,6 +3205,8 @@ async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSett
       settings: deepClone(settings),
       memoryFetchResult: deepClone(memoryFetchResult),
       plane1,
+      plane1Segments,
+      plane1BookName,
     },
   };
 }
@@ -3337,14 +3338,137 @@ async function executeQueuedMemoryJob(job, jobContext) {
     return;
   }
 
+  // Phase-1b: two-plane segment path — LLM calls OUTSIDE the write lane
+  if (payload.plane1Segments?.length) {
+    const segmented = payload.plane1Segments.length > 1;  // auto-accept approval only when segmented
+    const bookName = payload.plane1BookName || lorebookName;
+    const results = [];
+
+    jobContext.setState("generating", { detail: profileSettings.name || "Memory" });
+    for (const seg of payload.plane1Segments) {
+      jobContext.throwIfCancelled();
+      const mr = await createMemory(seg.filteredScene, profileSettings, {
+        tokenWarningThreshold: payload.tokenThreshold,
+        signal: jobContext.signal,
+      });
+      jobContext.throwIfCancelled();
+      mr.characterFilter = seg.characterFilter;
+      mr.metadata.sceneRange = `${seg.filteredScene.metadata.sceneStart}-${seg.filteredScene.metadata.sceneEnd}`;
+
+      let finalMr = mr;
+      if (!segmented && settings.moduleSettings?.showMemoryPreviews) {
+        // N==1 ONLY: run the existing approval flow (segmented scenes auto-accept)
+        const approval = await awaitStmbJobApproval(
+          jobContext,
+          {
+            kind: "memoryApproval",
+            title: "Memory",
+            detail: job.detail,
+            open: async () => {
+              const result = await showMemoryPreviewPopup(mr, sceneData, profileSettings);
+              if (result?.action === "cancel") return { decision: "cancel" };
+              if (result?.action === "retry") return { decision: "retry" };
+              if (result?.action === "edit") return { decision: "accept", editedData: result.memoryData };
+              return { decision: "accept" };
+            },
+          },
+          { detail: job.detail },
+        );
+        if (approval?.decision === "cancel" || approval?.decision === "reject") {
+          jobContext.patch({ state: "canceled", detail: "Canceled in approval" });
+          return;
+        }
+        if (approval?.decision === "retry") {
+          throw new Error("Retry requested; use the job retry action to run the original snapshot again.");
+        }
+        if (approval?.editedData) {
+          finalMr = approval.editedData;
+          // carry characterFilter onto edited result
+          if (!finalMr.characterFilter) finalMr.characterFilter = mr.characterFilter;
+        }
+      }
+      results.push(finalMr);
+    }
+
+    // ONE write lane holding all N segment writes (no nesting, no LLM calls inside)
+    jobContext.throwIfCancelled();
+    jobContext.setState("saving", { detail: bookName });
+    const entryTitles = [];
+    let latestLorebookData = null;
+    await withStmbWriteLane({ type: "lorebook", name: bookName }, async () => {
+      const data = await loadWorldInfo(bookName);
+      if (!data?.entries) {
+        throw new Error(`Lorebook "${bookName}" could not be loaded.`);
+      }
+      const lv = { valid: true, name: bookName, data };
+      // overlap check ONCE on the whole scene range
+      if (!settings.moduleSettings?.allowSceneOverlap) {
+        const overlap = findOverlappingMemoryInLorebook(lv.data, sceneData);
+        if (overlap) {
+          const error = new Error(`Scene overlaps with existing memory: "${overlap.title}" (messages ${overlap.start}-${overlap.end})`);
+          error.name = "StmbJobNeedsReview";
+          throw error;
+        }
+      }
+      for (const finalMr of results) {
+        const addResult = await addMemoryToLorebook(finalMr, lv, {
+          autoHide: false,
+          refreshEditor: false,
+          updateHighestMemoryProcessed: false,
+        });
+        if (!addResult?.success) {
+          throw new Error(addResult?.error || "Failed to add memory to lorebook");
+        }
+        entryTitles.push(addResult.entryTitle);
+      }
+      latestLorebookData = lv.data;
+    });
+
+    // per-scene-once side-effects AFTER the lane
+    jobContext.throwIfCancelled();
+    await applyQueuedMemoryAutoHide(job, { metadata: { sceneRange: `${sceneData.sceneStart}-${sceneData.sceneEnd}` } }, settings);
+    jobContext.throwIfCancelled();
+    await updateHighestMemoryProcessedForChatRef(job.chatRef, sceneData.sceneEnd);
+    jobContext.setResult({
+      lorebookName: bookName,
+      entryTitles,
+      count: entryTitles.length,
+      entryTitle: entryTitles[0] || "",
+    });
+
+    try {
+      jobContext.setState("post_save", { detail: "Running after-memory side prompts" });
+      await runAfterMemory(compiledScene, profileSettings, {
+        chatRef: job.chatRef,
+        chatKey: job.chatKey,
+        lorebookName: bookName,
+      });
+    } catch (error) {
+      console.warn("STMemoryBooks: queued after-memory side prompts failed:", error);
+    }
+
+    jobContext.throwIfCancelled();
+    if (isStmbJobChatCurrent(job.chatRef)) {
+      clearAutoSummaryState();
+      await maybePromptSelectedAutoConsolidation({
+        minTargetTier: 1,
+        lorebookValidation: {
+          valid: true,
+          name: bookName,
+          data: latestLorebookData,
+        },
+      });
+    }
+    return;
+  }
+
+  // Flag-off path (no plane1Segments): original single-entry queued path unchanged
   jobContext.setState("generating", { detail: profileSettings.name || "Memory" });
   const memoryResult = await createMemory(compiledScene, profileSettings, {
     tokenWarningThreshold: payload.tokenThreshold,
     signal: jobContext.signal,
   });
   jobContext.throwIfCancelled();
-  // Phase-1a: stamp characterFilter so addMemoryToLorebook can gate the entry
-  if (isTwoPlane()) memoryResult.characterFilter = payload.plane1?.characterFilter ?? null;
 
   let finalMemoryResult = memoryResult;
   if (settings.moduleSettings?.showMemoryPreviews) {
@@ -3380,24 +3504,12 @@ async function executeQueuedMemoryJob(job, jobContext) {
   jobContext.setState("saving", { detail: lorebookName });
   let addResult = null;
   let latestLorebookData = null;
-  // Phase-1a: when two-plane and a bookName was captured at enqueue, reload data fresh and route there
-  const _plane1BookName = payload.plane1?.bookName || null;
-  const _effectiveLorebookName = (_plane1BookName) ? _plane1BookName : lorebookName;
-  await withStmbWriteLane({ type: "lorebook", name: _effectiveLorebookName }, async () => {
-    let _lorebookValidation;
-    if (_plane1BookName) {
-      const data = await loadWorldInfo(_plane1BookName);
-      if (!data?.entries) {
-        throw new Error(`World memories lorebook "${_plane1BookName}" could not be loaded.`);
-      }
-      _lorebookValidation = { valid: true, name: _plane1BookName, data };
-    } else {
-      const freshLorebook = await loadWorldInfo(lorebookName);
-      if (!freshLorebook?.entries) {
-        throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
-      }
-      _lorebookValidation = { valid: true, name: lorebookName, data: freshLorebook };
+  await withStmbWriteLane({ type: "lorebook", name: lorebookName }, async () => {
+    const freshLorebook = await loadWorldInfo(lorebookName);
+    if (!freshLorebook?.entries) {
+      throw new Error(`Lorebook "${lorebookName}" could not be loaded.`);
     }
+    const _lorebookValidation = { valid: true, name: lorebookName, data: freshLorebook };
     if (!settings.moduleSettings?.allowSceneOverlap) {
       const overlap = findOverlappingMemoryInLorebook(_lorebookValidation.data, sceneData);
       if (overlap) {
