@@ -66,6 +66,27 @@ export function deriveWorldPrefix(bookName) {
 }
 
 /**
+ * Name of the first folder-type tag mapped to entityKey (ST tag-folder), or null.
+ * PURE / defensive: never throws; returns null on any missing/malformed input.
+ *
+ * @param {string|null|undefined} entityKey - character avatar filename (solo) or group id (group)
+ * @param {Object|null|undefined} tagMap    - tag_map from ST tags.js (entityKey → tagId[])
+ * @param {Array|null|undefined}  tagList   - tags array from ST tags.js ({id, name, folder_type}[])
+ * @returns {string|null}
+ */
+export function pickFolderName(entityKey, tagMap, tagList) {
+    if (!entityKey || !tagMap || !Array.isArray(tagList)) return null;
+    const ids = Array.isArray(tagMap[entityKey]) ? tagMap[entityKey] : [];
+    if (!ids.length) return null;
+    for (const t of tagList) {
+        if (!t || !ids.includes(t.id)) continue;
+        const ft = t.folder_type ? String(t.folder_type).toUpperCase() : '';
+        if (ft && ft !== 'NONE') return (typeof t.name === 'string' && t.name.trim()) ? t.name.trim() : null;
+    }
+    return null;
+}
+
+/**
  * Resolve a lorebookNames array: per-name macro resolution, trim, drop
  * non-strings/empties, and dedupe AFTER resolution (two raw names may
  * resolve to the same book).

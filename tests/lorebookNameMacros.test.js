@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     hasLorebookNameMacros, resolveLorebookNameMacros, resolveLorebookNameList,
-    deriveWorldPrefix,
+    deriveWorldPrefix, pickFolderName,
 } from '../lorebookNameMacros.js';
 
 test('{{group}} resolves to the group chat NAME (emoji preserved), not a member list', () => {
@@ -119,4 +119,92 @@ test('deriveWorldPrefix: multi-dash prefixes keep everything before the suffix',
 test('deriveWorldPrefix: bare suffix with no prefix => null', () => {
     assert.equal(deriveWorldPrefix(' - Core'), null);
     assert.equal(deriveWorldPrefix(' - Memories'), null);
+});
+
+// ---------------------------------------------------------------------------
+// pickFolderName — pure helper for tag-folder world derivation
+// ---------------------------------------------------------------------------
+
+const FOLDER_TAG_ID   = 'tag-folder-1';
+const NONFOLDER_TAG_ID = 'tag-plain-1';
+
+const TAG_LIST_BASIC = [
+    { id: NONFOLDER_TAG_ID, name: 'Romance',    folder_type: 'NONE'   },
+    { id: FOLDER_TAG_ID,    name: '🏠 TWW2',    folder_type: 'OPEN'   },
+];
+const TAG_MAP_BASIC = { 'char-avatar.png': [NONFOLDER_TAG_ID, FOLDER_TAG_ID] };
+
+test('pickFolderName: entity with a folder tag returns the tag name', () => {
+    assert.equal(pickFolderName('char-avatar.png', TAG_MAP_BASIC, TAG_LIST_BASIC), '🏠 TWW2');
+});
+
+test('pickFolderName: entity with only non-folder tags returns null', () => {
+    const tagMap = { 'char-avatar.png': [NONFOLDER_TAG_ID] };
+    assert.equal(pickFolderName('char-avatar.png', tagMap, TAG_LIST_BASIC), null);
+});
+
+test('pickFolderName: multiple folder tags — first match by tagList order wins', () => {
+    const folderTag2 = { id: 'tag-folder-2', name: 'Other Folder', folder_type: 'CLOSED' };
+    const tagList = [
+        { id: NONFOLDER_TAG_ID, name: 'Romance',      folder_type: 'NONE'   },
+        { id: FOLDER_TAG_ID,    name: '🏠 TWW2',      folder_type: 'OPEN'   },
+        folderTag2,
+    ];
+    const tagMap = { 'char-avatar.png': [FOLDER_TAG_ID, 'tag-folder-2', NONFOLDER_TAG_ID] };
+    // tagList order: FOLDER_TAG_ID comes before tag-folder-2 → '🏠 TWW2' wins
+    assert.equal(pickFolderName('char-avatar.png', tagMap, tagList), '🏠 TWW2');
+});
+
+test('pickFolderName: missing entityKey returns null', () => {
+    assert.equal(pickFolderName(null,      TAG_MAP_BASIC, TAG_LIST_BASIC), null);
+    assert.equal(pickFolderName(undefined, TAG_MAP_BASIC, TAG_LIST_BASIC), null);
+    assert.equal(pickFolderName('',        TAG_MAP_BASIC, TAG_LIST_BASIC), null);
+});
+
+test('pickFolderName: missing/null tagMap returns null', () => {
+    assert.equal(pickFolderName('char-avatar.png', null,      TAG_LIST_BASIC), null);
+    assert.equal(pickFolderName('char-avatar.png', undefined, TAG_LIST_BASIC), null);
+});
+
+test('pickFolderName: non-array tagList returns null', () => {
+    assert.equal(pickFolderName('char-avatar.png', TAG_MAP_BASIC, null),      null);
+    assert.equal(pickFolderName('char-avatar.png', TAG_MAP_BASIC, undefined),  null);
+    assert.equal(pickFolderName('char-avatar.png', TAG_MAP_BASIC, {}),         null);
+});
+
+test('pickFolderName: entityKey not in tagMap returns null (empty ids)', () => {
+    assert.equal(pickFolderName('unknown-entity', TAG_MAP_BASIC, TAG_LIST_BASIC), null);
+});
+
+test('pickFolderName: folder_type NONE is excluded', () => {
+    const tagList = [{ id: 'tag-x', name: 'FolderLike', folder_type: 'NONE' }];
+    const tagMap  = { 'char-avatar.png': ['tag-x'] };
+    assert.equal(pickFolderName('char-avatar.png', tagMap, tagList), null);
+});
+
+test('pickFolderName: folder_type OPEN is matched (case-insensitive)', () => {
+    const tagList = [{ id: 'tag-x', name: 'My World', folder_type: 'open' }];
+    const tagMap  = { 'char-avatar.png': ['tag-x'] };
+    assert.equal(pickFolderName('char-avatar.png', tagMap, tagList), 'My World');
+});
+
+test('pickFolderName: folder_type CLOSED is matched', () => {
+    const tagList = [{ id: 'tag-x', name: 'Secret World', folder_type: 'CLOSED' }];
+    const tagMap  = { 'char-avatar.png': ['tag-x'] };
+    assert.equal(pickFolderName('char-avatar.png', tagMap, tagList), 'Secret World');
+});
+
+test('pickFolderName: null or non-string tag entry in tagList is skipped defensively', () => {
+    const tagList = [null, undefined, { id: FOLDER_TAG_ID, name: '🏠 TWW2', folder_type: 'OPEN' }];
+    assert.equal(pickFolderName('char-avatar.png', TAG_MAP_BASIC, tagList), '🏠 TWW2');
+});
+
+test('pickFolderName: folder tag with blank name returns null', () => {
+    const tagList = [{ id: FOLDER_TAG_ID, name: '   ', folder_type: 'OPEN' }];
+    assert.equal(pickFolderName('char-avatar.png', TAG_MAP_BASIC, tagList), null);
+});
+
+test('pickFolderName: works with group id as entityKey (group chat path)', () => {
+    const tagMap = { 'group-99': [FOLDER_TAG_ID] };
+    assert.equal(pickFolderName('group-99', tagMap, TAG_LIST_BASIC), '🏠 TWW2');
 });

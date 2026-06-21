@@ -7,6 +7,7 @@
  *
  * Exports:
  *   getChatRoster()            → {name, avatar}[]
+ *   currentFolderName()        → string|null
  *   resolveWorldMemoriesBook() → Promise<{valid:true, name, data}|null>
  */
 
@@ -14,9 +15,13 @@
 import { chat_metadata, characters, this_chid, name2 } from '../../../../script.js';
 import { METADATA_KEY, world_names, loadWorldInfo, createNewWorldInfo } from '../../../world-info.js';
 import { selected_group, groups } from '../../../group-chats.js';
+// Defensive import: tags.js lives alongside world-info.js / group-chats.js in the ST root.
+// Path mirrors sibling imports above. If ST core doesn't export these names the try/catch
+// in currentFolderName() ensures routing never throws.
+import { tags, tag_map } from '../../../tags.js';
 
 // Local imports
-import { deriveWorldPrefix } from './lorebookNameMacros.js';
+import { deriveWorldPrefix, pickFolderName } from './lorebookNameMacros.js';
 import { getCurrentMemoryBooksContext } from './utils.js';
 
 /**
@@ -43,16 +48,43 @@ export function getChatRoster() {
 }
 
 /**
+ * Returns the name of the ST tag-folder the active character/group sits in,
+ * or null when no folder tag is found or any access fails.
+ *
+ * IMPURE — reads ST globals (selected_group, characters, this_chid, tags, tag_map).
+ * Fully defensive: a try/catch guards every path so a missing tags.js export or
+ * an unexpected ST data shape can never propagate as an exception.
+ *
+ * @returns {string|null}
+ */
+export function currentFolderName() {
+    try {
+        const entityKey = selected_group
+            ? selected_group
+            : characters?.[this_chid]?.avatar;
+        return pickFolderName(entityKey, tag_map, tags);
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
  * Resolve/create/load the shared "<World> - Memories" lorebook.
+ * World name priority:
+ *   1. Tag-folder name the active character/group sits in (cross-folder sharing)
+ *   2. Group name (group chat)
+ *   3. Chat-bound lorebook prefix (solo "Option A" world anchor)
+ *   4. Character name
  * Does NOT rebind chat_metadata[METADATA_KEY] (contrast autoCreateLorebook
  * in autocreate.js which does rebind — we call createNewWorldInfo directly).
  * @returns {Promise<{valid:true, name:string, data:object}|null>}
  */
 export async function resolveWorldMemoriesBook() {
     const ctx = getCurrentMemoryBooksContext();
-    const world = (ctx?.isGroupChat && ctx.groupName)
-        ? ctx.groupName
-        : (deriveWorldPrefix(chat_metadata?.[METADATA_KEY]) || ctx?.characterName);
+    const world = currentFolderName()
+        || (ctx?.isGroupChat && ctx.groupName ? ctx.groupName : null)
+        || deriveWorldPrefix(chat_metadata?.[METADATA_KEY])
+        || ctx?.characterName;
     if (!world) return null;
     const name = `${world} - Memories`;
     if (!(world_names || []).includes(name)) {
