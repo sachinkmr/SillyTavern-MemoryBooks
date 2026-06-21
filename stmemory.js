@@ -1,5 +1,5 @@
 import { getEffectivePrompt, getCurrentApiInfo, normalizeCompletionSource, estimateTokens, isStmbStopError, StmbCancelledError, normalizeAdditionalContextEntries } from './utils.js';
-import { characters, this_chid, substituteParams, getRequestHeaders } from '../../../../script.js';
+import { characters, this_chid, substituteParams, getRequestHeaders, chat_metadata } from '../../../../script.js';
 import { getStreamingReply, oai_settings, ZAI_ENDPOINT } from '../../../openai.js';
 import EventSourceStream from '../../../sse-stream.js';
 import { runRegexScript, getRegexScripts } from '../../../extensions/regex/engine.js';
@@ -1464,7 +1464,7 @@ async function buildPrompt(compiledScene, profile) {
     // In-story clock (StateTracker) — feed it so summaries are dated correctly. Guarded: skip if absent.
     let dateLine = '';
     try {
-        const stClock = getContext()?.chat_metadata?.state_tracker_state?.scene?.clock;
+        const stClock = chat_metadata?.state_tracker_state?.scene?.clock;
         if (typeof stClock === 'string' && stClock.trim()) {
             dateLine = `IN-STORY DATE/TIME (current scene clock): ${stClock.trim()}\n\n`;
         }
