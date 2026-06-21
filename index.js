@@ -194,7 +194,7 @@ import {
   parseSidePromptCommandInput,
 } from "./sidePromptMacros.js";
 import "../../../../lib/select2.min.js";
-import { computePlane1Memory, computePlane1Segments } from './plane1.js';
+import { computePlane1Segments } from './plane1.js';
 import { getChatRoster, resolveWorldMemoriesBook } from './plane1Context.js';
 
 /**
@@ -2525,7 +2525,7 @@ async function executeMemoryGeneration(
   }
 
   const maxRetries = MEMORY_GENERATION.MAX_RETRIES;
-  // Phase-1a: declare in outer scope so catch block (lastFailedAIContext) can capture them
+  // Phase-1b: declare in outer scope so catch block (lastFailedAIContext) can capture them
   let plane1Book = null, plane1Filter = null;
 
   try {
@@ -2545,6 +2545,7 @@ async function executeMemoryGeneration(
       const lv = plane1Book || lorebookValidation;                   // null world book → chat-bound fallback
       const wholeRange = `${sceneData.sceneStart}-${sceneData.sceneEnd}`;
       const segmented = segments.length > 1;                         // auto-accept previews only when segmented
+      const originalCompiledScene = compiledScene;
       const entryTitles = [];
       for (const seg of segments) {
         throwIfStmbStopped(runEpoch);
@@ -2636,8 +2637,9 @@ async function executeMemoryGeneration(
       // ---- per-scene-once side-effects (run ONCE after all segments) ----
       await applySceneAutoHide(wholeRange, settings.moduleSettings);
       updateHighestMemoryProcessed({ metadata: { sceneRange: wholeRange, chatId: startChatId } }, startChatId);
+      refreshMemoryBoundaryUi();
       // refresh editor once
-      if (settings.moduleSettings?.refreshEditor) {
+      if (settings.moduleSettings?.refreshEditor !== false) {
         try {
           reloadEditor(lv.name);
         } catch (e) { /* noop */ }
@@ -2651,7 +2653,7 @@ async function executeMemoryGeneration(
         'STMemoryBooks',
       );
       try {
-        await runAfterMemory(compiledScene, profileSettings);
+        await runAfterMemory(originalCompiledScene, profileSettings);
       } catch (e) {
         console.warn('STMemoryBooks: runAfterMemory failed:', e);
       }
@@ -3205,7 +3207,7 @@ async function buildQueuedMemoryJob(sceneData, lorebookValidation, effectiveSett
       settings: deepClone(settings),
       memoryFetchResult: deepClone(memoryFetchResult),
       plane1,
-      plane1Segments,
+      plane1Segments: deepClone(plane1Segments),
       plane1BookName,
     },
   };
@@ -3332,11 +3334,13 @@ async function executeQueuedMemoryJob(job, jobContext) {
     throw new Error("Memory job snapshot is incomplete.");
   }
 
-  // Phase-1a: if all messages were unreal/unwitnessed at enqueue, skip cleanly
+  // Phase-1b: if all messages were unreal/unwitnessed at enqueue, skip cleanly
   if (payload.plane1?.skipped) {
     jobContext.patch({ state: "skipped", detail: `Skipped: ${payload.plane1.reason || 'all-unreal'}` });
     return;
   }
+
+  // Multi-segment repair is scoped to the failing segment; earlier segments in the scene are already written (partial completion is expected).
 
   // Phase-1b: two-plane segment path — LLM calls OUTSIDE the write lane
   if (payload.plane1Segments?.length) {
@@ -3353,7 +3357,7 @@ async function executeQueuedMemoryJob(job, jobContext) {
       });
       jobContext.throwIfCancelled();
       mr.characterFilter = seg.characterFilter;
-      mr.metadata.sceneRange = `${seg.filteredScene.metadata.sceneStart}-${seg.filteredScene.metadata.sceneEnd}`;
+      mr.metadata.sceneRange = `${seg.sceneStart}-${seg.sceneEnd}`;
 
       let finalMr = mr;
       if (!segmented && settings.moduleSettings?.showMemoryPreviews) {
