@@ -932,6 +932,35 @@ async function maybePromptContextSettingForChatOpen() {
   }
 }
 
+// Phase 4a — debounced, flag-gated re-arm of the "<World> - Memories" book in
+// ST's global active set. Shared by CHAT_CHANGED (post-switch) and
+// GENERATION_STARTED (before generation) so a mid-chat world change that does
+// NOT raise CHAT_CHANGED — re-tagging the active character into a different ST
+// folder, or a group-membership change that resolves a different world — still
+// attaches the new world's book before the next generation, instead of leaking
+// the prior world's book until the next chat switch. applyWorldBookActivation()
+// is idempotent + has its own world_names readiness gate, so re-arming on every
+// generation is cheap (a no-op when nothing changed). Flag-gated so flag-off
+// makes ZERO activation calls (byte-identical to pre-Phase-4a).
+let worldBookActivationTimer = null;
+const WORLD_BOOK_ACTIVATION_DEBOUNCE_MS = 150;
+function scheduleWorldBookActivation() {
+  if (!isTwoPlane()) return; // flag-off: zero calls, zero timers
+  if (worldBookActivationTimer) {
+    clearTimeout(worldBookActivationTimer);
+  }
+  worldBookActivationTimer = setTimeout(() => {
+    worldBookActivationTimer = null;
+    if (!isTwoPlane()) return; // re-check: flag may have flipped during the wait
+    applyWorldBookActivation({ isTwoPlane: true }).catch((error) => {
+      console.warn(
+        "STMemoryBooks: world-book auto-attach failed:",
+        error,
+      );
+    });
+  }, WORLD_BOOK_ACTIVATION_DEBOUNCE_MS);
+}
+
 function handleChatChanged() {
   console.log(
     translate(
@@ -958,17 +987,11 @@ function handleChatChanged() {
   // Phase 4a — two-plane world-book auto-attach. Per-world + additive: arm the
   // "<World> - Memories" book in ST's global active set on chat-enter, drop the
   // previous world's book. Flag-gated HERE so flag-off makes ZERO activation
-  // calls (byte-identical to pre-Phase-4a). Fire-and-forget; never blocks chat
-  // load (applyWorldBookActivation is fully wrapped and resolves a no-op on any
-  // failure).
-  if (isTwoPlane()) {
-    applyWorldBookActivation({ isTwoPlane: true }).catch((error) => {
-      console.warn(
-        "STMemoryBooks: world-book auto-attach on chat change failed:",
-        error,
-      );
-    });
-  }
+  // calls (byte-identical to pre-Phase-4a). DEBOUNCED: CHAT_CHANGED fires
+  // early/repeatedly (SillyTavern-WorldScope design notes), and applyWorldBook-
+  // Activation has a world_names readiness gate of its own — debouncing collapses
+  // the burst into one armed attach. Fire-and-forget; never blocks chat load.
+  scheduleWorldBookActivation();
 
   setTimeout(() => {
     try {
@@ -8692,6 +8715,17 @@ function setupEventListeners() {
     lastFailureToast = null;
     lastFailedAIError = null;
     lastFailedAIContext = null;
+
+    // Phase 4a — BEFORE-GENERATION re-arm (Phase 4 plan Step 2: "a hook on
+    // CHAT_CHANGED + before generation"). A world change that does NOT raise
+    // CHAT_CHANGED (re-tag into a different folder, group-membership change) would
+    // otherwise leave the prior world's book active until the next chat switch.
+    // Skip dry runs (token-count/preview passes — not real inference, and the
+    // debounce would only fire after the dry run completes anyway). Idempotent +
+    // world_names-gated, so this is a no-op when the world is unchanged.
+    if (!isDryRun && isTwoPlane()) {
+      scheduleWorldBookActivation();
+    }
   });
 
   // Model settings change handlers
@@ -9773,6 +9807,13 @@ async function init() {
       error,
     );
   }
+
+  // Phase 4a — arm the world-book on startup too. init() runs on APP_READY (so
+  // world_names is hydrated), but if a chat was ALREADY open at load there is no
+  // CHAT_CHANGED to trigger the attach until the user switches chats or
+  // generates. Debounced + flag-gated + world_names-gated, so this is safe and a
+  // no-op when off or already-correct.
+  scheduleWorldBookActivation();
 
   // Add CSS classes helper for Handlebars
   Handlebars.registerHelper("eq", function (a, b) {

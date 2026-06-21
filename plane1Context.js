@@ -31,7 +31,7 @@ import * as _stTags from '../../../tags.js';
 // Local imports
 import { deriveWorldPrefix, pickFolderName } from './lorebookNameMacros.js';
 import { getCurrentMemoryBooksContext } from './utils.js';
-import { computeWorldBookActivation, isMemoryBookName } from './plane1Activation.js';
+import { computeWorldBookActivation, computeNextActiveWorlds, isMemoryBookName } from './plane1Activation.js';
 
 /**
  * AI characters in the current chat: {name, avatar}[].
@@ -104,27 +104,53 @@ export async function resolveWorldMemoriesBook() {
     return { valid: true, name, data };
 }
 
-/**
- * Sync the "#world_info" multiselect DOM option's selected state for one world,
- * mirroring ST's own onWorldInfoChange() which does
- * `wiElement.prop('selected', bool)` alongside the selected_world_info mutation.
- * Defensive: the WI drawer may not be rendered yet (chat-open before the user
- * opens the panel). selected_world_info is the source of truth the engine reads;
- * the DOM sync is best-effort so the panel checkbox visually matches. A missing
- * jQuery / option is a silent no-op.
- * @param {string} bookName
- * @param {boolean} on
- */
-function _syncWorldInfoSelectOption(bookName, on) {
+/** Resolve the global jQuery ST provides, or null when unavailable (host/tests). */
+function _getJQuery() {
     try {
-        const $ = (typeof window !== 'undefined' && window.jQuery) ? window.jQuery
-            : (typeof jQuery !== 'undefined' ? jQuery : null);   // eslint-disable-line no-undef
-        if (!$ || !Array.isArray(world_names)) return;
-        const idx = world_names.indexOf(bookName);
-        if (idx < 0) return;
-        const $opt = $('#world_info').find(`option[value="${idx}"]`);
-        if ($opt.length) $opt.prop('selected', !!on);
-    } catch (_) { /* DOM not ready — selected_world_info is still authoritative */ }
+        if (typeof window !== 'undefined' && window.jQuery) return window.jQuery;
+        if (typeof jQuery !== 'undefined') return jQuery;   // eslint-disable-line no-undef
+    } catch (_) { /* no jQuery */ }
+    return null;
+}
+
+/**
+ * PREFERRED activation path — the PROVEN SillyTavern-WorldScope mechanism
+ * (activation.js:20-28). Instead of mutating selected_world_info ourselves and
+ * hand-rolling persist+emit, we set the #world_info multiselect's VALUE to the
+ * indices of the desired active books and trigger('change') so ST's OWN
+ * onWorldInfoChange() (world-info.js) rebuilds selected_world_info from the DOM,
+ * persists (saveSettingsDebounced), and emits WORLDINFO_SETTINGS_UPDATED.
+ *
+ * Why this over direct in-place push/splice: #world_info is a select2 widget.
+ * A subsequent genuine change event (user opens the WI panel, select2 re-render,
+ * another extension) makes ST REBUILD selected_world_info from the DOM's selected
+ * options. If we only mutated the array + best-effort option props, that later
+ * rebuild could DROP our auto-attached memory book. Going through .val().change()
+ * makes select2 itself the source of truth, so the selection survives re-renders.
+ *
+ * Returns true iff it drove the change handler (the widget was present & ready),
+ * false when the DOM/select2 is not available so the caller can fall back.
+ *
+ * @param {string[]} nextActiveNames  the COMPLETE next active-worlds set.
+ * @returns {boolean}
+ */
+function _applyViaWorldInfoSelect(nextActiveNames) {
+    const $ = _getJQuery();
+    if (!$ || !Array.isArray(world_names) || world_names.length === 0) return false;
+    const $sel = $('#world_info');
+    // Require a rendered select with options — without them ST has nothing to
+    // rebuild from and .val() would clear the selection. select2 enhances #world_info
+    // (world-info.js), so when it isn't rendered yet we must use the fallback.
+    if (!$sel.length || $sel.find('option').length === 0) return false;
+
+    // Option VALUES are world_names indices (world-info.js builds
+    // `<option value="${i}">`), exactly as WorldScope relies on. Map names->indices.
+    const indices = nextActiveNames
+        .map((n) => world_names.indexOf(n))
+        .filter((i) => i >= 0)
+        .map(String);
+    $sel.val(indices).trigger('change'); // ST onWorldInfoChange() rebuilds + persists + emits
+    return true;
 }
 
 /**
@@ -133,24 +159,32 @@ function _syncWorldInfoSelectOption(bookName, on) {
  *
  * Flow:
  *   1. FLAG-OFF SHORT-CIRCUIT — when !isTwoPlane we return immediately BEFORE
- *      touching selected_world_info, before any emit/save: byte-identical to
- *      pre-Phase-4a (zero activation calls). The pure helper also returns a
- *      no-op for flag-off, but we short-circuit here so the flag-off path makes
- *      ZERO live ST calls of any kind.
- *   2. Read the MEMORY books currently in selected_world_info.
- *   3. Ask the PURE helper (computeWorldBookActivation) for { toActivate,
- *      toDeactivate } — additive / idempotent / per-world.
- *   4. Apply in place on the SAME selected_world_info array instance the engine
- *      reads (push to add, splice to remove), mirror the #world_info DOM option,
- *      then persist (saveSettingsDebounced) + emit WORLDINFO_SETTINGS_UPDATED —
- *      exactly as ST's onWorldInfoChange() does for the /world command.
+ *      touching anything: byte-identical to pre-Phase-4a (zero activation calls).
+ *   2. READINESS GATE — bail (no resolve, no create) until world_names is
+ *      hydrated. CHAT_CHANGED fires early/repeatedly and world_names is
+ *      unreliable before APP_READY (SillyTavern-WorldScope design notes,
+ *      worldscope-world-workspace-design.md:230). resolveWorldMemoriesBook()
+ *      CREATES a book if world_names lacks it (plane1Context.js), so resolving
+ *      too early could create a spurious "<World> - Memories". The caller also
+ *      debounces; this gate is the hard floor.
+ *   3. Resolve the world book for the current chat (may create+load it).
+ *   4. Compute the COMPLETE next active set (computeNextActiveWorlds): preserve
+ *      every non-memory book, drop other "* - Memories", add the target.
+ *   5. APPLY — PREFER the proven WorldScope DOM-driven path: set #world_info's
+ *      value to the next set's indices and trigger('change') so ST's OWN
+ *      onWorldInfoChange() rebuilds selected_world_info from the DOM, persists,
+ *      and emits. This survives later select2 re-renders (which would otherwise
+ *      drop a directly-pushed book). FALL BACK to in-place push/splice +
+ *      saveSettingsDebounced + emit ONLY when the #world_info widget is not yet
+ *      rendered (chat-open before the WI panel is opened) — headless activation
+ *      so retrieval still works before the panel exists.
  *
  * Non-memory books (the user's own chat-bound book via chat_metadata[
- * METADATA_KEY], character/persona lorebooks) are NEVER in the delta — we only
- * ever read/write names ending in " - Memories" — so this can never clobber a
- * user's own lorebook. ST's getChatLore() separately injects chat_metadata[
- * METADATA_KEY] and explicitly skips it if it's already in selected_world_info,
- * so there is no double-inject either.
+ * METADATA_KEY], character/persona lorebooks) are PRESERVED by both paths and
+ * never removed — we only ever drop/add names ending in " - Memories" — so this
+ * can never clobber a user's own lorebook. ST's getChatLore() separately injects
+ * chat_metadata[METADATA_KEY] and skips it if already in selected_world_info, so
+ * there is no double-inject either.
  *
  * IMPURE — reads/mutates ST globals. Wrapped so a failure can never break chat
  * load. Returns the applied delta (handy for logging / live verification).
@@ -165,42 +199,60 @@ export async function applyWorldBookActivation({ isTwoPlane } = {}) {
     // so we must not even resolve when the flag is off.
     if (!isTwoPlane) return NOOP;
 
+    // (2) READINESS GATE: world_names not hydrated yet → bail BEFORE resolving so
+    // an early CHAT_CHANGED can't create a spurious book or push a name that has
+    // no #world_info option (which would make the DOM path silently no-op).
+    if (!Array.isArray(world_names) || world_names.length === 0) {
+        return NOOP;
+    }
+
     try {
-        // (2) Resolve the world book for the current chat (may create+load it).
+        // (3) Resolve the world book for the current chat (may create+load it).
         const resolved = await resolveWorldMemoriesBook();   // {valid,name,data}|null
 
-        // selected_world_info is a live binding to ST's active array. Read the
-        // memory books currently in it (the helper double-guards, but pre-filter
-        // so non-memory books are provably out of scope).
+        // selected_world_info is a live binding to ST's active array (the full
+        // current active set across ALL book kinds).
         const activeAll = Array.isArray(selected_world_info) ? selected_world_info : [];
-        const currentlyActiveMemoryBooks = activeAll.filter(isMemoryBookName);
+        const targetName = resolved && resolved.name ? resolved.name : null;
 
-        // (3) PURE decision.
+        // (4a) DELTA (memory-book-only) — drives idempotency + logging. If nothing
+        // changes among MEMORY books, the full set is unchanged too: no-op.
         const { toActivate, toDeactivate } = computeWorldBookActivation({
-            resolvedWorldBook: resolved && resolved.name ? resolved.name : null,
-            currentlyActiveMemoryBooks,
+            resolvedWorldBook: targetName,
+            currentlyActiveMemoryBooks: activeAll.filter(isMemoryBookName),
+            isTwoPlane: true,
+        });
+        if (toActivate.length === 0 && toDeactivate.length === 0) return NOOP;
+
+        // (4b) COMPLETE next active set (for the DOM-driven path, which replaces
+        // the whole selection). Preserves every non-memory book by construction.
+        const nextActive = computeNextActiveWorlds({
+            resolvedWorldBook: targetName,
+            currentActive: activeAll,
             isTwoPlane: true,
         });
 
-        if (toActivate.length === 0 && toDeactivate.length === 0) return NOOP;
+        // (5) PREFER the proven WorldScope DOM-driven path (select2-safe).
+        const droveSelect = _applyViaWorldInfoSelect(nextActive);
 
-        // (4) Apply IN PLACE on the same array instance the WI engine reads.
-        for (const name of toDeactivate) {
-            const i = selected_world_info.indexOf(name);
-            if (i >= 0) selected_world_info.splice(i, 1);
-            _syncWorldInfoSelectOption(name, false);
+        if (!droveSelect) {
+            // FALLBACK: #world_info widget not rendered yet — mutate the live
+            // array in place + persist + emit, exactly as ST's onWorldInfoChange()
+            // does for the /world command. Used at chat-open before the WI panel
+            // exists; a subsequent select2 render will reselect from this array.
+            for (const name of toDeactivate) {
+                const i = selected_world_info.indexOf(name);
+                if (i >= 0) selected_world_info.splice(i, 1);
+            }
+            for (const name of toActivate) {
+                if (!selected_world_info.includes(name)) selected_world_info.push(name);
+            }
+            try { saveSettingsDebounced?.(); } catch (_) { /* non-fatal */ }
+            try { eventSource?.emit?.(event_types?.WORLDINFO_SETTINGS_UPDATED); } catch (_) { /* non-fatal */ }
         }
-        for (const name of toActivate) {
-            if (!selected_world_info.includes(name)) selected_world_info.push(name);
-            _syncWorldInfoSelectOption(name, true);
-        }
-
-        // Persist + announce, exactly as ST's onWorldInfoChange() does.
-        try { saveSettingsDebounced?.(); } catch (_) { /* non-fatal */ }
-        try { eventSource?.emit?.(event_types?.WORLDINFO_SETTINGS_UPDATED); } catch (_) { /* non-fatal */ }
 
         console.log(
-            `STMemoryBooks: two-plane world-book activation — +[${toActivate.join(', ')}] -[${toDeactivate.join(', ')}]`,
+            `STMemoryBooks: two-plane world-book activation (${droveSelect ? 'select2' : 'in-place'}) — +[${toActivate.join(', ')}] -[${toDeactivate.join(', ')}]`,
         );
         return { toActivate, toDeactivate, changed: true };
     } catch (e) {

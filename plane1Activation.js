@@ -39,6 +39,61 @@ export function isMemoryBookName(name) {
 }
 
 /**
+ * Compute the COMPLETE next active-worlds set for the DOM-driven activation path
+ * (the proven SillyTavern-WorldScope mechanism: `$('#world_info').val(indices)
+ * .trigger('change')`, which makes ST's own onWorldInfoChange() REBUILD
+ * selected_world_info from the multiselect's selected option values).
+ *
+ * That path needs the FULL next set — not a delta — because ST replaces the
+ * selection wholesale from the DOM. This helper preserves EVERY non-memory book
+ * (the user's own chat-bound / character / persona / engine lorebooks, in their
+ * original order), drops every OTHER "* - Memories" book (per-world hygiene), and
+ * appends the resolved target memory book. De-duplicated, order-stable.
+ *
+ * Contrast computeWorldBookActivation() below, which returns an additive DELTA
+ * for the in-place push/splice fallback used when the #world_info select2 widget
+ * is not rendered yet (chat-open before the WI panel is opened).
+ *
+ * @param {object} args
+ * @param {{name:string}|string|null} args.resolvedWorldBook  the "<World> - Memories" book.
+ * @param {string[]} args.currentActive  the FULL current selected_world_info (all books).
+ * @param {boolean} args.isTwoPlane  the twoPlaneMemory feature flag.
+ * @returns {string[]}  the complete next active-worlds set, or a copy of
+ *   currentActive (untouched) when the flag is off.
+ */
+export function computeNextActiveWorlds({ resolvedWorldBook, currentActive, isTwoPlane } = {}) {
+    const current = (Array.isArray(currentActive) ? currentActive : []).filter(
+        (n) => typeof n === 'string' && n.length > 0,
+    );
+    // FLAG-OFF: never touch the set — return it verbatim (caller short-circuits
+    // before ever reaching here, but be defensive).
+    if (!isTwoPlane) {
+        return Array.from(new Set(current));
+    }
+
+    const target = resolvedWorldBook == null
+        ? null
+        : (typeof resolvedWorldBook === 'string' ? resolvedWorldBook : resolvedWorldBook.name);
+    const targetValid = isMemoryBookName(target) ? target : null;
+
+    const out = [];
+    const seen = new Set();
+    // Preserve every NON-memory book in original order; drop every memory book
+    // here (the target, if valid, is re-appended below so it lands last/active).
+    for (const name of current) {
+        if (isMemoryBookName(name)) continue;     // memory books handled below
+        if (seen.has(name)) continue;
+        out.push(name);
+        seen.add(name);
+    }
+    if (targetValid && !seen.has(targetValid)) {
+        out.push(targetValid);
+        seen.add(targetValid);
+    }
+    return out;
+}
+
+/**
  * Compute the additive/idempotent/per-world activation delta for the world
  * memory book against the currently-active MEMORY books.
  *
