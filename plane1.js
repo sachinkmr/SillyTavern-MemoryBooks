@@ -47,3 +47,61 @@ export function computePlane1Memory(compiledScene, chat, rosterRows, opts = {}) 
 
     return { skipped: false, filteredScene: scoped, characterFilter, audience: cast };
 }
+
+/**
+ * Segment a scene into contiguous audience-homogeneous runs; one objective gated entry per run.
+ * Generalizes computePlane1Memory (1a). Drops single-perceiver runs (Plane-2 material).
+ * Unstamped messages extend the current run (fail-open). A leading unstamped run is ungated.
+ * @returns {Array<{filteredScene, characterFilter, audience:string[], sceneStart, sceneEnd, segmentIndex}>}
+ *   empty array when nothing to record (all-unreal or all single-perceiver).
+ */
+export function computePlane1Segments(compiledScene, chat, rosterRows, opts = {}) {
+    const userToken = String(opts.userToken || '').trim().toLowerCase();
+    const real = dropUnrealFromCompiledScene(compiledScene, chat);
+    if (!real.messages.length) return [];
+
+    // 1. Split into contiguous runs of identical audience composition.
+    const runs = [];
+    let cur = null;
+    for (const cm of real.messages) {
+        const aud = audienceOf(chat?.[cm.id]);                                  // lowercased[] | null
+        const tokens = aud === null ? null : [...new Set(aud)].sort();
+        const key = tokens === null ? null : tokens.join(' ');
+        if (cur && (aud === null || key === cur.key)) {
+            cur.messages.push(cm);                                              // extend (same set, or unstamped)
+        } else {
+            cur = { key, tokens, messages: [cm] };
+            runs.push(cur);
+        }
+    }
+
+    // 2. One segment per run; drop single-perceiver runs.
+    const segments = [];
+    for (const run of runs) {
+        const audience = run.tokens;                                            // null => fail-open run
+        if (audience && audience.length === 1) continue;                        // single perceiver → drop
+        const ids = run.messages.map(m => m.id);
+        const filteredScene = {
+            ...real,
+            messages: run.messages,
+            metadata: {
+                ...real.metadata,
+                messageCount: run.messages.length,
+                sceneStart: ids[0],
+                sceneEnd: ids[ids.length - 1],
+            },
+        };
+        const characterFilter = audience
+            ? buildEntryCharacterFilter(audience.filter(t => t !== userToken), rosterRows)
+            : null;                                                             // fail-open run → ungated
+        segments.push({
+            filteredScene,
+            characterFilter,
+            audience: audience || [],
+            sceneStart: ids[0],
+            sceneEnd: ids[ids.length - 1],
+            segmentIndex: segments.length,
+        });
+    }
+    return segments;
+}

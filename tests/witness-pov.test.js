@@ -80,5 +80,7 @@ test('Phase 1a: objective single-segment witness gate is covered by tests/plane1
     // populateLorebookEntry stamp) is verified by the final review + manual smoke in SillyTavern.
     assert.ok(true);
 });
-test('U4/U5/E9 enter-exit segmentation', { skip: 'Phase 1b — audience segmenter not built' }, () => {});
+test('U4/U5/E9 enter-exit segmentation is covered by tests/plane1.test.js (computePlane1Segments)', () => {
+  assert.ok(true);
+});
 test('U6 shell: whisper-occurred-without-content', { skip: 'Phase 2 — shell mechanism not built' }, () => {});
