@@ -21,7 +21,8 @@ import { SIDE_PROMPT } from './constants.js';
 import { isPresentInWindow } from './witnessScope.js';
 import { applyWitnessFilter } from './perCharacterWitness.js';
 import { runBounded, resolveParallelLimit } from './concurrency.js';
-import { resolveLorebookNameList, deriveWorldPrefix } from './lorebookNameMacros.js';
+import { resolveLorebookNameList, deriveWorldPrefix, resolveLorebookNameMacros } from './lorebookNameMacros.js';
+import { writeDeepFacts } from './plane2.js';
 import { pickWorld, readActiveWorldName } from './worldScopeBridge.js';
 import { characterFilterName } from './wiFilterName.js';
 import { subjectiveSceneFormatBlock } from './subjectiveSceneFormat.js';
@@ -48,6 +49,34 @@ import {
 
 
 const MODULE_NAME = 'STMemoryBooks-SidePrompts';
+
+function makeDeepSaveDeps() {
+    return {
+        resolveBookName: (tpl) => resolveLorebookNameMacros(
+            tpl?.settings?.deepSave?.bookName || '{{group}} - Deep Facts',
+            { groupName: pickWorld(readActiveWorldName()) }),
+        ensureBook: async (name) => {
+            let d = await loadWorldInfo(name).catch(() => null);
+            if (!d || !d.entries) { d = { entries: {} }; await saveWorldInfo(name, d, true); }
+            return d;
+        },
+        upsertByTitle: (name, data, title, content, opts) =>
+            upsertLorebookEntryByTitle(name, data, title, content, opts),
+    };
+}
+
+async function maybeDeepSave({ tpl, charTarget, resultText, rosterRows }) {
+    if (!tpl?.settings?.deepSave?.enabled || !charTarget) return;
+    try {
+        const r = await writeDeepFacts(
+            { tpl, charTarget, resultText, rosterRows: rosterRows || discoverChatCharacters() },
+            makeDeepSaveDeps());
+        if (r?.written) console.log(`${MODULE_NAME}: deep-save wrote ${r.written} fact(s) for ${charTarget.name} -> ${r.bookName}`);
+    } catch (e) {
+        console.warn(`${MODULE_NAME}: deep-save failed for ${charTarget?.name}:`, e);
+    }
+}
+
 let hasShownSidePromptRangeTip = false;
 export const STMB_SIDE_PROMPT_TITLE_SUFFIX = ' (STMB SidePrompt)';
 
@@ -1436,7 +1465,7 @@ function logSkippedSetItems(skipped = [], context = 'set') {
     }
 }
 
-function buildSidePromptJob({ tpl, lore, compiledScene, prepared, runtimeMacros = {}, trigger = 'manual', setMeta = null, charTarget = null, chatRef: providedChatRef = null, chatKey: providedChatKey = null }) {
+function buildSidePromptJob({ tpl, lore, compiledScene, prepared, runtimeMacros = {}, trigger = 'manual', setMeta = null, charTarget = null, rosterRows = null, chatRef: providedChatRef = null, chatKey: providedChatKey = null }) {
     const lbs = getEffectiveLorebookSettingsForTemplate(tpl);
     const { defaults, entryOverrides } = makeUpsertParamsFromLorebook(lbs, runtimeMacros);
     // Per-character job: gate the entry to this actor (characterFilter) and save
@@ -1471,6 +1500,8 @@ function buildSidePromptJob({ tpl, lore, compiledScene, prepared, runtimeMacros 
             defaults,
             entryOverrides,
             setMeta: setMeta ? structuredClone(setMeta) : null,
+            charTarget: charTarget ? structuredClone(charTarget) : null,
+            rosterRows: rosterRows ? structuredClone(rosterRows) : null,
         },
     };
 }
@@ -1482,7 +1513,7 @@ function buildSidePromptJob({ tpl, lore, compiledScene, prepared, runtimeMacros 
  * per-character + witness machinery. Returns true when a job was enqueued, false
  * when skipped (no lorebook, or witness filter left zero messages for this actor).
  */
-async function enqueueSidePromptJob({ tpl, charTarget = null, lore, compiled, defaultOverrides, fallbackKinds = [], trigger = 'manual', baseRuntimeMacros = {}, setMeta = null, chatRef = null, chatKey = null }) {
+async function enqueueSidePromptJob({ tpl, charTarget = null, lore, compiled, defaultOverrides, fallbackKinds = [], trigger = 'manual', baseRuntimeMacros = {}, setMeta = null, rosterRows = null, chatRef = null, chatKey = null }) {
     if (!lore?.data) {
         console.debug(`${MODULE_NAME}: SidePrompts: no target lorebook for "${tpl?.name}"${charTarget ? ` (${charTarget.name})` : ''}; skipping job quietly.`);
         return false;
@@ -1519,6 +1550,7 @@ async function enqueueSidePromptJob({ tpl, charTarget = null, lore, compiled, de
         trigger,
         setMeta,
         charTarget,
+        rosterRows,
         chatRef,
         chatKey,
     }));
@@ -1640,6 +1672,7 @@ async function executeQueuedSidePromptJob(job, context) {
             },
         );
     });
+    await maybeDeepSave({ tpl, charTarget: payload.charTarget, resultText: text, rosterRows: payload.rosterRows });
     context.setResult({ lorebookName, title: payload.unifiedTitle });
 }
 
@@ -1986,6 +2019,7 @@ export async function evaluateTrackers() {
                         defaultOverrides,
                         fallbackKinds: ['tracker'],
                         trigger: 'onInterval',
+                        rosterRows: discoverChatCharacters(),
                     })) queued++;
                 }
                 console.log(`${MODULE_NAME}: Interval sideprompts queued`, {
@@ -2178,6 +2212,7 @@ export async function evaluateTrackers() {
                             saved: true,
                             contentChars: resultText.length,
                         });
+                        await maybeDeepSave({ tpl, charTarget, resultText });
                     } catch (err) {
                         console.error(`${MODULE_NAME}: Interval sideprompt upsert failed${charTarget ? ` for ${charTarget.name}` : ''}:`, err);
                         toastr.error(__st_t_tag`Failed to update sideprompt entry "${tpl.name}"${charTarget ? ` (${charTarget.name})` : ''}`, 'STMemoryBooks');
@@ -2342,6 +2377,7 @@ export async function evaluateTrackers() {
                         saved: true,
                         contentChars: resultText.length,
                     });
+                    await maybeDeepSave({ tpl, charTarget, resultText });
                 } catch (err) {
                     console.error(`${MODULE_NAME}: Interval sideprompt upsert failed${charTarget ? ` for ${charTarget.name}` : ''}:`, err);
                     toastr.error(__st_t_tag`Failed to update sideprompt entry "${tpl.name}"${charTarget ? ` (${charTarget.name})` : ''}`, 'STMemoryBooks');
