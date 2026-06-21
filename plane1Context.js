@@ -15,10 +15,12 @@
 import { chat_metadata, characters, this_chid, name2 } from '../../../../script.js';
 import { METADATA_KEY, world_names, loadWorldInfo, createNewWorldInfo } from '../../../world-info.js';
 import { selected_group, groups } from '../../../group-chats.js';
-// Defensive import: tags.js lives alongside world-info.js / group-chats.js in the ST root.
-// Path mirrors sibling imports above. If ST core doesn't export these names the try/catch
-// in currentFolderName() ensures routing never throws.
-import { tags, tag_map } from '../../../tags.js';
+// Defensive NAMESPACE import: tags.js lives alongside world-info.js / group-chats.js in the ST
+// root (path mirrors sibling imports above). Namespace (not named) import so a missing/renamed
+// export (tags / tag_map) degrades to `undefined` at use — the folder feature simply turns off —
+// instead of failing at MODULE LOAD (a named import of a non-existent export throws on load,
+// which try/catch can't catch and would break ALL two-plane writes, not just folder derivation).
+import * as _stTags from '../../../tags.js';
 
 // Local imports
 import { deriveWorldPrefix, pickFolderName } from './lorebookNameMacros.js';
@@ -62,7 +64,7 @@ export function currentFolderName() {
         const entityKey = selected_group
             ? selected_group
             : characters?.[this_chid]?.avatar;
-        return pickFolderName(entityKey, tag_map, tags);
+        return pickFolderName(entityKey, _stTags?.tag_map, _stTags?.tags);
     } catch (_) {
         return null;
     }
