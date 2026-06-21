@@ -67,3 +67,8 @@ test('coldFactTitle is stable + dedup-bearing (same fact -> same title)', () => 
   assert.equal(coldFactTitle('Shilpa', it), coldFactTitle('Shilpa', it));
   assert.match(coldFactTitle('Shilpa', it), /^\[Deep\]\[Shilpa\] knows:Sachin —/);
 });
+
+test('buildColdFactEntry returns null when the knower cannot be gated (not in roster)', () => {
+  const e = buildColdFactEntry({ tag: 'knows', about: 'Sachin', fact: 'x' }, { name: 'Ghost', avatar: 'Ghost.png' }, [{ name: 'Shilpa', avatar: 'Shilpa.png' }]);
+  assert.equal(e, null);
+});

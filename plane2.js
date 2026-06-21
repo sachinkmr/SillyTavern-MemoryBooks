@@ -46,7 +46,10 @@ export function buildColdFactEntry(item, charTarget, rosterRows, opts = {}) {
     if (!item || !charTarget || !isDeepSaveEligible(item.tag)) return null;
     const charName = String(charTarget.name);
     const cf = buildEntryCharacterFilter([charName.toLowerCase()], rosterRows);
-    const characterFilter = cf ? { isExclude: false, names: cf.names, tags: cf.tags || [] } : null;
+    // Witness fail-safe: if we cannot build a non-empty gate (knower unresolved), write NO cold
+    // entry — a null/empty characterFilter would leak the fact to every character.
+    if (!cf || !Array.isArray(cf.names) || cf.names.length === 0) return null;
+    const characterFilter = { isExclude: false, names: cf.names, tags: cf.tags || [] };
     const content = `${charName} ${PHRASE[item.tag]} about ${item.about}: ${item.fact}.`;
     const metadata = {
         STMB_deep: true,
