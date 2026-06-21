@@ -2483,6 +2483,7 @@ export async function runAfterMemory(compiledScene, profile = null, options = {}
                             tpl, charTarget, lore: charLore, compiled: compiledScene,
                             defaultOverrides, fallbackKinds: ['plotpoints', 'scoreboard'],
                             trigger: 'onAfterMemory', baseRuntimeMacros, setMeta,
+                            rosterRows: discoverChatCharacters(),
                             chatRef: options.chatRef || null, chatKey: options.chatKey || null,
                         })) queued++;
                     }
@@ -2492,6 +2493,7 @@ export async function runAfterMemory(compiledScene, profile = null, options = {}
                         tpl, charTarget: null, lore: soloLore, compiled: compiledScene,
                         defaultOverrides, fallbackKinds: ['plotpoints', 'scoreboard'],
                         trigger: 'onAfterMemory', baseRuntimeMacros, setMeta,
+                        rosterRows: discoverChatCharacters(),
                         chatRef: options.chatRef || null, chatKey: options.chatKey || null,
                     })) queued++;
                 }
@@ -2957,6 +2959,7 @@ export async function runSidePrompt(args, options = {}) {
                     fallbackKinds: ['scoreboard', 'plotpoints', 'tracker'],
                     trigger: 'manual',
                     baseRuntimeMacros: runtimeMacros,
+                    rosterRows: discoverChatCharacters(),
                 })) queued++;
             }
             toastr.info(__st_t_tag`SidePrompt "${tpl.name}" queued: ${queued}.`, 'STMemoryBooks');
