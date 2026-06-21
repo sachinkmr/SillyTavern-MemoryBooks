@@ -30,6 +30,7 @@ import * as _stTags from '../../../tags.js';
 
 // Local imports
 import { deriveWorldPrefix, pickFolderName } from './lorebookNameMacros.js';
+import { pickWorld, readActiveWorldName } from './worldScopeBridge.js';
 import { getCurrentMemoryBooksContext } from './utils.js';
 import { computeWorldBookActivation, computeNextActiveWorlds, isMemoryBookName } from './plane1Activation.js';
 
@@ -80,20 +81,26 @@ export function currentFolderName() {
 /**
  * Resolve/create/load the shared "<World> - Memories" lorebook.
  * World name priority:
- *   1. Tag-folder name the active character/group sits in (cross-folder sharing)
- *   2. Group name (group chat)
- *   3. Chat-bound lorebook prefix (solo "Option A" world anchor)
- *   4. Character name
+ *   1. SillyTavern-WorldScope active world (window.WorldScope.activeWorld) — canonical
+ *   2. Tag-folder name the active character/group sits in (cross-folder sharing)
+ *   3. Group name (group chat)
+ *   4. Chat-bound lorebook prefix (solo "Option A" world anchor)
+ *   5. Character name
  * Does NOT rebind chat_metadata[METADATA_KEY] (contrast autoCreateLorebook
  * in autocreate.js which does rebind — we call createNewWorldInfo directly).
  * @returns {Promise<{valid:true, name:string, data:object}|null>}
  */
 export async function resolveWorldMemoriesBook() {
     const ctx = getCurrentMemoryBooksContext();
-    const world = currentFolderName()
-        || (ctx?.isGroupChat && ctx.groupName ? ctx.groupName : null)
-        || deriveWorldPrefix(chat_metadata?.[METADATA_KEY])
-        || ctx?.characterName;
+    // WorldScope's canonical active world FIRST; fall back to the existing
+    // derivation chain when WorldScope is absent/empty (primary + fallback).
+    const world = pickWorld(
+        readActiveWorldName(),
+        currentFolderName(),
+        (ctx?.isGroupChat && ctx.groupName) ? ctx.groupName : null,
+        deriveWorldPrefix(chat_metadata?.[METADATA_KEY]),
+        ctx?.characterName,
+    );
     if (!world) return null;
     const name = `${world} - Memories`;
     if (!(world_names || []).includes(name)) {

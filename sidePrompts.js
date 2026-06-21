@@ -21,7 +21,9 @@ import { SIDE_PROMPT } from './constants.js';
 import { isPresentInWindow, filterCompiledSceneForCharacter } from './witnessScope.js';
 import { runBounded, resolveParallelLimit } from './concurrency.js';
 import { resolveLorebookNameList, deriveWorldPrefix } from './lorebookNameMacros.js';
+import { pickWorld, readActiveWorldName } from './worldScopeBridge.js';
 import { characterFilterName } from './wiFilterName.js';
+import { subjectiveSceneFormatBlock } from './subjectiveSceneFormat.js';
 import {
     shouldFireForCharacter,
     resolveCharacterCheckpoint,
@@ -550,7 +552,12 @@ function getCurrentCardCharacterName() {
  */
 function buildLorebookNameMacroContext(charName = null) {
     return {
-        groupName: getCurrentGroupName() || deriveWorldPrefix(chat_metadata?.[METADATA_KEY]),
+        // WorldScope's canonical active world FIRST, then the existing fallbacks.
+        groupName: pickWorld(
+            readActiveWorldName(),
+            getCurrentGroupName(),
+            deriveWorldPrefix(chat_metadata?.[METADATA_KEY]),
+        ) || null,
         charName: charName || getCurrentCardCharacterName(),
     };
 }
@@ -805,6 +812,14 @@ function buildPrompt(templatePrompt, priorContent, compiledScene, responseFormat
     appendSidePromptAdditionalContext(parts, additionalContextEntries);
     // Derive scene text from the compiled scene here to keep a single source of truth
     const sceneText = compiledScene ? toReadableText(compiledScene) : '';
+    // Two-plane: tell the tracker how to read raw Scheme B prose from a SUBJECTIVE
+    // per-{{char}} stance (keep {{char}}'s own thoughts; others' thoughts are unperceived).
+    // Routed through applySidePromptMacros so {{char}}/{{user}} resolve exactly like the
+    // template. Flag-off (twoPlaneMemory falsy) => '' => byte-identical to before.
+    const sceneFormatBlock = subjectiveSceneFormatBlock(
+        !!(extension_settings?.STMemoryBooks?.moduleSettings?.twoPlaneMemory),
+    );
+    if (sceneFormatBlock) parts.push(applySidePromptMacros(sceneFormatBlock, runtimeMacros));
     parts.push('\n=== SCENE TEXT ===\n');
     parts.push(sceneText);
     if (responseFormat && String(responseFormat).trim()) {
