@@ -9961,6 +9961,7 @@ async function showRegexSelectionPopup() {
 
 // Initialize when ready
 $(document).ready(() => {
+  console.log('%c[STMemoryBooks]%c build loaded — 2026-06-21 / Phase 4a (two-plane world-book activation)', 'color:#6cf;font-weight:bold', 'color:inherit');
   if (eventSource && event_types.APP_READY) {
     eventSource.on(event_types.APP_READY, init);
   }
