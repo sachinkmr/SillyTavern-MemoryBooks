@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  audienceNamesOf, partitionByAudience, audienceUnion,
+  audienceNamesOf, partitionByAudience, audienceUnion, audienceSubsetOf,
   planRollupFragments, witnessPromptFragment, SHARP_MAX_TIER,
 } from '../rollupScope.js';
 
@@ -11,6 +11,19 @@ const E = (names, id) => ({ uid: id, characterFilter: names === null ? null : { 
 test('audienceNamesOf: null filter => null (everyone); names normalized+sorted', () => {
   assert.equal(audienceNamesOf(E(null, 1)), null);
   assert.deepEqual(audienceNamesOf(E(['shilpa', 'aisha', 'aisha'], 1)), ['aisha', 'shilpa']);
+});
+
+test('audienceSubsetOf: all four quadrants incl. null-fragment leak guard', () => {
+  // null sup (locked summary witnessed by everyone) => always allowed into any fragment
+  assert.equal(audienceSubsetOf(['aisha'], null), true);
+  assert.equal(audienceSubsetOf(null, null), true);
+  // null sub (everyone-readable fragment) + non-null sup (private summary) => EXCLUDE (the leak guard)
+  assert.equal(audienceSubsetOf(null, ['shilpa']), false);
+  // non-null/non-null: subset/equal allowed, anything not fully covered excluded
+  assert.equal(audienceSubsetOf(['shilpa'], ['aisha', 'shilpa']), true);   // F readers subset of L witnesses
+  assert.equal(audienceSubsetOf(['aisha', 'shilpa'], ['aisha', 'shilpa']), true);
+  assert.equal(audienceSubsetOf(['aisha', 'shilpa'], ['shilpa']), false);  // aisha didn't witness L => leak
+  assert.equal(audienceSubsetOf(['ravi'], ['shilpa']), false);            // disjoint
 });
 
 test('U9 arc rollup, uniform audience => one fragment gated to that audience', () => {
