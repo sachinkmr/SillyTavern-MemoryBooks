@@ -187,6 +187,24 @@ export function getAutoHideRanges(memoryResult, moduleSettings = {}) {
     };
 }
 
+/**
+ * Run auto-hide for an entire scene range once (used after a multi-segment write loop).
+ * Callers in the segment loop should pass autoHide:false to addMemoryToLorebook and
+ * call this once after all segments are written.
+ * @param {string} sceneRange - The full scene range string (e.g. "0-12")
+ * @param {object} moduleSettings - Module settings object (same shape as settings.moduleSettings)
+ */
+export async function applySceneAutoHide(sceneRange, moduleSettings = {}) {
+    const result = getAutoHideRanges({ metadata: { sceneRange } }, moduleSettings);
+    if (!result || result.mode === 'none' || result.invalidRange) return;
+    for (const range of (result.ranges || [])) {
+        await safeExecuteHideCommand(
+            `/hide ${range.start}-${range.end}`,
+            i18n(range.contextKey, range.contextFallback),
+        );
+    }
+}
+
 // Default title formats that users can select from
 const DEFAULT_TITLE_FORMATS = [
     '[000] - {{title}} ({{profile}})', // i18n('addlore.titleFormats.0', '[000] - {{title}} ({{profile}})')
