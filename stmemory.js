@@ -1429,6 +1429,7 @@ async function buildPrompt(compiledScene, profile) {
     const SCENE_FORMAT_GUIDE =
         '## Scene Format Guide (Scheme B)\n' +
         '- "quotes" = spoken dialogue — INCLUDE: audible to characters present.\n' +
+        '- > blockquote = remote/written exchange (text, call, DM, letter) — INCLUDE, but record it as such (e.g. "texted"/"wrote"), not as speech in the room.\n' +
         '- *italics* = private unspoken thought — SKIP: invisible to all other characters.\n' +
         '- (parentheses) = narrator aside — SKIP: reader-only, no character perceives it.\n' +
         '- Plain prose = actions and behavior. Apply the rules below.\n' +

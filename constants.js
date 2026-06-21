@@ -60,6 +60,7 @@ export const DISPLAY_NAME_DEFAULTS = {
     northgate: 'Northgate - Intended for creative writing. By Northgate on ST Discord',
     aelemar: 'Aelemar - Focuses on plot points and character memories. By Aelemar on ST Discord',
     comprehensive: 'Comprehensive - Synopsis plus improved keywords extraction',
+    witness: 'Witness - Objective, audience-neutral scene log (light structure; for two-plane)',
 };
 
 export const DISPLAY_NAME_I18N_KEYS = {
@@ -71,6 +72,7 @@ export const DISPLAY_NAME_I18N_KEYS = {
     northgate: 'STMemoryBooks_DisplayName_northgate',
     aelemar: 'STMemoryBooks_DisplayName_aelemar',
     comprehensive: 'STMemoryBooks_DisplayName_comprehensive',
+    witness: 'STMemoryBooks_DisplayName_witness',
 };
 
 // First-pass additional constants for common defaults and thresholds

@@ -842,6 +842,35 @@ Your goal: **keywords should fire when the noun/action is mentioned alone**, not
 
 Return ONLY the JSON — no additional text.`,
             'STMemoryBooks_Prompt_comprehensive'
+        ),
+        witness: translate(
+`Analyze the roleplay scene below and return an OBJECTIVE memory of it as JSON.
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "title": "Short scene title (3-5 words)",
+  "content": "Objective, audience-neutral record of this scene (structure below)",
+  "keywords": ["keyword1", "keyword2", "keyword3"]
+}
+
+CONTENT — an objective, third-person, past-tense record of THIS scene only:
+- Cover what every present character did and said; name them. Do NOT write from any single character's point of view or privilege one character's perspective.
+- Record ONLY what is shown in the messages provided. Do NOT add, infer, or carry in events, knowledge, or backstory not present in this scene.
+- Token-efficient: synthesize, don't transcribe. Favor cause -> intention -> reaction -> consequence. Concrete nouns; adjectives/adverbs only when they change meaning or tone.
+- Exclude all [OOC]/meta.
+Use this lean structure inside the content string (omit a section if it is empty):
+**Timeline**: in-story day/time span covered.
+**Beats**: 3-7 bullets — major actions, revelations, turning points, in order.
+**Dynamics**: 1-2 bullets — relationship/emotional shifts that were OUTWARDLY expressed (observable only; no inner interpretation).
+**Key Exchanges**: up to 3 short exact quotes, attributed by name, only if pivotal.
+**Outcome & Continuity**: decisions, promises, unresolved threads, physical outcomes, anything that affects future scenes.
+
+KEYWORDS — 15-30 standalone retrieval tags:
+- Concrete and scene-specific (locations, objects, proper nouns, distinctive actions, repeated motifs); one concept per keyword. A keyword should fire when its noun/action is mentioned alone.
+- NOT character or user names. NOT thematic/emotional/abstract. Stop-list: intimacy, vulnerability, trust, dominance, submission, power dynamics, boundaries, jealousy, aftercare, longing, consent, emotional connection.
+
+Return ONLY the JSON, no other text.`,
+            'STMemoryBooks_Prompt_witness'
         )
     };
 }
@@ -1011,7 +1040,7 @@ export function deepClone(obj) {
  * @returns {string[]} Array of preset names
  */
 export function getPresetNames() {
-    return ['summary', 'summarize', 'synopsis', 'sumup', 'minimal', 'northgate', 'aelemar', 'comprehensive'];
+    return ['summary', 'summarize', 'synopsis', 'sumup', 'minimal', 'northgate', 'aelemar', 'comprehensive', 'witness'];
 }
 
 /**
@@ -1020,7 +1049,7 @@ export function getPresetNames() {
  * @returns {boolean} Whether the preset exists
  */
 export function isValidPreset(presetName) {
-    const builtIns = new Set(['summary', 'summarize', 'synopsis', 'sumup', 'minimal', 'northgate', 'aelemar', 'comprehensive']);
+    const builtIns = new Set(['summary', 'summarize', 'synopsis', 'sumup', 'minimal', 'northgate', 'aelemar', 'comprehensive', 'witness']);
     return builtIns.has(presetName);
 }
 
