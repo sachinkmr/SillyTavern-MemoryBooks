@@ -145,7 +145,6 @@ import {
   showContextSettingsPopup,
 } from "./contextSettingsPopup.js";
 import {
-  runSummaryAnalysisSequential,
   runWitnessRollup,
   commitSummaryEntries,
   parseSummaryJsonResponse,
@@ -3824,7 +3823,10 @@ async function executeQueuedConsolidationJob(job, jobContext) {
   jobContext.setState("generating", {
     detail: `${getSummaryTierLabel(getSourceTierForTarget(targetTier))} -> ${getSummaryTierLabel(targetTier)}`,
   });
-  const analysis = await runSummaryAnalysisSequential(
+  // Phase 3 (two-plane): the QUEUED consolidation path must route through the witness-correct
+  // rollup just like the synchronous path (index.js ~6881). Flag-gated internally -> with
+  // twoPlaneMemory OFF this is a single passthrough to runSummaryAnalysisSequential.
+  const analysis = await runWitnessRollup(
     selectedEntries,
     {
       presetKey: payload.presetKey,
@@ -3866,7 +3868,9 @@ async function executeQueuedConsolidationJob(job, jobContext) {
               jobContext.setState("generating", {
                 detail: `${getSummaryTierLabel(getSourceTierForTarget(targetTier))} -> ${getSummaryTierLabel(targetTier)}`,
               });
-              return await runSummaryAnalysisSequential(
+              // Phase 3 (two-plane): preview regenerate/next-pass must stay witness-correct;
+              // route through runWitnessRollup so partitioning + characterFilter stamping persist.
+              return await runWitnessRollup(
                 entries,
                 {
                   presetKey: payload.presetKey,
@@ -6994,7 +6998,9 @@ async function showSummaryConsolidationPopup(popupOptions = {}) {
           targetLabel,
           throwIfCancelled: null,
           generateAnalysis: async (entries, lockedSummaries) => {
-            return await runSummaryAnalysisSequential(
+            // Phase 3 (two-plane): preview regenerate/next-pass must stay witness-correct;
+            // route through runWitnessRollup so partitioning + characterFilter stamping persist.
+            return await runWitnessRollup(
               entries,
               {
                 ...options,
